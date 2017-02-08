@@ -15,6 +15,10 @@
  */
 package com.couchbase.client.dcp.config;
 
+import java.security.KeyStore;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
 import com.couchbase.client.core.env.ConfigParserEnvironment;
 import com.couchbase.client.core.env.CoreScheduler;
 import com.couchbase.client.core.env.resources.NoOpShutdownHook;
@@ -31,20 +35,12 @@ import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DataEventHandler;
 import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
-import com.couchbase.client.deps.io.netty.util.concurrent.Future;
-import com.couchbase.client.deps.io.netty.util.concurrent.GenericFutureListener;
+
 import rx.Completable;
-import rx.CompletableSubscriber;
 import rx.Observable;
 import rx.Scheduler;
 import rx.Subscriber;
 import rx.Subscription;
-import rx.functions.Func1;
-import rx.functions.Func2;
-
-import java.security.KeyStore;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
  * The {@link ClientEnvironment} is responsible to carry various configuration and
@@ -70,7 +66,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     /**
      * Stores the list of bootstrap nodes (where the cluster is).
      */
-    private final List<String> clusterAt;
+    private final List<String> hostnames;
 
     /**
      * Stores the generator for each DCP connection name.
@@ -170,14 +166,16 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final int bootstrapHttpSslPort;
     private final int dcpDirectPort;
     private final int dcpSslPort;
+    private short[] vbuckets;
 
     /**
      * Creates a new environment based on the builder.
      *
-     * @param builder the builder to build the environment.
+     * @param builder
+     *            the builder to build the environment.
      */
     private ClientEnvironment(final Builder builder) {
-        clusterAt = builder.clusterAt;
+        hostnames = builder.clusterAt;
         connectionNameGenerator = builder.connectionNameGenerator;
         bucket = builder.bucket;
         password = builder.password;
@@ -198,10 +196,10 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
             this.scheduler = null;
             this.schedulerShutdownHook = new NoOpShutdownHook();
         } else {
-            CoreScheduler scheduler = new CoreScheduler(3);
-            this.scheduler = scheduler;
-            this.schedulerShutdownHook = scheduler;
-            eventBus = new DefaultEventBus(scheduler);
+            CoreScheduler coreScheduler = new CoreScheduler(3);
+            this.scheduler = coreScheduler;
+            this.schedulerShutdownHook = coreScheduler;
+            eventBus = new DefaultEventBus(coreScheduler);
         }
         bootstrapHttpDirectPort = builder.bootstrapHttpDirectPort;
         bootstrapHttpSslPort = builder.bootstrapHttpSslPort;
@@ -211,6 +209,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         sslKeystoreFile = builder.sslKeystoreFile;
         sslKeystorePassword = builder.sslKeystorePassword;
         sslKeystore = builder.sslKeystore;
+        vbuckets = builder.getVbuckets();
     }
 
     /**
@@ -223,8 +222,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     /**
      * Lists the bootstrap nodes.
      */
-    public List<String> clusterAt() {
-        return clusterAt;
+    public List<String> hostnames() {
+        return hostnames;
     }
 
     /**
@@ -297,6 +296,14 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         return connectTimeout;
     }
 
+    public short[] vbuckets() {
+        return vbuckets;
+    }
+
+    public void vbuckets(short[] vbuckets) {
+        this.vbuckets = vbuckets;
+    }
+
     /**
      * Set/Override the data event handler.
      */
@@ -319,18 +326,15 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
             systemEventSubscription.unsubscribe();
         }
         if (systemEventHandler != null) {
-            systemEventSubscription = eventBus().get()
-                    .filter(new Func1<CouchbaseEvent, Boolean>() {
+            systemEventSubscription = eventBus().get().filter(evt -> evt.type().equals(EventType.SYSTEM))
+                    .subscribe(new Subscriber<CouchbaseEvent>() {
                         @Override
-                        public Boolean call(CouchbaseEvent evt) {
-                            return evt.type().equals(EventType.SYSTEM);
-                        }
-                    }).subscribe(new Subscriber<CouchbaseEvent>() {
-                        @Override
-                        public void onCompleted() { /* Ignoring on purpose. */}
+                        public void onCompleted() {
+                            /* Ignoring on purpose. */}
 
                         @Override
-                        public void onError(Throwable e) { /* Ignoring on purpose. */ }
+                        public void onError(Throwable e) {
+                            /* Ignoring on purpose. */ }
 
                         @Override
                         public void onNext(CouchbaseEvent evt) {
@@ -437,17 +441,21 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private int bootstrapHttpSslPort = BOOTSTRAP_HTTP_SSL_PORT;
         private int dcpDirectPort = DCP_DIRECT_PORT;
         private int dcpSslPort = DCP_SSL_PORT;
-
         private int bufferAckWatermark;
         private EventBus eventBus;
         private boolean sslEnabled = DEFAULT_SSL_ENABLED;
         private String sslKeystoreFile;
         private String sslKeystorePassword;
         private KeyStore sslKeystore;
+        private short[] vbuckets;
 
         public Builder setClusterAt(List<String> clusterAt) {
             this.clusterAt = clusterAt;
             return this;
+        }
+
+        public short[] getVbuckets() {
+            return vbuckets;
         }
 
         public Builder setBufferAckWatermark(int watermark) {
@@ -503,7 +511,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         /**
          * Sets a custom socket connect timeout.
          *
-         * @param socketConnectTimeout the socket connect timeout in milliseconds.
+         * @param socketConnectTimeout
+         *            the socket connect timeout in milliseconds.
          */
         public Builder setSocketConnectTimeout(long socketConnectTimeout) {
             this.socketConnectTimeout = socketConnectTimeout;
@@ -559,7 +568,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         }
 
         /**
-         * If SSL enabled, sets the port to use for  DCP interaction
+         * If SSL enabled, sets the port to use for DCP interaction
          * (default value {@value #DCP_SSL_PORT}).
          */
         public Builder setDcpSslPort(final int dcpSslPort) {
@@ -603,17 +612,22 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
          * You can either specify a file or the keystore directly via {@link #setSslKeystore(KeyStore)}. If the explicit
          * keystore is used it takes precedence over the file approach.
          *
-         * @param sslKeystore the keystore to use.
+         * @param sslKeystore
+         *            the keystore to use.
          */
         public Builder setSslKeystore(final KeyStore sslKeystore) {
             this.sslKeystore = sslKeystore;
             return this;
         }
 
+        public Builder setVbuckets(final short[] vbuckets) {
+            this.vbuckets = vbuckets;
+            return this;
+        }
+
         public ClientEnvironment build() {
             return new ClientEnvironment(this);
         }
-
     }
 
     /**
@@ -625,58 +639,34 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      *
      * @return a {@link Completable} indicating completion of the shutdown process.
      */
-    @SuppressWarnings({"unchecked"})
     public Completable shutdown() {
         Observable<Boolean> loopShutdown = Observable.empty();
 
         if (eventLoopGroupIsPrivate) {
-            loopShutdown = Completable.create(new Completable.OnSubscribe() {
-                @Override
-                public void call(final CompletableSubscriber subscriber) {
-                    eventLoopGroup.shutdownGracefully(0, 10, TimeUnit.MILLISECONDS).addListener(
-                            new GenericFutureListener() {
-                                @Override
-                                public void operationComplete(Future future) throws Exception {
-                                    if (future.isSuccess()) {
-                                        subscriber.onCompleted();
-                                    } else {
-                                        subscriber.onError(future.cause());
-                                    }
-                                }
-                            });
-                }
-            }).toObservable();
+            loopShutdown = Completable.create(subscriber -> eventLoopGroup
+                    .shutdownGracefully(0, 10, TimeUnit.MILLISECONDS).addListener(future -> {
+                        if (future.isSuccess()) {
+                            subscriber.onCompleted();
+                        } else {
+                            subscriber.onError(future.cause());
+                        }
+                    })).toObservable();
         }
-        return Observable.merge(
-                schedulerShutdownHook.shutdown(),
-                loopShutdown
-        ).reduce(true, new Func2<Boolean, Boolean, Boolean>() {
-            @Override
-            public Boolean call(Boolean previous, Boolean current) {
-                return previous && current;
-            }
-        }).toCompletable();
+        return Observable.merge(schedulerShutdownHook.shutdown(), loopShutdown)
+                .reduce(true, (previous, current) -> previous && current).toCompletable();
     }
 
     @Override
     public String toString() {
-        return "ClientEnvironment{" +
-                "clusterAt=" + clusterAt +
-                ", connectionNameGenerator=" + connectionNameGenerator.getClass().getSimpleName() +
-                ", bucket='" + bucket + '\'' +
-                ", passwordSet=" + !password.isEmpty() +
-                ", dcpControl=" + dcpControl +
-                ", eventLoopGroup=" + eventLoopGroup.getClass().getSimpleName() +
-                ", eventLoopGroupIsPrivate=" + eventLoopGroupIsPrivate +
-                ", poolBuffers=" + poolBuffers +
-                ", bufferAckWatermark=" + bufferAckWatermark +
-                ", connectTimeout=" + connectTimeout +
-                ", bootstrapTimeout=" + bootstrapTimeout +
-                ", sslEnabled=" + sslEnabled +
-                ", sslKeystoreFile='" + sslKeystoreFile + '\'' +
-                ", sslKeystorePassword=" + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty()) +
-                ", sslKeystore=" + sslKeystore +
-                '}';
+        return "ClientEnvironment{" + "clusterAt=" + hostnames + ", connectionNameGenerator="
+                + connectionNameGenerator.getClass().getSimpleName() + ", bucket='" + bucket + '\'' + ", passwordSet="
+                + !password.isEmpty() + ", dcpControl=" + dcpControl + ", eventLoopGroup="
+                + eventLoopGroup.getClass().getSimpleName() + ", eventLoopGroupIsPrivate=" + eventLoopGroupIsPrivate
+                + ", poolBuffers=" + poolBuffers + ", bufferAckWatermark=" + bufferAckWatermark + ", connectTimeout="
+                + connectTimeout + ", bootstrapTimeout=" + bootstrapTimeout + ", sslEnabled=" + sslEnabled
+                + ", sslKeystoreFile='" + sslKeystoreFile + '\'' + ", sslKeystorePassword="
+                + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty()) + ", sslKeystore=" + sslKeystore
+                + '}';
     }
 
     public Delay dcpChannelsReconnectDelay() {

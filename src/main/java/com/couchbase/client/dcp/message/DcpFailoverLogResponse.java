@@ -15,10 +15,12 @@
  */
 package com.couchbase.client.dcp.message;
 
-
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_FAILOVER_LOG_OPCODE;
+
+import java.util.List;
+
+import com.couchbase.client.dcp.state.FailoverLogEntry;
+import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public enum DcpFailoverLogResponse {
     ;
@@ -58,8 +60,16 @@ public enum DcpFailoverLogResponse {
         sb.append("vbid: ").append(vbucket(buffer)).append(", log: [");
         int numEntries = numLogEntries(buffer);
         for (int i = 0; i < numEntries; i++) {
-            sb.append("[uuid: ").append(vbuuidEntry(buffer, i)).append(", seqno: ").append(seqnoEntry(buffer, i)).append("]");
+            sb.append("[uuid: ").append(vbuuidEntry(buffer, i)).append(", seqno: ").append(seqnoEntry(buffer, i))
+                    .append("]");
         }
         return sb.append("]]").toString();
+    }
+
+    public static void fill(final ByteBuf buffer, List<FailoverLogEntry> logs) {
+        int numEntries = numLogEntries(buffer);
+        for (int i = 0; i < numEntries; i++) {
+            logs.add(new FailoverLogEntry(seqnoEntry(buffer, i), vbuuidEntry(buffer, i)));
+        }
     }
 }

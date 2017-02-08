@@ -36,14 +36,16 @@ public class DcpControl implements Iterable<Map.Entry<String, String>> {
      * Creates a new {@link DcpControl} instance with no params set upfront.
      */
     public DcpControl() {
-        this.values = new HashMap<String, String>();
+        this.values = new HashMap<>();
     }
 
     /**
      * Store/Override a control parameter.
      *
-     * @param name the name of the control parameter.
-     * @param value the stringified version what it should be set to.
+     * @param name
+     *            the name of the control parameter.
+     * @param value
+     *            the stringified version what it should be set to.
      * @return the {@link DcpControl} instance for chainability.
      */
     public DcpControl put(final Names name, final String value) {
@@ -54,7 +56,8 @@ public class DcpControl implements Iterable<Map.Entry<String, String>> {
     /**
      * Returns a param if set, otherwise null is returned.
      *
-     * @param name the name of the param.
+     * @param name
+     *            the name of the param.
      * @return the stringified value if set, null otherwise.
      */
     public String get(final Names name) {

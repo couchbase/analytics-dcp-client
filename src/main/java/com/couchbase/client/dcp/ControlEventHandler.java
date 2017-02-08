@@ -32,6 +32,7 @@ import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
  * @author Michael Nitschinger
  * @since 1.0.0
  */
+@FunctionalInterface
 public interface ControlEventHandler {
 
     /**

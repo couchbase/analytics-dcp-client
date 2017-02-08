@@ -1,22 +1,19 @@
 /*
  * Copyright (c) 2016-2017 Couchbase, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  */
 package com.couchbase.client.dcp.conductor;
 
+import static com.couchbase.client.dcp.util.retry.RetryBuilder.anyOf;
+
+import java.net.InetAddress;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
+import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.service.ServiceType;
@@ -25,31 +22,15 @@ import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.FailedToAddNodeEvent;
-import com.couchbase.client.dcp.events.FailedToMovePartitionEvent;
 import com.couchbase.client.dcp.events.FailedToRemoveNodeEvent;
-import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.util.retry.RetryBuilder;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.util.internal.ConcurrentSet;
+
 import rx.Completable;
 import rx.CompletableSubscriber;
 import rx.Observable;
-import rx.Single;
 import rx.Subscription;
-import rx.functions.Action0;
-import rx.functions.Action1;
-import rx.functions.Action4;
-import rx.functions.Func1;
-
-import java.net.InetAddress;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static com.couchbase.client.dcp.util.retry.RetryBuilder.anyOf;
 
 public class Conductor {
 
@@ -57,33 +38,14 @@ public class Conductor {
 
     private final ConfigProvider configProvider;
     private final Set<DcpChannel> channels;
-    private volatile long configRev = -1;
     private volatile boolean stopped = true;
     private final ClientEnvironment env;
-    private final AtomicReference<CouchbaseBucketConfig> currentConfig;
-    private final boolean ownsConfigProvider;
-    private final SessionState sessionState;
+    private SessionState sessionState;
 
     public Conductor(final ClientEnvironment env, ConfigProvider cp) {
         this.env = env;
-        this.currentConfig = new AtomicReference<CouchbaseBucketConfig>();
-        sessionState = new SessionState();
         configProvider = cp == null ? new HttpStreamingConfigProvider(env) : cp;
-        ownsConfigProvider = cp == null;
-        configProvider.configs().forEach(new Action1<CouchbaseBucketConfig>() {
-            @Override
-            public void call(CouchbaseBucketConfig config) {
-                if (config.rev() > configRev) {
-                    configRev = config.rev();
-                    LOGGER.trace("Applying new configuration, rev is now {}.", configRev);
-                    currentConfig.set(config);
-                    reconfigure(config);
-                } else {
-                    LOGGER.trace("Ignoring config, since rev has not changed.");
-                }
-            }
-        });
-        channels = new ConcurrentSet<DcpChannel>();
+        channels = new ConcurrentSet<>();
     }
 
     public SessionState sessionState() {
@@ -92,170 +54,75 @@ public class Conductor {
 
     public Completable connect() {
         stopped = false;
-        Completable atLeastOneConfig = configProvider.configs().first().toCompletable()
-                .timeout(env.bootstrapTimeout(), TimeUnit.SECONDS)
-                .doOnError(new Action1<Throwable>() {
-                    @Override
-                    public void call(Throwable throwable) {
-                        LOGGER.warn("Did not receive initial configuration from provider.");
-                    }
-                });
-        return configProvider.start()
-                .timeout(env.connectTimeout(), TimeUnit.SECONDS)
-                .doOnError(new Action1<Throwable>() {
-                    @Override
-                    public void call(Throwable throwable) {
-                        LOGGER.warn("Cannot connect configuration provider.");
-                    }
-                })
-                .concatWith(atLeastOneConfig);
+        return configProvider.refresh().doOnCompleted(() -> createSession(configProvider.config()));
     }
 
     /**
      * Returns true if all channels and the config provider are in a disconnected state.
      */
     public boolean disconnected() {
-        if (!configProvider.isState(LifecycleState.DISCONNECTED)) {
-            return false;
-        }
-
         for (DcpChannel channel : channels) {
             if (!channel.isState(LifecycleState.DISCONNECTED)) {
                 return false;
             }
         }
-
         return true;
     }
 
     public Completable stop() {
         LOGGER.debug("Instructed to shutdown.");
         stopped = true;
-        Completable channelShutdown = Observable
-                .from(channels)
-                .flatMap(new Func1<DcpChannel, Observable<?>>() {
-                    @Override
-                    public Observable<?> call(DcpChannel dcpChannel) {
-                        return dcpChannel.disconnect().toObservable();
-                    }
-                })
-                .toCompletable();
-
-        if (ownsConfigProvider) {
-            channelShutdown = channelShutdown.andThen(configProvider.stop());
-        }
-
-        return channelShutdown.doOnCompleted(new Action0() {
-            @Override
-            public void call() {
-                LOGGER.info("Shutdown complete.");
-            }
-        });
+        return Observable.from(channels).flatMap(dcpChannel -> dcpChannel.disconnect().toObservable()).toCompletable()
+                .doOnCompleted(() -> LOGGER.info("Shutdown complete."));
     }
 
     /**
      * Returns the total number of partitions.
      */
     public int numberOfPartitions() {
-        CouchbaseBucketConfig config = currentConfig.get();
-        return config.numberOfPartitions();
+        return configProvider.config().numberOfPartitions();
     }
 
-    public Observable<ByteBuf> getSeqnos() {
-        return Observable
-                .from(channels)
-                .flatMap(new Func1<DcpChannel, Observable<ByteBuf>>() {
-                    @Override
-                    public Observable<ByteBuf> call(DcpChannel channel) {
-                        return getSeqnosForChannel(channel);
-                    }
-                });
+    public Completable getSeqnos() {
+        List<Completable> completables = new ArrayList<>();
+        for (DcpChannel channel : channels) {
+            completables.add(getSeqnosForChannel(channel));
+        }
+        return Completable.concat(completables);
     }
 
     @SuppressWarnings("unchecked")
-    private Observable<ByteBuf> getSeqnosForChannel(final DcpChannel channel) {
-        return Observable
-                .just(channel)
-                .flatMap(new Func1<DcpChannel, Observable<ByteBuf>>() {
-                    @Override
-                    public Observable<ByteBuf> call(DcpChannel channel) {
-                        return channel.getSeqnos().toObservable();
-                    }
-                })
-                .retryWhen(anyOf(NotConnectedException.class)
-                        .max(Integer.MAX_VALUE)
+    private Completable getSeqnosForChannel(final DcpChannel dcpChannel) {
+        return dcpChannel.getSeqnos()
+                .retryWhen(anyOf(NotConnectedException.class).max(Integer.MAX_VALUE)
                         .delay(Delay.fixed(200, TimeUnit.MILLISECONDS))
-                        .doOnRetry(new Action4<Integer, Throwable, Long, TimeUnit>() {
-                            @Override
-                            public void call(Integer integer, Throwable throwable, Long aLong, TimeUnit timeUnit) {
-                                LOGGER.debug("Rescheduling get Seqnos for channel {}, not connected (yet).", channel);
-
-                            }
-                        })
-                        .build()
-                );
+                        .doOnRetry((integer, throwable, aLong, timeUnit) -> LOGGER
+                                .debug("Rescheduling get Seqnos for channel {}, not connected (yet).", dcpChannel))
+                        .build());
     }
 
     @SuppressWarnings("unchecked")
-    public Single<ByteBuf> getFailoverLog(final short partition) {
-        return Observable
-                .just(partition)
-                .map(new Func1<Short, DcpChannel>() {
-                    @Override
-                    public DcpChannel call(Short aShort) {
-                        return masterChannelByPartition(partition);
-                    }
-                })
-                .flatMap(new Func1<DcpChannel, Observable<ByteBuf>>() {
-                    @Override
-                    public Observable<ByteBuf> call(DcpChannel channel) {
-                        return channel.getFailoverLog(partition).toObservable();
-                    }
-                })
-                .retryWhen(anyOf(NotConnectedException.class)
-                        .max(Integer.MAX_VALUE)
+    public Completable getFailoverLog(final short partition) {
+        return masterChannelByPartition(partition).getFailoverLog(partition)
+                .retryWhen(anyOf(NotConnectedException.class).max(Integer.MAX_VALUE)
                         .delay(Delay.fixed(200, TimeUnit.MILLISECONDS))
-                        .doOnRetry(new Action4<Integer, Throwable, Long, TimeUnit>() {
-                            @Override
-                            public void call(Integer integer, Throwable throwable, Long aLong, TimeUnit timeUnit) {
-                                LOGGER.debug("Rescheduling Get Failover Log for vbid {}, not connected (yet).", partition);
-
-                            }
-                        })
-                        .build()
-                ).toSingle();
+                        .doOnRetry((integer, throwable, aLong, timeUnit) -> LOGGER
+                                .debug("Rescheduling Get Failover Log for vbid {}, not connected (yet).", partition))
+                        .build());
     }
 
     @SuppressWarnings("unchecked")
     public Completable startStreamForPartition(final short partition, final long vbuuid, final long startSeqno,
-                                               final long endSeqno, final long snapshotStartSeqno, final long snapshotEndSeqno) {
-        return Observable
-                .just(partition)
-                .map(new Func1<Short, DcpChannel>() {
-                    @Override
-                    public DcpChannel call(Short aShort) {
-                        return masterChannelByPartition(partition);
-                    }
-                })
-                .flatMap(new Func1<DcpChannel, Observable<?>>() {
-                    @Override
-                    public Observable<?> call(DcpChannel channel) {
-                        return channel.openStream(partition, vbuuid, startSeqno, endSeqno, snapshotStartSeqno, snapshotEndSeqno)
-                                .toObservable();
-                    }
-                })
-                .retryWhen(anyOf(NotConnectedException.class)
-                        .max(Integer.MAX_VALUE)
+            final long endSeqno, final long snapshotStartSeqno, final long snapshotEndSeqno) {
+        return Observable.just(partition).map(aShort -> masterChannelByPartition(partition))
+                .flatMap(channel -> channel
+                        .openStream(partition, vbuuid, startSeqno, endSeqno, snapshotStartSeqno, snapshotEndSeqno)
+                        .toObservable())
+                .retryWhen(anyOf(NotConnectedException.class).max(Integer.MAX_VALUE)
                         .delay(Delay.fixed(200, TimeUnit.MILLISECONDS))
-                        .doOnRetry(new Action4<Integer, Throwable, Long, TimeUnit>() {
-                            @Override
-                            public void call(Integer integer, Throwable throwable, Long aLong, TimeUnit timeUnit) {
-                                LOGGER.debug("Rescheduling Stream Start for vbid {}, not connected (yet).", partition);
-
-                            }
-                        })
-                        .build()
-                )
+                        .doOnRetry((integer, throwable, aLong, timeUnit) -> LOGGER
+                                .debug("Rescheduling Stream Start for vbid {}, not connected (yet).", partition))
+                        .build())
                 .toCompletable();
     }
 
@@ -286,7 +153,7 @@ public class Conductor {
      * mapping.
      */
     private DcpChannel masterChannelByPartition(short partition) {
-        CouchbaseBucketConfig config = currentConfig.get();
+        CouchbaseBucketConfig config = configProvider.config();
         int index = config.nodeIndexForMaster(partition, false);
         NodeInfo node = config.nodeAtIndex(index);
         for (DcpChannel ch : channels) {
@@ -298,79 +165,80 @@ public class Conductor {
         throw new IllegalStateException("No DcpChannel found for partition " + partition);
     }
 
-    private void reconfigure(CouchbaseBucketConfig config) {
-        List<InetAddress> toAdd = new ArrayList<InetAddress>();
-        List<DcpChannel> toRemove = new ArrayList<DcpChannel>();
-
-        for (NodeInfo node : config.nodes()) {
-            InetAddress hostname = node.hostname();
-            if (!(node.services().containsKey(ServiceType.BINARY)
-                    || node.sslServices().containsKey(ServiceType.BINARY))) {
-                continue; // we only care about kv nodes
-            }
-
-            boolean in = false;
-            for (DcpChannel chan : channels) {
-                if (chan.hostname().equals(hostname)) {
-                    in = true;
-                    break;
-                }
-            }
-
-            if (!in && config.hasPrimaryPartitionsOnNode(hostname)) {
-                toAdd.add(hostname);
-                LOGGER.debug("Planning to add {}", hostname);
-            }
+    private void createSession(CouchbaseBucketConfig config) {
+        if (sessionState == null) {
+            sessionState = new SessionState(config.numberOfPartitions());
         }
+    }
 
+    private Completable reconfigure() {
+        List<InetAddress> toAdd = new ArrayList<>();
+        List<DcpChannel> toRemove = new ArrayList<>();
+        List<Completable> connects = new ArrayList<>();
+        for (NodeInfo node : configProvider.config().nodes()) {
+            shouldAdd(node, configProvider.config(), toAdd);
+        }
         for (DcpChannel chan : channels) {
-            boolean found = false;
-            for (NodeInfo node : config.nodes()) {
-                InetAddress hostname = node.hostname();
-                if (hostname.equals(chan.hostname())) {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                LOGGER.debug("Planning to remove {}", chan);
-                toRemove.add(chan);
-            }
-        }
-
-        for (InetAddress add : toAdd) {
-            add(add);
+            shouldRemove(chan, toRemove, configProvider.config());
         }
 
         for (DcpChannel remove : toRemove) {
             remove(remove);
         }
+
+        for (InetAddress add : toAdd) {
+            connects.add(add(add));
+        }
+        return Completable.concat(connects);
     }
 
-    private void add(final InetAddress node) {
-        //noinspection SuspiciousMethodCalls: channel proxies equals/hashcode to its address
-        if (channels.contains(node)) {
-            return;
+    private void shouldRemove(DcpChannel chan, List<DcpChannel> toRemove, CouchbaseBucketConfig config) {
+        boolean found = false;
+        for (NodeInfo node : config.nodes()) {
+            InetAddress hostname = node.hostname();
+            if (hostname.equals(chan.hostname())) {
+                found = true;
+                break;
+            }
         }
+        if (!found) {
+            LOGGER.debug("Planning to remove {}", chan);
+            toRemove.add(chan);
+        }
+    }
 
+    private void shouldAdd(NodeInfo node, CouchbaseBucketConfig config, List<InetAddress> toAdd) {
+        InetAddress hostname = node.hostname();
+        if (!(node.services().containsKey(ServiceType.BINARY) || node.sslServices().containsKey(ServiceType.BINARY))) {
+            return; // we only care about kv nodes
+        }
+        boolean in = false;
+        for (DcpChannel chan : channels) {
+            if (chan.hostname().equals(hostname)) {
+                in = true;
+                break;
+            }
+        }
+        if (!in && config.hasPrimaryPartitionsOnNode(hostname)) {
+            toAdd.add(hostname);
+            LOGGER.debug("Planning to add {}", hostname);
+        }
+    }
+
+    private Completable add(final InetAddress node) {
+        // noinspection SuspiciousMethodCalls: channel proxies equals/hashcode to its address
+        if (channels.contains(node)) { // Are you serious??
+            return Completable.complete();
+        }
         LOGGER.debug("Adding DCP Channel against {}", node);
         final DcpChannel channel = new DcpChannel(node, env, this);
         channels.add(channel);
-
-        channel
-                .connect()
-                .retryWhen(RetryBuilder.anyMatches(new Func1<Throwable, Boolean>() {
-                    @Override
-                    public Boolean call(Throwable t) {
-                        return !stopped;
-                    }
-                }).max(env.dcpChannelsReconnectMaxAttempts()).delay(env.dcpChannelsReconnectDelay()).
-                        doOnRetry(new Action4<Integer, Throwable, Long, TimeUnit>() {
-                            @Override
-                            public void call(Integer integer, Throwable throwable, Long aLong, TimeUnit timeUnit) {
-                                LOGGER.debug("Rescheduling Node reconnect for DCP channel {}", node);
-                            }
-                        }).build()).subscribe(new CompletableSubscriber() {
+        Completable connectCompletable = channel.connect()
+                .retryWhen(RetryBuilder.anyMatches(t -> !stopped).max(env.dcpChannelsReconnectMaxAttempts())
+                        .delay(env.dcpChannelsReconnectDelay()).doOnRetry((integer, throwable, aLong,
+                                timeUnit) -> LOGGER.debug("Rescheduling Node reconnect for DCP channel {}", node))
+                        .build());
+        connectCompletable.subscribe(new CompletableSubscriber() {
             @Override
             public void onCompleted() {
                 LOGGER.debug("Completed Node connect for DCP channel {}", node);
@@ -389,12 +257,14 @@ public class Conductor {
                 // ignored.
             }
         });
+        return connectCompletable;
     }
 
-    private void remove(final DcpChannel node) {
+    private Completable remove(final DcpChannel node) {
         if (channels.remove(node)) {
             LOGGER.debug("Removing DCP Channel against {}", node);
-            node.disconnect().subscribe(new CompletableSubscriber() {
+            Completable completable = node.disconnect();
+            completable.subscribe(new CompletableSubscriber() {
                 @Override
                 public void onCompleted() {
                     LOGGER.debug("Channel remove notified as complete for {}", node.hostname());
@@ -413,66 +283,35 @@ public class Conductor {
                     // ignored.
                 }
             });
+            return completable;
         }
+        return Completable.complete();
     }
 
-    /**
-     * Called by the {@link DcpChannel} to signal a stream end done by the server and it
-     * most likely needs to be moved over to a new node during rebalance/failover.
-     *
-     * @param partition the partition to move if needed
-     */
-    @SuppressWarnings("unchecked")
-    void maybeMovePartition(final short partition) {
-        Observable
-                .timer(50, TimeUnit.MILLISECONDS)
-                .filter(new Func1<Long, Boolean>() {
-                    @Override
-                    public Boolean call(Long aLong) {
-                        PartitionState ps = sessionState.get(partition);
-                        boolean desiredSeqnoReached = ps.isAtEnd();
-                        if (desiredSeqnoReached) {
-                            LOGGER.debug("Reached desired high seqno {} for vbucket {}, not reopening stream.",
-                                    ps.getEndSeqno(), partition);
-                        }
-                        return !desiredSeqnoReached;
-                    }
-                })
-                .flatMap(new Func1<Long, Observable<?>>() {
-                    @Override
-                    public Observable<?> call(Long aLong) {
-                        PartitionState ps = sessionState.get(partition);
-                        return startStreamForPartition(
-                                partition,
-                                ps.getLastUuid(),
-                                ps.getStartSeqno(),
-                                ps.getEndSeqno(),
-                                ps.getSnapshotStartSeqno(),
-                                ps.getSnapshotEndSeqno()
-                        ).retryWhen(anyOf(NotMyVbucketException.class)
-                                .max(Integer.MAX_VALUE)
-                                .delay(Delay.fixed(200, TimeUnit.MILLISECONDS))
-                                .build()).toObservable();
-                    }
-                }).toCompletable().subscribe(new CompletableSubscriber() {
-            @Override
-            public void onCompleted() {
-                LOGGER.trace("Completed Partition Move for partition {}", partition);
-            }
-
-            @Override
-            public void onError(Throwable e) {
-                LOGGER.warn("Error during Partition Move for partition " + partition, e);
-                if (env.eventBus() != null) {
-                    env.eventBus().publish(new FailedToMovePartitionEvent(partition, e));
-                }
-            }
-
-            @Override
-            public void onSubscribe(Subscription d) {
-                LOGGER.debug("Subscribing for Partition Move for partition {}", partition);
-            }
-        });
+    public SessionState getSessionState() {
+        return sessionState;
     }
 
+    public void setSessionState(SessionState sessionState) {
+        this.sessionState = sessionState;
+    }
+
+    public void maybeMovePartition(short vbid) {
+        LOGGER.log(CouchbaseLogLevel.WARN, "This could be a stream end for partition " + vbid);
+    }
+
+    public CouchbaseBucketConfig config() {
+        return configProvider.config();
+    }
+
+    public Completable establishDcpConnections() {
+        return reconfigure();
+    }
+
+    public DcpChannel getChannel(short vbid) {
+        return masterChannelByPartition(vbid);
+    }
+
+    public void reset() {
+    }
 }

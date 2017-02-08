@@ -92,7 +92,7 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
         pipeline
             .addLast(new AuthHandler(environment.bucket(), environment.password()))
             .addLast(new DcpConnectHandler(environment.connectionNameGenerator()))
-            .addLast(new DcpControlHandler(environment.dcpControl()))
+            .addLast(new DcpNegotiationHandler(environment.dcpControl()))
             .addLast(new DcpMessageHandler(environment.dataEventHandler(), controlEvents));
     }
 }

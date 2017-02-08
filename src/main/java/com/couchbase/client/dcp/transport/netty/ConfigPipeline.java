@@ -15,9 +15,9 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
-import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.dcp.conductor.IConfigurable;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.SSLEngineFactory;
 import com.couchbase.client.deps.io.netty.channel.Channel;
@@ -27,7 +27,6 @@ import com.couchbase.client.deps.io.netty.handler.codec.http.HttpClientCodec;
 import com.couchbase.client.deps.io.netty.handler.logging.LogLevel;
 import com.couchbase.client.deps.io.netty.handler.logging.LoggingHandler;
 import com.couchbase.client.deps.io.netty.handler.ssl.SslHandler;
-import rx.subjects.Subject;
 
 /**
  * Configures the pipeline for the HTTP config stream.
@@ -65,7 +64,7 @@ public class ConfigPipeline extends ChannelInitializer<Channel> {
     /**
      * The config stream where the configs are emitted into.
      */
-    private final Subject<CouchbaseBucketConfig, CouchbaseBucketConfig> configStream;
+    private final IConfigurable configurable;
     private final SSLEngineFactory sslEngineFactory;
 
     /**
@@ -76,11 +75,11 @@ public class ConfigPipeline extends ChannelInitializer<Channel> {
      * @param configStream config stream where to send the configs.
      */
     public ConfigPipeline(final ClientEnvironment environment, final String hostname,
-                          final Subject<CouchbaseBucketConfig, CouchbaseBucketConfig> configStream) {
+            final IConfigurable configurable) {
         this.hostname = hostname;
         this.bucket = environment.bucket();
         this.password = environment.password();
-        this.configStream = configStream;
+        this.configurable = configurable;
         this.environment = environment;
         if (environment.sslEnabled()) {
             this.sslEngineFactory = new SSLEngineFactory(environment);
@@ -107,10 +106,8 @@ public class ConfigPipeline extends ChannelInitializer<Channel> {
             pipeline.addLast(new LoggingHandler(LogLevel.TRACE));
         }
 
-        pipeline
-            .addLast(new HttpClientCodec())
-            .addLast(new StartStreamHandler(bucket, password))
-            .addLast(new ConfigHandler(hostname, configStream, environment));
+        pipeline.addLast(new HttpClientCodec()).addLast(new StartStreamHandler(bucket, password))
+                .addLast(new ConfigHandler(hostname, configurable, environment));
     }
 
 }

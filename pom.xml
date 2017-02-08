@@ -11,9 +11,8 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <java-compat.version>1.6</java-compat.version>
-        <core.version>1.4.1-SNAPSHOT</core.version>
-        <client.version>2.4.1-SNAPSHOT</client.version>
+        <core.version>1.4.1</core.version>
+        <client.version>2.4.1</client.version>
     </properties>
 
     <name>Couchbase Java DCP Client</name>
@@ -24,42 +23,6 @@
         <name>Couchbase, Inc.</name>
         <url>http://couchbase.com</url>
     </organization>
-
-    <licenses>
-        <license>
-            <name>The Apache Software License, Version 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-            <distribution>repo</distribution>
-        </license>
-    </licenses>
-
-    <scm>
-        <url>https://github.com/couchbase/java-dcp-client</url>
-        <connection>
-            scm:git:git://github.com/couchbase/java-dcp-client
-        </connection>
-        <developerConnection>
-            scm:git:git://github.com/couchbase/java-dcp-client
-        </developerConnection>
-    </scm>
-
-    <issueManagement>
-        <system>Couchbase JIRA</system>
-        <url>http://www.couchbase.com/issues/browse/JDCP</url>
-    </issueManagement>
-
-    <developers>
-        <developer>
-            <id>daschl</id>
-            <name>Michael Nitschinger</name>
-            <email>michael.nitschinger@couchbase.com</email>
-        </developer>
-        <developer>
-            <id>avsej</id>
-            <name>Sergey Avseyev</name>
-            <email>sergey@couchbase.com</email>
-        </developer>
-    </developers>
 
     <dependencies>
         <!-- Exposed, Required Dependencies -->
@@ -120,8 +83,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.3</version>
                 <configuration>
-                    <source>${java-compat.version}</source>
-                    <target>${java-compat.version}</target>
+                    <source>1.8</source>
+                    <target>1.8</target>
                 </configuration>
             </plugin>
             <plugin>
@@ -141,27 +104,6 @@
                                 <source>${test-source-directory}</source>
                             </sources>
                         </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>animal-sniffer-maven-plugin</artifactId>
-                <version>1.14</version>
-                <configuration>
-                    <signature>
-                        <groupId>org.codehaus.mojo.signature</groupId>
-                        <artifactId>java16</artifactId>
-                        <version>1.0</version>
-                    </signature>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>ensure-java-1.6-class-library</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
                     </execution>
                 </executions>
             </plugin>

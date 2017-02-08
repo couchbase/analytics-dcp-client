@@ -17,6 +17,7 @@ package com.couchbase.client.dcp.transport.netty;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.parser.BucketConfigParser;
+import com.couchbase.client.dcp.conductor.IConfigurable;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
@@ -24,6 +25,7 @@ import com.couchbase.client.deps.io.netty.channel.SimpleChannelInboundHandler;
 import com.couchbase.client.deps.io.netty.handler.codec.http.HttpContent;
 import com.couchbase.client.deps.io.netty.handler.codec.http.HttpObject;
 import com.couchbase.client.deps.io.netty.util.CharsetUtil;
+
 import rx.subjects.Subject;
 
 /**
@@ -43,7 +45,7 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
     /**
      * The config stream where the configs are emitted into.
      */
-    private final Subject<CouchbaseBucketConfig, CouchbaseBucketConfig> configStream;
+    private final IConfigurable configurable;
     private final ClientEnvironment environment;
 
     /**
@@ -58,10 +60,9 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
      * @param configStream config stream where to send the configs.
      * @param environment  the environment.
      */
-    ConfigHandler(final String hostname,
-                  final Subject<CouchbaseBucketConfig, CouchbaseBucketConfig> configStream, ClientEnvironment environment) {
+    ConfigHandler(final String hostname, IConfigurable configurable, ClientEnvironment environment) {
         this.hostname = hostname;
-        this.configStream = configStream;
+        this.configurable = configurable;
         this.environment = environment;
     }
 
@@ -72,7 +73,9 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
     protected void channelRead0(final ChannelHandlerContext ctx, final HttpObject msg) throws Exception {
         if (msg instanceof HttpContent) {
             HttpContent content = (HttpContent) msg;
-            decodeChunk(content.content());
+            if (decodeChunk(content.content())) {
+                ctx.close();
+            }
         }
     }
 
@@ -81,21 +84,17 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
      *
      * @param chunk the chunk to analyze.
      */
-    private void decodeChunk(final ByteBuf chunk) {
+    private boolean decodeChunk(final ByteBuf chunk) {
         responseContent.writeBytes(chunk);
 
         String currentChunk = responseContent.toString(CharsetUtil.UTF_8);
         int separatorIndex = currentChunk.indexOf("\n\n\n\n");
         if (separatorIndex > 0) {
-            String rawConfig = currentChunk
-                    .substring(0, separatorIndex)
-                    .trim()
-                    .replace("$HOST", hostname);
-
-            configStream.onNext((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment));
-            responseContent.clear();
-            responseContent.writeBytes(currentChunk.substring(separatorIndex + 4).getBytes(CharsetUtil.UTF_8));
+            String rawConfig = currentChunk.substring(0, separatorIndex).trim().replace("$HOST", hostname);
+            configurable.configure((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment));
+            return true;
         }
+        return false;
     }
 
     /**

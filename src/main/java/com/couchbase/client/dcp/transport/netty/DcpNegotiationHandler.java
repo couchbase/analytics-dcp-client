@@ -34,7 +34,7 @@ import java.util.Map;
  * @author Michael Nitschinger
  * @since 1.0.0
  */
-public class DcpControlHandler extends ConnectInterceptingHandler<ByteBuf> {
+public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
 
     /**
      * Status indicating a successful negotiation of one control param.
@@ -44,7 +44,7 @@ public class DcpControlHandler extends ConnectInterceptingHandler<ByteBuf> {
     /**
      * The logger used.
      */
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpControlHandler.class);
+    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpNegotiationHandler.class);
 
     /**
      * Stores an iterator over the control settings that need to be negotiated.
@@ -56,7 +56,7 @@ public class DcpControlHandler extends ConnectInterceptingHandler<ByteBuf> {
      *
      * @param dcpControl the options set by the caller which should be negotiated.
      */
-    DcpControlHandler(final DcpControl dcpControl) {
+    DcpNegotiationHandler(final DcpControl dcpControl) {
         controlSettings = dcpControl.iterator();
     }
 
