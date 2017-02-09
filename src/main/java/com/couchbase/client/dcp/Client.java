@@ -211,7 +211,6 @@ public class Client {
      * @return a {@link Completable} signaling that the connect phase has been completed or failed.
      */
     public Completable connect() {
-        validateConnect();
         if (!conductor.disconnected()) {
             LOGGER.debug("Ignoring duplicate connect attempt, already connecting/connected.");
             return Completable.complete();
@@ -222,7 +221,7 @@ public class Client {
                 .andThen(Completable.error(new BootstrapException("Could not connect to Cluster/Bucket", throwable))));
     }
 
-    private void validateConnect() {
+    private void validateStream() {
         if (env.dataEventHandler() == null) {
             throw new IllegalArgumentException("A DataEventHandler needs to be provided!");
         }
@@ -258,6 +257,7 @@ public class Client {
      * @return a {@link Completable} indicating that streaming has started or failed.
      */
     public Completable startStreaming(short... vbids) {
+        validateStream();
         int numPartitions = numPartitions();
         final List<Short> partitions = partitionsForVbids(numPartitions, vbids);
         ensureInitialized(partitions);
