@@ -1,35 +1,35 @@
 /*
- * Copyright (c) 2016 Couchbase, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright (c) 2016-2017 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.transport.netty;
+
+import java.io.IOException;
+
+import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.CallbackHandler;
+import javax.security.auth.callback.NameCallback;
+import javax.security.auth.callback.PasswordCallback;
+import javax.security.auth.callback.UnsupportedCallbackException;
+import javax.security.sasl.SaslClient;
 
 import com.couchbase.client.core.endpoint.kv.AuthenticationException;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.security.sasl.Sasl;
-import com.couchbase.client.dcp.message.*;
+import com.couchbase.client.dcp.message.MessageUtil;
+import com.couchbase.client.dcp.message.SaslAuthRequest;
+import com.couchbase.client.dcp.message.SaslAuthResponse;
+import com.couchbase.client.dcp.message.SaslListMechsRequest;
+import com.couchbase.client.dcp.message.SaslListMechsResponse;
+import com.couchbase.client.dcp.message.SaslStepRequest;
+import com.couchbase.client.dcp.message.SaslStepResponse;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.Unpooled;
-import com.couchbase.client.deps.io.netty.channel.*;
+import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
+import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
 import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.deps.io.netty.util.concurrent.Future;
 import com.couchbase.client.deps.io.netty.util.concurrent.GenericFutureListener;
-
-import javax.security.auth.callback.*;
-import javax.security.sasl.SaslClient;
-import java.io.IOException;
 
 /**
  * Performs SASL authentication against the socket and once complete removes itself.
@@ -78,8 +78,10 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
     /**
      * Creates a new auth handler.
      *
-     * @param username user/bucket name.
-     * @param password password of the user/bucket.
+     * @param username
+     *            user/bucket name.
+     * @param password
+     *            password of the user/bucket.
      */
     AuthHandler(final String username, final String password) {
         this.username = username;
@@ -196,7 +198,7 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
         saslClient = Sasl.createSaslClient(supportedMechanisms, null, "couchbase", remote, null, this);
         selectedMechanism = saslClient.getMechanismName();
 
-        byte[] bytePayload = saslClient.hasInitialResponse() ? saslClient.evaluateChallenge(new byte[]{}) : null;
+        byte[] bytePayload = saslClient.hasInitialResponse() ? saslClient.evaluateChallenge(new byte[] {}) : null;
         ByteBuf payload = bytePayload != null ? ctx.alloc().buffer().writeBytes(bytePayload) : Unpooled.EMPTY_BUFFER;
 
         ByteBuf request = ctx.alloc().buffer();

@@ -1,26 +1,14 @@
 /*
- * Copyright (c) 2016 Couchbase, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright (c) 2016-2017 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.transport.netty;
 
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.SSLEngineFactory;
 import com.couchbase.client.dcp.message.MessageUtil;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.Channel;
 import com.couchbase.client.deps.io.netty.channel.ChannelInitializer;
 import com.couchbase.client.deps.io.netty.channel.ChannelPipeline;
@@ -28,7 +16,6 @@ import com.couchbase.client.deps.io.netty.handler.codec.LengthFieldBasedFrameDec
 import com.couchbase.client.deps.io.netty.handler.logging.LogLevel;
 import com.couchbase.client.deps.io.netty.handler.logging.LoggingHandler;
 import com.couchbase.client.deps.io.netty.handler.ssl.SslHandler;
-import rx.subjects.Subject;
 
 /**
  * Sets up the pipeline for the actual DCP communication channels.
@@ -51,18 +38,20 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
     /**
      * The observable where all the control events are fed into for advanced handling up the stack.
      */
-    private final Subject<ByteBuf, ByteBuf> controlEvents;
+    private final ControlEventHandler controlHandler;
     private final SSLEngineFactory sslEngineFactory;
 
     /**
      * Creates the pipeline.
      *
-     * @param environment the stateful environment.
-     * @param controlEvents the control event observable.
+     * @param environment
+     *            the stateful environment.
+     * @param controlHandler
+     *            the control event observable.
      */
-    public DcpPipeline(final ClientEnvironment environment, final Subject<ByteBuf, ByteBuf> controlEvents) {
+    public DcpPipeline(final ClientEnvironment environment, final ControlEventHandler controlHandler) {
         this.environment = environment;
-        this.controlEvents = controlEvents;
+        this.controlHandler = controlHandler;
         if (environment.sslEnabled()) {
             this.sslEngineFactory = new SSLEngineFactory(environment);
         } else {
@@ -81,18 +70,16 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
         if (environment.sslEnabled()) {
             pipeline.addLast(new SslHandler(sslEngineFactory.get()));
         }
-        pipeline.addLast(new LengthFieldBasedFrameDecoder(
-            Integer.MAX_VALUE, MessageUtil.BODY_LENGTH_OFFSET, 4, 12, 0, false
-        ));
+        pipeline.addLast(
+                new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, MessageUtil.BODY_LENGTH_OFFSET, 4, 12, 0, false));
 
         if (LOGGER.isTraceEnabled()) {
             pipeline.addLast(new LoggingHandler(LogLevel.TRACE));
         }
 
-        pipeline
-            .addLast(new AuthHandler(environment.bucket(), environment.password()))
-            .addLast(new DcpConnectHandler(environment.connectionNameGenerator()))
-            .addLast(new DcpNegotiationHandler(environment.dcpControl()))
-            .addLast(new DcpMessageHandler(environment.dataEventHandler(), controlEvents));
+        pipeline.addLast(new AuthHandler(environment.bucket(), environment.password()))
+                .addLast(new DcpConnectHandler(environment.connectionNameGenerator()))
+                .addLast(new DcpNegotiationHandler(environment.dcpControl()))
+                .addLast(new DcpMessageHandler(environment.dataEventHandler(), controlHandler));
     }
 }

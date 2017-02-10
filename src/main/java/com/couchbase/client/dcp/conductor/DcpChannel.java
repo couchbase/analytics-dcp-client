@@ -1,56 +1,26 @@
 /*
  * Copyright (c) 2016-2017 Couchbase, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  */
 package com.couchbase.client.dcp.conductor;
 
-import static com.couchbase.client.dcp.util.retry.RetryBuilder.any;
-
 import java.net.InetAddress;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicIntegerArray;
 
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
-import com.couchbase.client.core.state.AbstractStateMachine;
-import com.couchbase.client.core.state.LifecycleState;
 import com.couchbase.client.core.state.NotConnectedException;
-import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
-import com.couchbase.client.dcp.error.RollbackException;
-import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpBufferAckRequest;
 import com.couchbase.client.dcp.message.DcpCloseStreamRequest;
-import com.couchbase.client.dcp.message.DcpCloseStreamResponse;
 import com.couchbase.client.dcp.message.DcpFailoverLogRequest;
-import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosRequest;
-import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamRequest;
-import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
-import com.couchbase.client.dcp.message.DcpStreamEndMessage;
-import com.couchbase.client.dcp.message.MessageUtil;
-import com.couchbase.client.dcp.message.RollbackMessage;
-import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.message.VbucketState;
 import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.DcpPipeline;
 import com.couchbase.client.deps.io.netty.bootstrap.Bootstrap;
@@ -63,695 +33,230 @@ import com.couchbase.client.deps.io.netty.channel.Channel;
 import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
 import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
 import com.couchbase.client.deps.io.netty.channel.ChannelOption;
-import com.couchbase.client.deps.io.netty.channel.ChannelPromise;
-import com.couchbase.client.deps.io.netty.util.concurrent.DefaultPromise;
-import com.couchbase.client.deps.io.netty.util.concurrent.Future;
-import com.couchbase.client.deps.io.netty.util.concurrent.GenericFutureListener;
-import com.couchbase.client.deps.io.netty.util.concurrent.Promise;
-
-import rx.Completable;
-import rx.Completable.OnSubscribe;
-import rx.CompletableSubscriber;
-import rx.Subscriber;
-import rx.Subscription;
-import rx.subjects.PublishSubject;
-import rx.subjects.Subject;
 
 /**
  * Logical representation of a DCP cluster connection.
  *
  * The equals and hashcode are based on the {@link InetAddress}.
  */
-public class DcpChannel extends AbstractStateMachine<LifecycleState> {
-    private static final AtomicInteger OPAQUE = new AtomicInteger(0);
+public class DcpChannel {
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpChannel.class);
+    private static final AtomicInteger OPAQUE = new AtomicInteger(0);
+    private volatile State state;
     private final ClientEnvironment env;
     private final InetAddress inetAddress;
-    private final Subject<ByteBuf, ByteBuf> controlSubject;
-    private final Map<Integer, Promise<?>> outstandingPromises;
-    private final Map<Integer, Short> outstandingVbucketInfos;
-    private final AtomicIntegerArray openStreams;
-    private final boolean needsBufferAck;
-    private final int bufferAckWatermark;
+    private final Map<Integer, Short> vbuckets;
+    private final boolean[] failoverLogRequests;
+    private final boolean[] openStreams;
+    private final boolean ackEnabled;
+    private volatile int ackCounter;
+    private final int ackWatermark;
     private final Conductor conductor;
-    private volatile boolean isShutdown;
-    private volatile int bufferAckCounter;
+    private final DcpChannelControlMessageHandler controlHandler;
     private volatile Channel channel;
-    private volatile ChannelFuture connectFuture;
+
+    private final DcpChannelConnectListener connectListener;
+    private final DcpChannelCloseListener closeListener;
 
     public DcpChannel(InetAddress inetAddress, final ClientEnvironment env, final Conductor conductor) {
-        super(LifecycleState.DISCONNECTED);
+        setState(State.DISCONNECTED);
         this.inetAddress = inetAddress;
         this.env = env;
         this.conductor = conductor;
-        this.outstandingPromises = new ConcurrentHashMap<>();
-        this.outstandingVbucketInfos = new ConcurrentHashMap<>();
-        this.controlSubject = PublishSubject.<ByteBuf> create().toSerialized();
-        this.openStreams = new AtomicIntegerArray(conductor.config().numberOfPartitions());
-        this.needsBufferAck = env.dcpControl().bufferAckEnabled();
-        this.isShutdown = false;
-
-        this.bufferAckCounter = 0;
-        if (needsBufferAck) {
-            int bufferAckPercent = env.bufferAckWatermark();
+        this.vbuckets = new ConcurrentHashMap<>();
+        this.failoverLogRequests = new boolean[conductor.config().numberOfPartitions()];
+        this.controlHandler = new DcpChannelControlMessageHandler(this);
+        this.openStreams = new boolean[conductor.config().numberOfPartitions()];
+        this.ackEnabled = env.dcpControl().ackEnabled();
+        this.ackCounter = 0;
+        if (ackEnabled) {
+            int bufferAckPercent = env.ackWaterMark();
             int bufferSize = Integer.parseInt(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
-            this.bufferAckWatermark = (int) Math.round(bufferSize / 100.0 * bufferAckPercent);
-            LOGGER.debug("BufferAckWatermark absolute is {}", bufferAckWatermark);
+            this.ackWatermark = (int) Math.round(bufferSize / 100.0 * bufferAckPercent);
+            LOGGER.debug("BufferAckWatermark absolute is {}", ackWatermark);
         } else {
-            this.bufferAckWatermark = 0;
+            this.ackWatermark = 0;
         }
-
-        this.controlSubject.filter(buf -> {
-            if (DcpOpenStreamResponse.is(buf)) {
-                return filterOpenStreamResponse(buf);
-            } else if (DcpFailoverLogResponse.is(buf)) {
-                return filterFailoverLogResponse(buf);
-            } else if (DcpStreamEndMessage.is(buf)) {
-                return filterDcpStreamEndMessage(buf);
-            } else if (DcpCloseStreamResponse.is(buf)) {
-                return filterDcpCloseStreamResponse(buf);
-            } else if (DcpGetPartitionSeqnosResponse.is(buf)) {
-                return filterDcpGetPartitionSeqnosResponse(buf);
-            } else if (RollbackMessage.is(buf)) {
-                return filterRollbackMessage(buf);
-            }
-            return true;
-        }).subscribe(new Subscriber<ByteBuf>() {
-            @Override
-            public void onCompleted() {
-                /* Ignoring on purpose. */}
-
-            @Override
-            public void onError(Throwable e) {
-                /* Ignoring on purpose. */ }
-
-            @Override
-            public void onNext(ByteBuf buf) {
-                env.controlEventHandler().onEvent(buf);
-            }
-        });
+        this.connectListener = new DcpChannelConnectListener(this);
+        this.closeListener = new DcpChannelCloseListener(this);
     }
 
-    private Boolean filterRollbackMessage(ByteBuf buf) {
-        // we got a rollback request.
-        // note the
-        return false;
-    }
-
-    private boolean filterOpenStreamResponse(ByteBuf buf) {
-        try {
-            Promise<?> promise = outstandingPromises.remove(MessageUtil.getOpaque(buf));
-            short vbid = outstandingVbucketInfos.remove(MessageUtil.getOpaque(buf));
-            short status = MessageUtil.getStatus(buf);
-            switch (status) {
-                case 0x00:
-                    handleOpenStreamSuccess(promise, buf, vbid);
-                    break;
-                case 0x23:
-                    handleOpenStreamRollback(promise, buf, vbid);
-                    break;
-                case 0x07:
-                    promise.setFailure(new NotMyVbucketException());
-                    break;
-                default:
-                    promise.setFailure(new IllegalStateException("Unhandled Status: " + status));
-            }
-            return false;
-        } finally {
-            buf.release();
+    public void connect() throws Throwable {
+        if (getState() != State.DISCONNECTED) {
+            throw new IllegalArgumentException(
+                    "Dcp Channel is already connected or is trying to connect. State = " + getState().name());
         }
-    }
-
-    private void handleOpenStreamRollback(Promise<?> promise, ByteBuf buf, short vbid) {
-        promise.setFailure(new RollbackException());
-        ByteBuf rb = Unpooled.buffer();
-        RollbackMessage.init(rb, vbid, DcpOpenStreamResponse.rollbackSeqno(buf));
-        env.controlEventHandler().onEvent(rb);
-    }
-
-    private void handleOpenStreamSuccess(Promise<?> promise, ByteBuf buf, short vbid) {
-        promise.setSuccess(null);
-        // create a failover log message and emit
-        ByteBuf flog = Unpooled.buffer();
-        DcpFailoverLogResponse.init(flog);
-        DcpFailoverLogResponse.vbucket(flog, DcpOpenStreamResponse.vbucket(buf));
-        ByteBuf content = MessageUtil.getContent(buf).copy().writeShort(vbid);
-        MessageUtil.setContent(content, flog);
-        content.release();
-        env.controlEventHandler().onEvent(flog);
-    }
-
-    @SuppressWarnings("unchecked")
-    private boolean filterDcpGetPartitionSeqnosResponse(ByteBuf buf) {
-        try {
-            Promise<ByteBuf> promise = (Promise<ByteBuf>) outstandingPromises.remove(MessageUtil.getOpaque(buf));
-            promise.setSuccess(MessageUtil.getContent(buf).copy());
-            return false;
-        } finally {
-            buf.release();
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private boolean filterFailoverLogResponse(ByteBuf buf) {
-        try {
-            Promise<ByteBuf> promise = (Promise<ByteBuf>) outstandingPromises.remove(MessageUtil.getOpaque(buf));
-            short vbid = outstandingVbucketInfos.remove(MessageUtil.getOpaque(buf));
-
-            ByteBuf flog = Unpooled.buffer();
-            DcpFailoverLogResponse.init(flog);
-            DcpFailoverLogResponse.vbucket(flog, DcpFailoverLogResponse.vbucket(buf));
-
-            ByteBuf copiedBuf = MessageUtil.getContent(buf).copy().writeShort(vbid);
-            MessageUtil.setContent(copiedBuf, flog);
-            copiedBuf.release();
-            promise.setSuccess(flog);
-            return false;
-        } finally {
-            buf.release();
-        }
-    }
-
-    private boolean filterDcpStreamEndMessage(ByteBuf buf) {
-        try {
-            short vbid = DcpStreamEndMessage.vbucket(buf);
-            StreamEndReason reason = DcpStreamEndMessage.reason(buf);
-            LOGGER.debug("Server closed Stream on vbid {} with reason {}", vbid, reason);
-            if (env.eventBus() != null) {
-                env.eventBus().publish(new StreamEndEvent(vbid, reason));
-            }
-            openStreams.set(vbid, 0);
-            conductor.maybeMovePartition(vbid);
-            if (needsBufferAck) {
-                acknowledgeBuffer(buf.readableBytes());
-            }
-            return false;
-        } finally {
-            buf.release();
-        }
-    }
-
-    private boolean filterDcpCloseStreamResponse(ByteBuf buf) {
-        try {
-            Promise<?> promise = outstandingPromises.remove(MessageUtil.getOpaque(buf));
-            promise.setSuccess(null);
-            if (needsBufferAck) {
-                acknowledgeBuffer(buf.readableBytes());
-            }
-            return false;
-        } finally {
-            buf.release();
-        }
-    }
-
-    public Completable connect() {
-        if (isShutdown || state() != LifecycleState.DISCONNECTED) {
-            return Completable.error(new IllegalArgumentException("Dcp Channel was shutdown?(" + isShutdown
-                    + "), is already connected or is trying to connect. State = " + state().name()));
-        }
-        transitionState(LifecycleState.CONNECTING);
-        ByteBufAllocator allocator =
-                env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
-        final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
-                .remoteAddress(inetAddress, env.sslEnabled() ? env.dcpSslPort() : env.dcpDirectPort())
-                .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
-                .handler(new DcpPipeline(env, controlSubject)).group(env.eventLoopGroup());
-        connectFuture = bootstrap.connect();
-        connectFuture.addListener(new DcpChannelConnectListener());
-        return Completable
-                .create(subscriber -> connectFuture.addListener(new DcpChannelConnectSubscriber(subscriber)));
-    }
-
-    private class DcpChannelConnectSubscriber implements GenericFutureListener<ChannelFuture> {
-
-        private final CompletableSubscriber subscriber;
-
-        private DcpChannelConnectSubscriber(CompletableSubscriber subscriber) {
-            this.subscriber = subscriber;
-        }
-
-        @Override
-        public void operationComplete(ChannelFuture future) throws Exception {
-            if (future.isSuccess()) {
-                subscriber.onCompleted();
-            } else {
-                subscriber.onError(future.cause());
-            }
-        }
-    }
-
-    private class DcpChannelConnectListener implements GenericFutureListener<ChannelFuture> {
-
-        private DcpChannelConnectListener() {
-        }
-
-        @Override
-        public void operationComplete(ChannelFuture future) throws Exception {
-            if (future.isSuccess()) {
-                channel = future.channel();
-                if (isShutdown) {
-                    LOGGER.info("Connected Node {}, but got instructed to disconnect in " + "the meantime.",
-                            inetAddress);
-                    // isShutdown before we could finish the connect :/
-                    disconnect().subscribe(new CompletableSubscriber() {
-                        @Override
-                        public void onCompleted() {
-                        }
-
-                        @Override
-                        public void onError(Throwable e) {
-                            LOGGER.warn("Got error during disconnect.", e);
-                        }
-
-                        @Override
-                        public void onSubscribe(Subscription d) {
-                            // ignored.
-                        }
-                    });
+        setState(State.CONNECTING);
+        int attempts = 0;
+        Throwable failure = null;
+        while (attempts < env.dcpChannelsReconnectMaxAttempts() && getState() == State.CONNECTING) {
+            attempts++;
+            try {
+                ByteBufAllocator allocator =
+                        env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
+                final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
+                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
+                        .remoteAddress(inetAddress, env.sslEnabled() ? env.dcpSslPort() : env.dcpDirectPort())
+                        .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
+                        .handler(new DcpPipeline(env, controlHandler)).group(env.eventLoopGroup());
+                ChannelFuture connectFuture = bootstrap.connect();
+                connectListener.listen(connectFuture);
+            } catch (Throwable e) {
+                if (failure == null) {
+                    failure = e;
                 } else {
-                    transitionState(LifecycleState.CONNECTED);
-                    LOGGER.info("Connected to Node {}", inetAddress);
-                    // attach callback which listens on future close and dispatches a
-                    // reconnect if needed.
-                    channel.closeFuture().addListener(closeFuture -> {
-                        LOGGER.debug("Got notified of channel close on Node {}", inetAddress);
-                        transitionState(LifecycleState.DISCONNECTED);
-                        if (!isShutdown) {
-                            dispatchReconnect();
-                        }
-                        channel = null;
-                    });
+                    failure.addSuppressed(e);
                 }
-            } else {
-                LOGGER.info("Connect attempt to {} failed.", inetAddress, future.cause());
-                transitionState(LifecycleState.DISCONNECTED);
+                if (attempts == env.dcpChannelsReconnectMaxAttempts()) {
+                    throw failure; // NOSONAR failure is not nullable
+                }
+                // Wait between attempts
+                synchronized (this) {
+                    wait(200);
+                }
             }
         }
+        // attempt to restart the dropped streams
+        for (int i = 0; i < openStreams.length; i++) {
+            if (openStreams[i]) {
+                LOGGER.debug("Opening a stream that was dropped for vbucket " + i);
+                PartitionState ps = conductor.sessionState().get(i);
+                openStream((short) i, ps.getFailoverLog().get(0).getUuid(), ps.getSeqno(), SessionState.NO_END_SEQNO,
+                        ps.getSeqno(), ps.getSeqno());
+            }
+        }
+        for (int i = 0; i < failoverLogRequests.length; i++) {
+            if (failoverLogRequests[i]) {
+                LOGGER.debug("Re requesting failover logs for vbucket " + i);
+                getFailoverLog((short) i);
+            }
+        }
+    }
 
-        private void dispatchReconnect() {
-            if (isShutdown) {
-                LOGGER.debug("Ignoring reconnect on {} because already shutdown.", inetAddress);
+    public State getState() {
+        return state;
+    }
+
+    public synchronized void setState(State state) {
+        this.state = state;
+        notifyAll();
+    }
+
+    public synchronized void wait(State state) throws InterruptedException {
+        while (this.state != state) {
+            wait();
+        }
+    }
+
+    public void disconnect() throws InterruptedException {
+        switch (getState()) {
+            case CONNECTED:
+            case CONNECTING:
+                setState(State.DISCONNECTING);
+                channel.close();
+                break;
+            case DISCONNECTED:
                 return;
-            }
-            LOGGER.info("Node {} socket closed, initiating reconnect.", inetAddress);
-            connect()
-                    .retryWhen(any().max(Integer.MAX_VALUE).delay(Delay.exponential(TimeUnit.MILLISECONDS, 4096, 32))
-                            .doOnRetry((integer, throwable, aLong, timeUnit) -> LOGGER
-                                    .debug("Rescheduling Node reconnect for DCP channel {}", inetAddress))
-                            .build())
-                    .subscribe(new DcpNodeReconnectionListener());
+            default:
+                break;
         }
-
-        public class DcpNodeReconnectionListener implements CompletableSubscriber {
-            @Override
-            public void onCompleted() {
-                LOGGER.debug("Completed Node connect for DCP channel {}", inetAddress);
-                for (short vbid = 0; vbid < openStreams.length(); vbid++) {
-                    if (openStreams.get(vbid) != 0) {
-                        conductor.maybeMovePartition(vbid);
-                    }
-                }
-            }
-
-            @Override
-            public void onError(Throwable e) {
-                LOGGER.warn("Got error during connect (maybe retried) for node {}" + inetAddress, e);
-            }
-
-            @Override
-            public void onSubscribe(Subscription d) {
-                // ignored.
-            }
-        }
-    }
-
-    public boolean isShutdown() {
-        return isShutdown;
-    }
-
-    private class ChannelFutureNotifier implements OnSubscribe {
-        private final ChannelFuture future;
-
-        public ChannelFutureNotifier(ChannelFuture future) {
-            this.future = future;
-        }
-
-        @Override
-        public void call(CompletableSubscriber subscriber) {
-            future.addListener(chFuture -> {
-                if (chFuture.isSuccess()) {
-                    subscriber.onCompleted();
-                } else {
-                    subscriber.onError(chFuture.cause());
-                }
-            });
-        }
-    }
-
-    private class ChannelFutureCloser implements OnSubscribe, ChannelFutureListener {
-
-        private List<CompletableSubscriber> subscribers = new ArrayList<>();
-        private ChannelFuture closeFuture;
-
-        private ChannelFutureCloser(ChannelFuture connectFuture) {
-            connectFuture.addListener(this);
-        }
-
-        @Override
-        public synchronized void operationComplete(ChannelFuture future) throws Exception {
-            if (future.isSuccess()) {
-                closeFuture = future.channel().close();
-            } else {
-                closeFuture = future.channel().newSucceededFuture();
-            }
-            for (CompletableSubscriber subscriber : subscribers) {
-                call(subscriber);
-            }
-            subscribers = null;
-        }
-
-        @Override
-        public synchronized void call(CompletableSubscriber subscriber) {
-            if (closeFuture != null) {
-                if (closeFuture.isSuccess()) {
-                    subscriber.onCompleted();
-                } else {
-                    subscriber.onError(closeFuture.cause());
-                }
-            } else {
-                subscribers.add(subscriber);
-            }
-        }
-    }
-
-    private class Disconnection implements OnSubscribe {
-
-        private final OnSubscribe notifier;
-
-        private Disconnection() {
-            isShutdown = true;
-            ChannelFuture curConnectFuture = connectFuture;
-            if (channel != null) {
-                transitionState(LifecycleState.DISCONNECTING);
-                bufferAckCounter = 0;
-                ChannelFuture future = channel.close();
-                notifier = new ChannelFutureNotifier(future);
-            } else if (curConnectFuture != null) {
-                notifier = new ChannelFutureCloser(curConnectFuture);
-            } else {
-                notifier = null;
-            }
-        }
-
-        @Override
-        public void call(CompletableSubscriber subscriber) {
-            if (notifier == null) {
-                subscriber.onCompleted();
-            } else {
-                notifier.call(subscriber);
-            }
-        }
-    }
-
-    public Completable disconnect() {
-        return Completable.create(new Disconnection());
+        ackCounter = 0;
+        wait(State.DISCONNECTED);
     }
 
     public InetAddress hostname() {
         return inetAddress;
     }
 
-    public void acknowledgeBuffer(final int numBytes) {
-        if (state() != LifecycleState.CONNECTED) {
-            throw new NotConnectedException(new NotConnectedException());
+    public synchronized void acknowledgeBuffer(final int numBytes) {
+        if (getState() != State.CONNECTED) {
+            return;
         }
         LOGGER.trace("Acknowledging {} bytes against connection {}.", numBytes, channel.remoteAddress());
-        bufferAckCounter += numBytes;
-        LOGGER.trace("BufferAckCounter is now {}", bufferAckCounter);
-        if (bufferAckCounter >= bufferAckWatermark) {
+        ackCounter += numBytes;
+        LOGGER.trace("BufferAckCounter is now {}", ackCounter);
+        if (ackCounter >= ackWatermark) {
             LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.", channel.remoteAddress());
             ByteBuf buffer = Unpooled.buffer();
             DcpBufferAckRequest.init(buffer);
-            DcpBufferAckRequest.ackBytes(buffer, bufferAckCounter);
+            DcpBufferAckRequest.ackBytes(buffer, ackCounter);
             channel.writeAndFlush(buffer);
-            bufferAckCounter = 0;
+            ackCounter = 0;
         }
     }
 
-    private class OpenStream implements OnSubscribe {
-        private final NotConnectedException cause;
-        private final ChannelPromise promise;
-
-        private OpenStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,
-                final long snapshotStartSeqno, final long snapshotEndSeqno) {
-            if (state() != LifecycleState.CONNECTED) {
-                cause = new NotConnectedException();
-                promise = null;
-            } else {
-                cause = null;
-                LOGGER.debug(
-                        "Opening Stream against {} with vbid: {}, vbuuid: {}, startSeqno: {}, "
-                                + "endSeqno: {},  snapshotStartSeqno: {}, snapshotEndSeqno: {}",
-                        channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno,
-                        snapshotEndSeqno);
-                conductor.getSessionState().get(vbid).setState(PartitionState.CONNECTING);
-                int opaque = OPAQUE.incrementAndGet();
-                promise = channel.newPromise();
-
-                ByteBuf buffer = Unpooled.buffer();
-                DcpOpenStreamRequest.init(buffer, vbid);
-                DcpOpenStreamRequest.opaque(buffer, opaque);
-                DcpOpenStreamRequest.vbuuid(buffer, vbuuid);
-                DcpOpenStreamRequest.startSeqno(buffer, startSeqno);
-                DcpOpenStreamRequest.endSeqno(buffer, endSeqno);
-                DcpOpenStreamRequest.snapshotStartSeqno(buffer, snapshotStartSeqno);
-                DcpOpenStreamRequest.snapshotEndSeqno(buffer, snapshotEndSeqno);
-                outstandingPromises.put(opaque, promise);
-                outstandingVbucketInfos.put(opaque, vbid);
-                channel.writeAndFlush(buffer);
-                promise.addListener(future -> {
-                    if (future.isSuccess()) {
-                        LOGGER.debug("Opened Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
-                        openStreams.set(vbid, 1);
-                        conductor.getSessionState().get(vbid).setState(PartitionState.CONNECTED);
-                    } else {
-                        LOGGER.debug("Failed open Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
-                        openStreams.set(vbid, 0);
-                        conductor.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-                    }
-                });
-            }
+    public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno,
+            final long endSeqno, final long snapshotStartSeqno, final long snapshotEndSeqno) {
+        LOGGER.debug("opening stream for " + vbid);
+        if (getState() != State.CONNECTED) {
+            throw new NotConnectedException();
         }
-
-        @Override
-        public void call(CompletableSubscriber subscriber) {
-            if (cause != null) {
-                subscriber.onError(cause);
-            } else {
-                promise.addListener(future -> {
-                    if (future.isSuccess()) {
-                        subscriber.onCompleted();
-                    } else {
-                        subscriber.onError(future.cause());
-                    }
-                });
-            }
-        }
+        LOGGER.debug(
+                "Opening Stream against {} with vbid: {}, vbuuid: {}, startSeqno: {}, "
+                        + "endSeqno: {},  snapshotStartSeqno: {}, snapshotEndSeqno: {}",
+                channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno, snapshotEndSeqno);
+        conductor.getSessionState().get(vbid).setState(PartitionState.CONNECTING);
+        int opaque = OPAQUE.incrementAndGet();
+        ByteBuf buffer = Unpooled.buffer();
+        DcpOpenStreamRequest.init(buffer, vbid);
+        DcpOpenStreamRequest.opaque(buffer, opaque);
+        DcpOpenStreamRequest.vbuuid(buffer, vbuuid);
+        DcpOpenStreamRequest.startSeqno(buffer, startSeqno);
+        DcpOpenStreamRequest.endSeqno(buffer, endSeqno);
+        DcpOpenStreamRequest.snapshotStartSeqno(buffer, snapshotStartSeqno);
+        DcpOpenStreamRequest.snapshotEndSeqno(buffer, snapshotEndSeqno);
+        vbuckets.put(opaque, vbid);
+        channel.writeAndFlush(buffer);
     }
 
-    public Completable openStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,
-            final long snapshotStartSeqno, final long snapshotEndSeqno) {
-        return Completable
-                .create(new OpenStream(vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno, snapshotEndSeqno));
-    }
-
-    private class CloseStream implements OnSubscribe {
-        private final NotConnectedException cause;
-        private final ChannelPromise promise;
-
-        public CloseStream(short vbid) {
-            if (state() != LifecycleState.CONNECTED) {
-                cause = new NotConnectedException();
-                promise = null;
-                return;
-            } else {
-                cause = null;
-                LOGGER.debug("Closing Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
-                int opaque = OPAQUE.incrementAndGet();
-                promise = channel.newPromise();
-                ByteBuf buffer = Unpooled.buffer();
-                DcpCloseStreamRequest.init(buffer);
-                DcpCloseStreamRequest.vbucket(buffer, vbid);
-                DcpCloseStreamRequest.opaque(buffer, opaque);
-                outstandingPromises.put(opaque, promise);
-                channel.writeAndFlush(buffer);
-                promise.addListener(future -> {
-                    openStreams.set(vbid, 0);
-                    conductor.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-                    if (future.isSuccess()) {
-                        LOGGER.debug("Closed Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
-                    } else {
-                        LOGGER.debug("Failed close Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
-                    }
-                });
-            }
+    public synchronized void closeStream(final short vbid) {
+        if (getState() != State.CONNECTED) {
+            throw new NotConnectedException();
         }
-
-        @Override
-        public void call(CompletableSubscriber subscriber) {
-            if (cause != null) {
-                subscriber.onError(cause);
-            } else {
-                promise.addListener(future -> {
-                    if (future.isSuccess()) {
-                        subscriber.onCompleted();
-                    } else {
-                        subscriber.onError(future.cause());
-                    }
-                });
-            }
-        }
-    }
-
-    public Completable closeStream(final short vbid) {
-        return Completable.create(new CloseStream(vbid));
-    }
-
-    private class GetSeqno implements OnSubscribe {
-        private final Throwable cause;
-        private final Promise<ByteBuf> promise;
-
-        private GetSeqno() {
-            if (state() != LifecycleState.CONNECTED) {
-                cause = new NotConnectedException();
-                promise = null;
-                return;
-            } else {
-                cause = null;
-                int opaque = OPAQUE.incrementAndGet();
-                promise = new DefaultPromise<>(channel.eventLoop());
-                ByteBuf buffer = Unpooled.buffer();
-                DcpGetPartitionSeqnosRequest.init(buffer);
-                DcpGetPartitionSeqnosRequest.opaque(buffer, opaque);
-                DcpGetPartitionSeqnosRequest.vbucketState(buffer, VbucketState.ACTIVE);
-                outstandingPromises.put(opaque, promise);
-                channel.writeAndFlush(buffer);
-                promise.addListener((Future<ByteBuf> future) -> {
-                    if (future.isSuccess()) {
-                        try {
-                            update(future.getNow());
-                        } finally {
-                            future.getNow().release();
-                        }
-                    } else {
-                        LOGGER.debug("Failed to ask for seqnos log on {} ", channel.remoteAddress());
-                    }
-                });
-            }
-        }
-
-        private void update(ByteBuf buf) {
-            // update max seqnos
-            int size = buf.readableBytes() / 10;
-            for (int i = 0; i < size; i++) {
-                int offset = i * 10;
-                short vbid = buf.getShort(offset);
-                long seq = buf.getLong(offset + Short.BYTES);
-                conductor.sessionState().get(vbid).setMaxSeqno(seq);
-            }
-        }
-
-        @Override
-        public void call(CompletableSubscriber t) {
-            if (cause != null) {
-                t.onError(cause);
-            } else {
-                promise.addListener(future -> {
-                    if (future.isSuccess()) {
-                        t.onCompleted();
-                    } else {
-                        t.onError(future.cause());
-                    }
-                });
-            }
-        }
-    }
-
-    /**
-     * Gets the complete failover log for the vbucket with the id = vbid
-     */
-    private class GetFailoverLog implements OnSubscribe, GenericFutureListener<Future<ByteBuf>> {
-        private final short vbid;
-        private final Throwable cause;
-        private final Promise<ByteBuf> promise;
-
-        private GetFailoverLog(short vbid) {
-            this.vbid = vbid;
-            if (state() != LifecycleState.CONNECTED) {
-                cause = new NotConnectedException();
-                promise = null;
-            } else {
-                cause = null;
-                int opaque = OPAQUE.incrementAndGet();
-                promise = new DefaultPromise<>(channel.eventLoop());
-                ByteBuf buffer = Unpooled.buffer();
-                DcpFailoverLogRequest.init(buffer);
-                DcpFailoverLogRequest.opaque(buffer, opaque);
-                DcpFailoverLogRequest.vbucket(buffer, vbid);
-                outstandingPromises.put(opaque, promise);
-                outstandingVbucketInfos.put(opaque, vbid);
-                channel.writeAndFlush(buffer);
-                LOGGER.debug("Asked for failover log on {} for vbid: {}", channel.remoteAddress(), vbid);
-                promise.addListener(this);
-            }
-        }
-
-        @Override
-        public void call(CompletableSubscriber subscriber) {
-            if (cause != null) {
-                subscriber.onError(cause);
-                return;
-            }
-            promise.addListener(future -> {
-                if (future.isSuccess()) {
-                    subscriber.onCompleted();
-                } else {
-                    subscriber.onError(future.cause());
-                }
-            });
-        }
-
-        @Override
-        public synchronized void operationComplete(Future<ByteBuf> future) throws Exception {
-            if (future.isSuccess()) {
-                try {
-                    LOGGER.debug("Failover log for vbid {} is {}", vbid,
-                            DcpFailoverLogResponse.toString(future.getNow()));
-                    DcpFailoverLogResponse.fill(future.getNow(),
-                            conductor.getSessionState().get(vbid).getFailoverLog());
-                } finally {
-                    future.getNow().release();
-                }
-            } else {
-                LOGGER.debug("Failed to ask for failover log on {} for vbid: {}", channel.remoteAddress(), vbid);
-            }
-        }
+        LOGGER.debug("Closing Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
+        conductor.getSessionState().get(vbid).setState(PartitionState.DISCONNECTING);
+        int opaque = OPAQUE.incrementAndGet();
+        ByteBuf buffer = Unpooled.buffer();
+        DcpCloseStreamRequest.init(buffer);
+        DcpCloseStreamRequest.vbucket(buffer, vbid);
+        DcpCloseStreamRequest.opaque(buffer, opaque);
+        vbuckets.put(opaque, vbid);
+        channel.writeAndFlush(buffer);
     }
 
     /**
      * Returns all seqnos for all vbuckets on that channel.
      */
-    public Completable getSeqnos() {
-        return Completable.create(new GetSeqno());
+    public synchronized void getSeqnos() {
+        if (getState() != State.CONNECTED) {
+            throw new NotConnectedException();
+        }
+        int opaque = OPAQUE.incrementAndGet();
+        ByteBuf buffer = Unpooled.buffer();
+        DcpGetPartitionSeqnosRequest.init(buffer);
+        DcpGetPartitionSeqnosRequest.opaque(buffer, opaque);
+        DcpGetPartitionSeqnosRequest.vbucketState(buffer, VbucketState.ACTIVE);
+        channel.writeAndFlush(buffer);
     }
 
-    public Completable getFailoverLog(final short vbid) {
-        return Completable.create(new GetFailoverLog(vbid));
+    public synchronized void getFailoverLog(final short vbid) {
+        LOGGER.debug("requesting failover logs for vbucket " + vbid);
+        if (getState() != State.CONNECTED) {
+            throw new NotConnectedException();
+        }
+        int opaque = OPAQUE.incrementAndGet();
+        ByteBuf buffer = Unpooled.buffer();
+        DcpFailoverLogRequest.init(buffer);
+        DcpFailoverLogRequest.opaque(buffer, opaque);
+        DcpFailoverLogRequest.vbucket(buffer, vbid);
+        vbuckets.put(opaque, vbid);
+        channel.writeAndFlush(buffer);
+        failoverLogRequests[vbid] = true;
+        LOGGER.debug("Asked for failover log on {} for vbid: {}", channel.remoteAddress(), vbid);
     }
 
     public boolean streamIsOpen(short vbid) {
-        return openStreams.get(vbid) == 1;
+        return openStreams[vbid];
     }
 
     // Seriously!?
@@ -773,5 +278,45 @@ public class DcpChannel extends AbstractStateMachine<LifecycleState> {
     @Override
     public String toString() {
         return "DcpChannel{inetAddress=" + inetAddress + '}';
+    }
+
+    public ClientEnvironment getEnv() {
+        return env;
+    }
+
+    public Map<Integer, Short> getVbuckets() {
+        return vbuckets;
+    }
+
+    public boolean[] openStreams() {
+        return openStreams;
+    }
+
+    public boolean ackEnabled() {
+        return ackEnabled;
+    }
+
+    public synchronized void setChannel(Channel channel) {
+        this.channel = channel;
+    }
+
+    public InetAddress getInetAddress() {
+        return inetAddress;
+    }
+
+    public ChannelFutureListener getCloseListener() {
+        return closeListener;
+    }
+
+    public synchronized void clear() {
+        vbuckets.clear();
+    }
+
+    public Conductor getConductor() {
+        return conductor;
+    }
+
+    public boolean[] getFailoverLogRequests() {
+        return failoverLogRequests;
     }
 }

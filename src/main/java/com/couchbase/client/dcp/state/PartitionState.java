@@ -6,15 +6,20 @@ package com.couchbase.client.dcp.state;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.couchbase.client.core.logging.CouchbaseLogger;
+import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+
 /**
  * Represents the individual current session state for a given partition.
  */
 public class PartitionState {
-
+    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(PartitionState.class);
     public static final long INVALID = -1L;
     public static final byte DISCONNECTED = 0x00;
     public static final byte CONNECTING = 0x02;
     public static final byte CONNECTED = 0x03;
+    public static final byte DISCONNECTING = 0x04;
+    public static final long RECOVERING = 0x05;
 
     /**
      * Stores the failover log for this partition.
@@ -31,6 +36,8 @@ public class PartitionState {
 
     private volatile byte state;
 
+    private volatile boolean failoverUpdated;
+
     private StreamRequest streamRequest;
 
     /**
@@ -40,6 +47,7 @@ public class PartitionState {
         this.vbid = vbid;
         failoverLog = new ArrayList<>();
         setState(DISCONNECTED);
+        failoverUpdated = false;
     }
 
     /**
@@ -79,8 +87,16 @@ public class PartitionState {
         return state;
     }
 
-    public void setState(byte state) {
+    public synchronized void setState(byte state) {
         this.state = state;
+        notifyAll();
+    }
+
+    public synchronized void wait(byte state) throws InterruptedException {
+        LOGGER.debug("Waiting until state is " + state);
+        while (this.state != state) {
+            wait();
+        }
     }
 
     public StreamRequest getStreamRequest() {
@@ -118,5 +134,23 @@ public class PartitionState {
     public String toString() {
         return "vbid = " + vbid + ", maxSeq = " + maxSeqno + ", seqno = " + seqno + ", state = " + state + ", uuid = "
                 + failoverLog.get(0).getUuid();
+    }
+
+    public synchronized void failoverUpdated() {
+        LOGGER.debug("Failover log updated");
+        failoverUpdated = true;
+        notifyAll();
+    }
+
+    public void failoverRequest() {
+        LOGGER.debug("Failover log requested");
+        failoverUpdated = false;
+    }
+
+    public synchronized void waitTillFailoverUpdated() throws InterruptedException {
+        LOGGER.debug("Waiting until failover log updated");
+        while (!failoverUpdated) {
+            wait();
+        }
     }
 }

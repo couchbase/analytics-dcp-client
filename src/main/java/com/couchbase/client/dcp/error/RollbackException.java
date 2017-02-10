@@ -1,3 +1,6 @@
+/*
+ * Copyright (c) 2016-2017 Couchbase, Inc.
+ */
 package com.couchbase.client.dcp.error;
 
 import com.couchbase.client.core.CouchbaseException;

@@ -1,32 +1,20 @@
 /*
- * Copyright (c) 2016 Couchbase, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright (c) 2016-2017 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.transport.netty;
+
+import java.util.Iterator;
+import java.util.Map;
 
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.config.DcpControl;
-import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.DcpControlRequest;
+import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.Unpooled;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
 import com.couchbase.client.deps.io.netty.util.CharsetUtil;
-
-import java.util.Iterator;
-import java.util.Map;
 
 /**
  * Negotiates DCP control flags once connected and removes itself afterwards.
@@ -54,7 +42,8 @@ public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
     /**
      * Create a new dcp control handler.
      *
-     * @param dcpControl the options set by the caller which should be negotiated.
+     * @param dcpControl
+     *            the options set by the caller which should be negotiated.
      */
     DcpNegotiationHandler(final DcpControl dcpControl) {
         controlSettings = dcpControl.iterator();

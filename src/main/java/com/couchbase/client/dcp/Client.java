@@ -8,14 +8,11 @@ import java.util.Collections;
 import java.util.List;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
-import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.conductor.Conductor;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
-import com.couchbase.client.dcp.error.BootstrapException;
-import com.couchbase.client.dcp.error.RollbackException;
 import com.couchbase.client.dcp.message.DcpDeletionMessage;
 import com.couchbase.client.dcp.message.DcpExpirationMessage;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
@@ -25,12 +22,10 @@ import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.RollbackMessage;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
-import com.couchbase.client.dcp.state.StateFormat;
 import com.couchbase.client.dcp.state.StreamRequest;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
 import rx.Completable;
 import rx.Observable;
@@ -61,7 +56,7 @@ public class Client {
     /**
      * If buffer acknowledgment is enabled.
      */
-    private final boolean bufferAckEnabled;
+    private final boolean ackEnabled;
 
     /**
      * Creates a new {@link Client} instance.
@@ -90,8 +85,8 @@ public class Client {
                 .setBootstrapHttpSslPort(builder.sslConfigPort()).setDcpDirectPort(builder.dcpPort())
                 .setDcpSslPort(builder.sslDcpPort()).setVbuckets(builder.vbuckets()).build();
 
-        bufferAckEnabled = env.dcpControl().bufferAckEnabled();
-        if (bufferAckEnabled && env.bufferAckWatermark() == 0) {
+        ackEnabled = env.dcpControl().ackEnabled();
+        if (ackEnabled && env.ackWaterMark() == 0) {
             throw new IllegalArgumentException("The bufferAckWatermark needs to be set if bufferAck is enabled.");
         }
 
@@ -117,8 +112,8 @@ public class Client {
      *
      * @return an {@link Observable} of sequence number arrays.
      */
-    public Completable getSeqnos() {
-        return conductor.getSeqnos();
+    public void getSequenceNumbers() {
+        conductor.getSeqnos();
     }
 
     /**
@@ -209,16 +204,15 @@ public class Client {
      * Initializes the underlying connections (not the streams) and sets up everything as needed.
      *
      * @return a {@link Completable} signaling that the connect phase has been completed or failed.
+     * @throws Throwable
      */
-    public Completable connect() {
+    public synchronized void connect() throws Throwable {
         if (!conductor.disconnected()) {
             LOGGER.debug("Ignoring duplicate connect attempt, already connecting/connected.");
-            return Completable.complete();
+            return;
         }
         LOGGER.info("Connecting to seed nodes and bootstrapping bucket {}.", env.bucket());
-        // connect the conductor (Only get the configurations)
-        return conductor.connect().onErrorResumeNext(throwable -> conductor.stop()
-                .andThen(Completable.error(new BootstrapException("Could not connect to Cluster/Bucket", throwable))));
+        conductor.connect();
     }
 
     private void validateStream() {
@@ -230,11 +224,6 @@ public class Client {
         }
     }
 
-    public Completable refresh() {
-        // refresh configurations only
-        return Completable.complete();
-    }
-
     /**
      * Disconnect the {@link Client} and shut down all its owned resources.
      *
@@ -242,9 +231,11 @@ public class Client {
      * separately after this disconnect process has finished.
      *
      * @return a {@link Completable} signaling that the disconnect phase has been completed or failed.
+     * @throws InterruptedException
      */
-    public Completable disconnect() {
-        return conductor.stop().andThen(env.shutdown());
+    public synchronized void disconnect() throws InterruptedException {
+        conductor.stop();
+        env.shutdown();
     }
 
     /**
@@ -255,8 +246,9 @@ public class Client {
      * @param vbids
      *            the partition ids (0-indexed) to start streaming for.
      * @return a {@link Completable} indicating that streaming has started or failed.
+     * @throws InterruptedException
      */
-    public Completable startStreaming(short... vbids) {
+    public void startStreaming(short... vbids) throws InterruptedException {
         validateStream();
         int numPartitions = numPartitions();
         final List<Short> partitions = partitionsForVbids(numPartitions, vbids);
@@ -267,19 +259,15 @@ public class Client {
             PartitionState ps = sessionState().get(vbid);
             LOGGER.info("Starting partition " + vbid + " from the starting point " + ps.getStreamRequest());
         }
-        return Observable.from(partitions).flatMap(partition -> {
+        for (short partition : partitions) {
             PartitionState partitionState = sessionState().get(partition);
             StreamRequest request = partitionState.useStreamRequest();
-            return conductor
-                    .startStreamForPartition(partition, request.getVbucketUuid(), request.getStartSeqno(),
-                            request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno())
-                    .onErrorResumeNext(throwable -> (throwable instanceof RollbackException) ? Completable.complete()
-                            : Completable.error(throwable))
-                    .toObservable();
-        }).toCompletable();
+            conductor.startStreamForPartition(partition, request.getVbucketUuid(), request.getStartSeqno(),
+                    request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno());
+        }
     }
 
-    private void ensureInitialized(List<Short> partitions) {
+    private void ensureInitialized(List<Short> partitions) throws InterruptedException {
         SessionState state = sessionState();
         List<Short> nonInitialized = new ArrayList<>();
         for (short partition : partitions) {
@@ -292,7 +280,7 @@ public class Client {
                 }
             }
         }
-        failoverLogs(nonInitialized).await();
+        failoverLogs(nonInitialized);
         for (short sh : nonInitialized) {
             PartitionState ps = state.get(sh);
             ps.prepareNextStreamRequest();
@@ -309,13 +297,15 @@ public class Client {
      * @param vbids
      *            the partition ids (0-indexed) to stop streaming for.
      * @return a {@link Completable} indicating that streaming has stopped or failed.
+     * @throws InterruptedException
      */
-    public Completable stopStreaming(short... vbids) {
+    public void stopStreaming(short... vbids) throws InterruptedException {
         List<Short> partitions = partitionsForVbids(numPartitions(), vbids);
         LOGGER.info("Stopping to Stream for " + partitions.size() + " partitions");
         LOGGER.debug("Stream stop against partitions: {}", partitions);
-        return Observable.from(partitions).flatMap(p -> conductor.stopStreamForPartition(p).toObservable())
-                .toCompletable();
+        for (short partition : partitions) {
+            conductor.stopStreamForPartition(partition);
+        }
     }
 
     /**
@@ -352,45 +342,26 @@ public class Client {
      * @param vbids
      *            the partitions to return the failover logs from.
      * @return an {@link Observable} containing all failover logs.
+     * @throws InterruptedException
      */
-    public Completable failoverLogs(short... vbids) {
+    public void failoverLogs(short... vbids) throws InterruptedException {
         List<Short> partitions = partitionsForVbids(numPartitions(), vbids);
         LOGGER.debug("Asking for failover logs on partitions {}", partitions);
-        return Observable.from(partitions).flatMap(p -> conductor.getFailoverLog(p).toObservable()).toCompletable();
+        for (short partition : partitions) {
+            conductor.getFailoverLog(partition);
+        }
     }
 
-    private Completable failoverLogs(List<Short> nonInitialized) {
+    private void failoverLogs(List<Short> nonInitialized) throws InterruptedException {
         short[] vbids = new short[nonInitialized.size()];
         for (int i = 0; i < nonInitialized.size(); i++) {
             vbids[i] = nonInitialized.get(i);
         }
-        return failoverLogs(vbids);
+        failoverLogs(vbids);
     }
 
-    public Completable failoverLogs() {
-        return failoverLogs(env.vbuckets());
-    }
-
-    /**
-     * Helper method to rollback the partition state and stop/restart the stream.
-     *
-     * The stream is stopped (if not already done). Then:
-     *
-     * The rollback seqno state is applied. Note that this will also remove all the failover logs for the partition
-     * that are higher than the given seqno, since the server told us we are ahead of it.
-     *
-     * Finally, the stream is restarted again.
-     *
-     * @param partition
-     *            the partition id
-     * @param seqno
-     *            the sequence number to rollback to
-     */
-    public Completable rollbackAndRestartStream(final short partition, final long seqno) {
-        return stopStreaming(partition).andThen(Completable.create(subscriber -> {
-            LOGGER.log(CouchbaseLogLevel.WARN, "rollback partition " + partition + " to seqno = " + seqno);
-            subscriber.onCompleted();
-        })).andThen(startStreaming(partition));
+    public void getFailoverLogs() throws InterruptedException {
+        failoverLogs(env.vbuckets());
     }
 
     /**
@@ -431,7 +402,7 @@ public class Client {
      *            the number of bytes to acknowledge.
      */
     public void acknowledgeBuffer(int vbid, int numBytes) {
-        if (!bufferAckEnabled) {
+        if (!ackEnabled) {
             return;
         }
         conductor.acknowledgeBuffer((short) vbid, numBytes);
@@ -453,37 +424,11 @@ public class Client {
         acknowledgeBuffer(MessageUtil.getVbucket(buffer), buffer.readableBytes());
     }
 
-    /**
-     * Initializes the {@link SessionState} from a previous snapshot with specific state information.
-     *
-     * If a system needs to be built that withstands outages and needs to resume where left off, this method,
-     * combined with the periodic persistence of the {@link SessionState} provides resume capabilities. If you
-     * need to start fresh, take a look at {@link #initializeState(StreamFrom, StreamTo)} as well as
-     * {@link #recoverOrInitializeState(StateFormat, byte[], StreamFrom, StreamTo)}.
-     *
-     * @param format
-     *            the format used when persisting.
-     * @param persistedState
-     *            the opaque byte array representing the persisted state.
-     * @return A {@link Completable} indicating the success or failure of the state recovery.
-     */
-    public Completable recoverState(final StateFormat format, final byte[] persistedState) {
-        return Completable.create(subscriber -> {
-            LOGGER.info("Recovering state from format {}", format);
-            LOGGER.debug("PersistedState on recovery is: {}", new String(persistedState, CharsetUtil.UTF_8));
-            try {
-                subscriber.onError(new IllegalStateException("Unsupported StateFormat " + format));
-            } catch (Exception ex) {
-                subscriber.onError(ex);
-            }
-        });
-    }
-
     public CouchbaseBucketConfig config() {
         return conductor.config();
     }
 
-    public Completable establishDcpConnections() {
+    public void establishDcpConnections() throws Throwable {
         if (env.vbuckets() == null) {
             CouchbaseBucketConfig configs = conductor.config();
             if (configs == null) {
@@ -491,7 +436,7 @@ public class Client {
             }
             env.vbuckets(range((short) 0, (short) configs.numberOfPartitions()));
         }
-        return conductor.establishDcpConnections();
+        conductor.establishDcpConnections();
     }
 
     public static short[] range(short from, short length) {
@@ -512,9 +457,5 @@ public class Client {
 
     public PartitionState getState(short vbid) {
         return conductor.sessionState().get(vbid);
-    }
-
-    public void reset() {
-        conductor.reset();
     }
 }

@@ -1,30 +1,19 @@
 /*
- * Copyright (c) 2016 Couchbase, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright (c) 2016-2017 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.util.retry;
-
-import com.couchbase.client.core.annotations.InterfaceAudience;
-import com.couchbase.client.core.annotations.InterfaceStability;
-import com.couchbase.client.core.time.Delay;
-import rx.Scheduler;
-import rx.functions.Action4;
-import rx.functions.Func1;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import com.couchbase.client.core.annotations.InterfaceAudience;
+import com.couchbase.client.core.annotations.InterfaceStability;
+import com.couchbase.client.core.time.Delay;
+
+import rx.Scheduler;
+import rx.functions.Action4;
+import rx.functions.Func1;
 
 /**
  * Builder for {@link RetryWhenFunction}. Start with {@link #any()}, {@link #anyOf(Class[])} or {@link #allBut(Class[])}
@@ -55,7 +44,6 @@ public class RetryBuilder {
     private boolean inverse;
 
     private Scheduler scheduler;
-
 
     private RetryBuilder() {
         this.maxAttempts = 1; //one attempt
@@ -159,7 +147,8 @@ public class RetryBuilder {
      * The action receives the retry attempt number (1-n), the exception that caused the retry,
      * the delay duration and timeunit for the scheduled retry.
      *
-     * @param doOnRetryAction the side-effect action to perform whenever a retry is scheduled.
+     * @param doOnRetryAction
+     *            the side-effect action to perform whenever a retry is scheduled.
      * @see OnRetryAction if you want a shorter signature.
      */
     public RetryBuilder doOnRetry(Action4<Integer, Throwable, Long, TimeUnit> doOnRetryAction) {

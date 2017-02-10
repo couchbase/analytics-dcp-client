@@ -1,17 +1,5 @@
 /*
  * Copyright (c) 2016-2017 Couchbase, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  */
 package com.couchbase.client.dcp.transport.netty;
 
@@ -56,9 +44,12 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
     /**
      * Creates a new config handler.
      *
-     * @param hostname     hostname of the remote server.
-     * @param configStream config stream where to send the configs.
-     * @param environment  the environment.
+     * @param hostname
+     *            hostname of the remote server.
+     * @param configStream
+     *            config stream where to send the configs.
+     * @param environment
+     *            the environment.
      */
     ConfigHandler(final String hostname, IConfigurable configurable, ClientEnvironment environment) {
         this.hostname = hostname;
@@ -82,7 +73,8 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
     /**
      * Helper method to decode and analyze the chunk.
      *
-     * @param chunk the chunk to analyze.
+     * @param chunk
+     *            the chunk to analyze.
      */
     private boolean decodeChunk(final ByteBuf chunk) {
         responseContent.writeBytes(chunk);

@@ -1,36 +1,17 @@
 /*
- * Copyright (c) 2016 Couchbase, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright (c) 2016-2017 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.transport.netty;
 
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ConnectionNameGenerator;
-import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.DcpOpenConnectionRequest;
+import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.Unpooled;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
-import com.couchbase.client.deps.io.netty.channel.ChannelOutboundHandler;
-import com.couchbase.client.deps.io.netty.channel.ChannelPromise;
-import com.couchbase.client.deps.io.netty.channel.SimpleChannelInboundHandler;
 import com.couchbase.client.deps.io.netty.util.CharsetUtil;
-import com.couchbase.client.deps.io.netty.util.concurrent.Future;
-import com.couchbase.client.deps.io.netty.util.concurrent.GenericFutureListener;
-
-import java.net.SocketAddress;
 
 /**
  * Opens the DCP connection on the channel and once established removes itself.
@@ -63,7 +44,8 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
     /**
      * Creates a new connect handler.
      *
-     * @param connectionNameGenerator the generator of the connection names.
+     * @param connectionNameGenerator
+     *            the generator of the connection names.
      */
     DcpConnectHandler(final ConnectionNameGenerator connectionNameGenerator) {
         this.connectionNameGenerator = connectionNameGenerator;
@@ -93,9 +75,10 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
             originalPromise().setSuccess();
             ctx.fireChannelActive();
             LOGGER.debug("DCP Connection opened with Name \"{}\" against Node {}", connectionName,
-                ctx.channel().remoteAddress());
+                    ctx.channel().remoteAddress());
         } else {
-            originalPromise().setFailure(new IllegalStateException("Could not open DCP Connection: Status is " + status));
+            originalPromise()
+                    .setFailure(new IllegalStateException("Could not open DCP Connection: Status is " + status));
         }
     }
 
