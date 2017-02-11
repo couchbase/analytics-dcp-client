@@ -257,7 +257,7 @@ public class Client {
         LOGGER.info("Stream start against partitions: {}", partitions);
         for (short vbid : vbids) {
             PartitionState ps = sessionState().get(vbid);
-            LOGGER.info("Starting partition " + vbid + " from the starting point " + ps.getStreamRequest());
+            LOGGER.warn("Starting partition " + vbid + " from the starting point " + ps.getStreamRequest());
         }
         for (short partition : partitions) {
             PartitionState partitionState = sessionState().get(partition);

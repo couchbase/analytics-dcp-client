@@ -69,15 +69,15 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             short status = MessageUtil.getStatus(buf);
             switch (status) {
                 case 0x00:
-                    LOGGER.debug("stream opened successfully for vbucket " + vbid);
+                    LOGGER.warn("stream opened successfully for vbucket " + vbid);
                     handleOpenStreamSuccess(buf, vbid);
                     break;
                 case 0x23:
-                    LOGGER.debug("stream rollback response for vbucket " + vbid);
+                    LOGGER.warn("stream rollback response for vbucket " + vbid);
                     handleOpenStreamRollback(buf, vbid);
                     break;
                 case 0x07:
-                    LOGGER.debug("stream not my vbucket response for vbucket " + vbid);
+                    LOGGER.warn("stream not my vbucket response for vbucket " + vbid);
                     channel.openStreams()[vbid] = false;
                     channel.getConductor().getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
                     channel.getEnv().eventBus().publish(new NotMyVBuvketEvent(channel, vbid));
@@ -85,7 +85,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 default:
                     channel.openStreams()[vbid] = false;
                     channel.getConductor().getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-                    LOGGER.debug("stream unknown response for vbucket " + vbid);
+                    LOGGER.warn("stream unknown response for vbucket " + vbid);
             }
         } finally {
             buf.release();
@@ -169,7 +169,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             }
             channel.openStreams()[vbid] = false;
             channel.getConductor().getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-            LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getInetAddress(), vbid);
+            LOGGER.warn("Closed Stream against {} with vbid: {}", channel.getInetAddress(), vbid);
         } finally {
             buf.release();
         }

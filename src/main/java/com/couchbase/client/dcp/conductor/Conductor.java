@@ -56,7 +56,7 @@ public class Conductor {
     }
 
     public void stop() throws InterruptedException {
-        LOGGER.debug("Instructed to shutdown.");
+        LOGGER.warn("Instructed to shutdown.");
         for (DcpChannel channel : channels) {
             channel.disconnect();
         }

@@ -20,7 +20,7 @@ public class DcpChannelCloseListener implements ChannelFutureListener {
 
     @Override
     public synchronized void operationComplete(ChannelFuture future) throws Exception {
-        LOGGER.debug("Connection dropped");
+        LOGGER.warn("DCP Connection dropped");
         channel.clear();
         // channel was closed. If the state is disconnecting, then this should be fine
         // otherwise, this should attempt to restart the connection
@@ -33,6 +33,7 @@ public class DcpChannelCloseListener implements ChannelFutureListener {
                 break;
             default:
                 LOGGER.error("This should never happen");
+                channel.getEnv().eventBus().publish(new ImpossibleEvent());
                 break;
         }
     }
@@ -41,7 +42,7 @@ public class DcpChannelCloseListener implements ChannelFutureListener {
         synchronized (channel) {
             channel.setState(State.DISCONNECTED);
             try {
-                LOGGER.debug("trying to reconnect");
+                LOGGER.warn("trying to reconnect");
                 wait(200);
                 channel.connect();
             } catch (Throwable th) {

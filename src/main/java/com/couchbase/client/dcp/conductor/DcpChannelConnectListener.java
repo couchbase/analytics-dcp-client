@@ -12,7 +12,6 @@ public class DcpChannelConnectListener implements ChannelFutureListener {
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpChannelConnectListener.class);
 
     private final DcpChannel channel;
-    private volatile ChannelFuture future;
     private volatile boolean complete = false;
 
     public DcpChannelConnectListener(DcpChannel channel) {
@@ -21,13 +20,9 @@ public class DcpChannelConnectListener implements ChannelFutureListener {
 
     @Override
     public synchronized void operationComplete(ChannelFuture future) throws Exception {
-        this.future = future;
         if (future.isSuccess()) {
             channel.setChannel(future.channel());
-            LOGGER.info("Connected to Node {}", channel.getInetAddress());
-            // attach callback which listens on future close and dispatches a
-            // reconnect if needed.
-            future.channel().closeFuture().addListener(channel.getCloseListener());
+            LOGGER.warn("Connected to Node {}", channel.getInetAddress());
         }
         complete = true;
         notifyAll();
@@ -39,10 +34,9 @@ public class DcpChannelConnectListener implements ChannelFutureListener {
         while (!complete) {
             wait();
         }
-        if (!this.future.isSuccess()) {
-            throw this.future.cause();
+        if (!connectFuture.isSuccess()) {
+            throw connectFuture.cause();
         }
-        LOGGER.debug("Connection established");
+        LOGGER.warn("Connection established");
     }
-
 }
