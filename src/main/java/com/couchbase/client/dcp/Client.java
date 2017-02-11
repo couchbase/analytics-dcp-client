@@ -261,7 +261,7 @@ public class Client {
         }
         for (short partition : partitions) {
             PartitionState partitionState = sessionState().get(partition);
-            StreamRequest request = partitionState.useStreamRequest();
+            StreamRequest request = partitionState.getStreamRequest();
             conductor.startStreamForPartition(partition, request.getVbucketUuid(), request.getStartSeqno(),
                     request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno());
         }

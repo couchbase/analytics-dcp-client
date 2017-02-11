@@ -24,24 +24,10 @@ public class DcpChannelConnectListener implements ChannelFutureListener {
         this.future = future;
         if (future.isSuccess()) {
             channel.setChannel(future.channel());
-            if (channel.getState() == State.DISCONNECTING) {
-                LOGGER.info("Connected Node {}, but got instructed to disconnect in " + "the meantime.",
-                        channel.getInetAddress());
-                // isShutdown before we could finish the connect :/
-                channel.disconnect();
-            } else {
-                LOGGER.info("Connected to Node {}", channel.getInetAddress());
-                // attach callback which listens on future close and dispatches a
-                // reconnect if needed.
-                channel.setState(State.CONNECTED);
-                future.channel().closeFuture().addListener(channel.getCloseListener());
-            }
-        } else {
-            if (channel.getState() == State.DISCONNECTING) {
-                // Don't retry
-                LOGGER.info("Connect attempt to {} failed.", channel.getInetAddress(), future.cause());
-                channel.setState(State.DISCONNECTED);
-            }
+            LOGGER.info("Connected to Node {}", channel.getInetAddress());
+            // attach callback which listens on future close and dispatches a
+            // reconnect if needed.
+            future.channel().closeFuture().addListener(channel.getCloseListener());
         }
         complete = true;
         notifyAll();

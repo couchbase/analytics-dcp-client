@@ -81,7 +81,7 @@ public class DcpChannel {
         this.closeListener = new DcpChannelCloseListener(this);
     }
 
-    public void connect() throws Throwable {
+    public synchronized void connect() throws Throwable {
         if (getState() != State.DISCONNECTED) {
             throw new IllegalArgumentException(
                     "Dcp Channel is already connected or is trying to connect. State = " + getState().name());
@@ -101,6 +101,7 @@ public class DcpChannel {
                         .handler(new DcpPipeline(env, controlHandler)).group(env.eventLoopGroup());
                 ChannelFuture connectFuture = bootstrap.connect();
                 connectListener.listen(connectFuture);
+                setState(State.CONNECTED);
             } catch (Throwable e) {
                 if (failure == null) {
                     failure = e;
@@ -108,6 +109,7 @@ public class DcpChannel {
                     failure.addSuppressed(e);
                 }
                 if (attempts == env.dcpChannelsReconnectMaxAttempts()) {
+                    setState(State.DISCONNECTED);
                     throw failure; // NOSONAR failure is not nullable
                 }
                 // Wait between attempts
@@ -121,8 +123,9 @@ public class DcpChannel {
             if (openStreams[i]) {
                 LOGGER.debug("Opening a stream that was dropped for vbucket " + i);
                 PartitionState ps = conductor.sessionState().get(i);
+                ps.prepareNextStreamRequest();
                 openStream((short) i, ps.getFailoverLog().get(0).getUuid(), ps.getSeqno(), SessionState.NO_END_SEQNO,
-                        ps.getSeqno(), ps.getSeqno());
+                        ps.getSnapshotStartSeqno(), ps.getSnapshotEndSeqno());
             }
         }
         for (int i = 0; i < failoverLogRequests.length; i++) {
@@ -148,7 +151,7 @@ public class DcpChannel {
         }
     }
 
-    public void disconnect() throws InterruptedException {
+    public synchronized void disconnect() throws InterruptedException {
         switch (getState()) {
             case CONNECTED:
             case CONNECTING:
@@ -196,6 +199,7 @@ public class DcpChannel {
                         + "endSeqno: {},  snapshotStartSeqno: {}, snapshotEndSeqno: {}",
                 channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno, snapshotEndSeqno);
         conductor.getSessionState().get(vbid).setState(PartitionState.CONNECTING);
+        openStreams[vbid] = true;
         int opaque = OPAQUE.incrementAndGet();
         ByteBuf buffer = Unpooled.buffer();
         DcpOpenStreamRequest.init(buffer, vbid);
@@ -215,6 +219,7 @@ public class DcpChannel {
         }
         LOGGER.debug("Closing Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
         conductor.getSessionState().get(vbid).setState(PartitionState.DISCONNECTING);
+        openStreams[vbid] = false;
         int opaque = OPAQUE.incrementAndGet();
         ByteBuf buffer = Unpooled.buffer();
         DcpCloseStreamRequest.init(buffer);
@@ -296,7 +301,7 @@ public class DcpChannel {
         return ackEnabled;
     }
 
-    public synchronized void setChannel(Channel channel) {
+    public void setChannel(Channel channel) {
         this.channel = channel;
     }
 

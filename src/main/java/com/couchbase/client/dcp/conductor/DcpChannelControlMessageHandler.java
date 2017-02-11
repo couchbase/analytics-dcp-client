@@ -41,8 +41,25 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             handleDcpCloseStreamResponse(buf);
         } else if (DcpGetPartitionSeqnosResponse.is(buf)) {
             handleDcpGetPartitionSeqnosResponse(buf);
-        } else if (DcpSnapshotMarkerRequest.is(buf) && channel.ackEnabled()) {
-            channel.acknowledgeBuffer(buf.readableBytes());
+        } else if (DcpSnapshotMarkerRequest.is(buf)) {
+            handleDcpSnapshotMarker(buf);
+        }
+    }
+
+    private void handleDcpSnapshotMarker(ByteBuf buf) {
+        try {
+            short vbucket = DcpSnapshotMarkerRequest.partition(buf);
+            long start = DcpSnapshotMarkerRequest.startSeqno(buf);
+            long end = DcpSnapshotMarkerRequest.endSeqno(buf);
+            PartitionState ps = channel.getConductor().getSessionState().get(vbucket);
+            ps.useStreamRequest();
+            ps.setSnapshotStartSeqno(start);
+            ps.setSnapshotEndSeqno(end);
+            if (channel.ackEnabled()) {
+                channel.acknowledgeBuffer(buf.readableBytes());
+            }
+        } finally {
+            buf.release();
         }
     }
 
@@ -119,7 +136,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 int offset = i * 10;
                 short vbid = content.getShort(offset);
                 long seq = content.getLong(offset + Short.BYTES);
-                channel.getConductor().sessionState().get(vbid).setMaxSeqno(seq);
+                channel.getConductor().sessionState().get(vbid).setCurrentVBucketSeqnoInMaster(seq);
             }
         } finally {
             buf.release();

@@ -37,16 +37,17 @@ public class StreamRequest {
     private final long startSeqno;
     private final long endSeqno;
     private final long vbucketUuid;
-    private final long snapshotStartSeqno; // where we stopped last time. For our use case, we always use startSeqno
-    private final long snapshotEndSeqno; // where we stopped last time. For our use case, we always use startSeqno
+    private final long snapshotStartSeqno;
+    private final long snapshotEndSeqno;
 
-    public StreamRequest(short partition, long startSeqno, long endSeqno, long vbucketUuid) {
+    public StreamRequest(short partition, long startSeqno, long endSeqno, long vbucketUuid, long snapshotStartSeq,
+            long snapshotEndSeq) {
         this.partition = partition;
         this.startSeqno = startSeqno;
         this.endSeqno = endSeqno;
         this.vbucketUuid = vbucketUuid;
-        this.snapshotStartSeqno = startSeqno;
-        this.snapshotEndSeqno = startSeqno;
+        this.snapshotStartSeqno = snapshotStartSeq;
+        this.snapshotEndSeqno = snapshotEndSeq;
     }
 
     public long getStartSeqno() {

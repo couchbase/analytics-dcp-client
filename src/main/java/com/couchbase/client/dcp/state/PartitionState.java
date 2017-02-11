@@ -25,7 +25,7 @@ public class PartitionState {
      * Stores the failover log for this partition.
      */
     private final List<FailoverLogEntry> failoverLog;
-    private volatile long maxSeqno = INVALID;
+    private volatile long currentVBucketSeqnoInMaster = INVALID;
 
     private final short vbid;
 
@@ -33,6 +33,10 @@ public class PartitionState {
      * Current Sequence Number
      */
     private volatile long seqno = 0;
+
+    private volatile long snapshotStartSeqno = 0;
+
+    private volatile long snapshotEndSeqno = 0;
 
     private volatile byte state;
 
@@ -48,6 +52,22 @@ public class PartitionState {
         failoverLog = new ArrayList<>();
         setState(DISCONNECTED);
         failoverUpdated = false;
+    }
+
+    public long getSnapshotStartSeqno() {
+        return snapshotStartSeqno;
+    }
+
+    public void setSnapshotStartSeqno(long snapshotStartSeqno) {
+        this.snapshotStartSeqno = snapshotStartSeqno;
+    }
+
+    public long getSnapshotEndSeqno() {
+        return snapshotEndSeqno;
+    }
+
+    public void setSnapshotEndSeqno(long snapshotEndSeqno) {
+        this.snapshotEndSeqno = snapshotEndSeqno;
     }
 
     /**
@@ -108,32 +128,32 @@ public class PartitionState {
     }
 
     public void prepareNextStreamRequest() {
-        this.streamRequest = new StreamRequest(vbid, seqno, SessionState.NO_END_SEQNO,
-                failoverLog.get(failoverLog.size() - 1).getUuid());
+        if (streamRequest == null) {
+            this.streamRequest = new StreamRequest(vbid, seqno, SessionState.NO_END_SEQNO,
+                    failoverLog.get(failoverLog.size() - 1).getUuid(), snapshotStartSeqno, snapshotEndSeqno);
+        }
     }
 
     public short vbid() {
         return vbid;
     }
 
-    public long maxSeqno() {
-        return maxSeqno;
+    public long getCurrentVBucketSeqnoInMaster() {
+        return currentVBucketSeqnoInMaster;
     }
 
-    public void setMaxSeqno(long maxSeqno) {
-        this.maxSeqno = maxSeqno;
+    public void setCurrentVBucketSeqnoInMaster(long currentVBucketSeqnoInMaster) {
+        this.currentVBucketSeqnoInMaster = currentVBucketSeqnoInMaster;
     }
 
-    public StreamRequest useStreamRequest() {
-        StreamRequest temp = streamRequest;
+    public void useStreamRequest() {
         streamRequest = null;
-        return temp;
     }
 
     @Override
     public String toString() {
-        return "vbid = " + vbid + ", maxSeq = " + maxSeqno + ", seqno = " + seqno + ", state = " + state + ", uuid = "
-                + failoverLog.get(0).getUuid();
+        return "vbid = " + vbid + ", maxSeq = " + currentVBucketSeqnoInMaster + ", seqno = " + seqno + ", state = "
+                + state + ", uuid = " + failoverLog.get(0).getUuid();
     }
 
     public synchronized void failoverUpdated() {
