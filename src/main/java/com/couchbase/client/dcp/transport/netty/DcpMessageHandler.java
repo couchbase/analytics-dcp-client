@@ -7,6 +7,9 @@ import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DataEventHandler;
+import com.couchbase.client.dcp.config.ClientEnvironment;
+import com.couchbase.client.dcp.config.DcpControl;
+import com.couchbase.client.dcp.message.DcpBufferAckRequest;
 import com.couchbase.client.dcp.message.DcpCloseStreamResponse;
 import com.couchbase.client.dcp.message.DcpDeletionMessage;
 import com.couchbase.client.dcp.message.DcpExpirationMessage;
@@ -17,6 +20,7 @@ import com.couchbase.client.dcp.message.DcpNoopRequest;
 import com.couchbase.client.dcp.message.DcpNoopResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
+import com.couchbase.client.dcp.message.DcpStateVbucketStateMessage;
 import com.couchbase.client.dcp.message.DcpStreamEndMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
@@ -46,17 +50,34 @@ public class DcpMessageHandler extends ChannelDuplexHandler {
      */
     private final ControlEventHandler controlEvents;
 
+    private final boolean ackEnabled;
+    private int ackCounter;
+    private final int ackWatermark;
+
     /**
      * Create a new message handler.
+     *
+     * @param env
      *
      * @param dataEventHandler
      *            data event callback handler.
      * @param controlHandler
      *            control event subject.
      */
-    DcpMessageHandler(final DataEventHandler dataEventHandler, final ControlEventHandler controlHandler) {
+    DcpMessageHandler(ClientEnvironment env, final DataEventHandler dataEventHandler,
+            final ControlEventHandler controlHandler) {
         this.dataEventHandler = dataEventHandler;
         this.controlEvents = controlHandler;
+        this.ackEnabled = env.dcpControl().ackEnabled();
+        this.ackCounter = 0;
+        if (ackEnabled) {
+            int bufferAckPercent = env.ackWaterMark();
+            int bufferSize = Integer.parseInt(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
+            this.ackWatermark = (int) Math.round(bufferSize / 100.0 * bufferAckPercent);
+            LOGGER.warn("BufferAckWatermark absolute is {}", ackWatermark);
+        } else {
+            this.ackWatermark = 0;
+        }
     }
 
     /**
@@ -65,7 +86,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler {
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
         ByteBuf message = (ByteBuf) msg;
-
+        ack(message, ctx);
         if (isDataMessage(message)) {
             dataEventHandler.onEvent(message);
         } else if (isControlMessage(message)) {
@@ -104,4 +125,24 @@ public class DcpMessageHandler extends ChannelDuplexHandler {
         return DcpMutationMessage.is(msg) || DcpDeletionMessage.is(msg) || DcpExpirationMessage.is(msg);
     }
 
+    private void ack(ByteBuf message, ChannelHandlerContext ctx) {
+        if (ackEnabled && (DcpStateVbucketStateMessage.is(message) || DcpSnapshotMarkerRequest.is(message)
+                || DcpStreamEndMessage.is(message) || DcpCloseStreamResponse.is(message)
+                || DcpMutationMessage.is(message) || DcpDeletionMessage.is(message)
+                || DcpExpirationMessage.is(message))) {
+            ackCounter += message.readableBytes();
+            LOGGER.trace("BufferAckCounter is now {}", ackCounter);
+            if (ackCounter >= ackWatermark) {
+                LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.",
+                        ctx.channel().remoteAddress());
+                ByteBuf buffer = ctx.alloc().buffer();
+                DcpBufferAckRequest.init(buffer);
+                DcpBufferAckRequest.ackBytes(buffer, ackCounter);
+                ctx.writeAndFlush(buffer);
+                ackCounter = 0;
+            }
+            LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
+                    ctx.channel().remoteAddress());
+        }
+    }
 }

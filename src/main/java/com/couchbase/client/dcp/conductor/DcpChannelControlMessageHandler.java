@@ -55,9 +55,6 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             ps.useStreamRequest();
             ps.setSnapshotStartSeqno(start);
             ps.setSnapshotEndSeqno(end);
-            if (channel.ackEnabled()) {
-                channel.acknowledgeBuffer(buf.readableBytes());
-            }
         } finally {
             buf.release();
         }
@@ -125,7 +122,6 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         ByteBuf content = MessageUtil.getContent(buf).copy().writeShort(vbid);
         MessageUtil.setContent(content, flog);
         content.release();
-        channel.getEnv().controlEventHandler().onEvent(flog);
     }
 
     private void handleDcpGetPartitionSeqnosResponse(ByteBuf buf) {
@@ -152,10 +148,6 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 channel.getEnv().eventBus().publish(new StreamEndEvent(vbid, reason));
             }
             channel.openStreams()[vbid] = false;
-
-            if (channel.ackEnabled()) {
-                channel.acknowledgeBuffer(buf.readableBytes());
-            }
         } finally {
             buf.release();
         }
@@ -164,9 +156,6 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleDcpCloseStreamResponse(ByteBuf buf) {
         try {
             Short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
-            if (channel.ackEnabled()) {
-                channel.acknowledgeBuffer(buf.readableBytes());
-            }
             channel.openStreams()[vbid] = false;
             channel.getConductor().getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
             LOGGER.warn("Closed Stream against {} with vbid: {}", channel.getInetAddress(), vbid);

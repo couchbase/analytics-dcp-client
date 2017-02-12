@@ -107,11 +107,6 @@ public class Conductor {
         return channel.streamIsOpen(partition);
     }
 
-    public void acknowledgeBuffer(final short partition, int numBytes) {
-        DcpChannel channel = masterChannelByPartition(partition);
-        channel.acknowledgeBuffer(numBytes);
-    }
-
     /**
      * Returns the dcp channel responsible for a given vbucket id according to the current
      * configuration.

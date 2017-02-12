@@ -12,8 +12,6 @@ import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.dcp.config.ClientEnvironment;
-import com.couchbase.client.dcp.config.DcpControl;
-import com.couchbase.client.dcp.message.DcpBufferAckRequest;
 import com.couchbase.client.dcp.message.DcpCloseStreamRequest;
 import com.couchbase.client.dcp.message.DcpFailoverLogRequest;
 import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosRequest;
@@ -48,14 +46,9 @@ public class DcpChannel {
     private final Map<Integer, Short> vbuckets;
     private final boolean[] failoverLogRequests;
     private final boolean[] openStreams;
-    private final boolean ackEnabled;
-    private volatile int ackCounter;
-    private final int ackWatermark;
     private final Conductor conductor;
     private final DcpChannelControlMessageHandler controlHandler;
     private volatile Channel channel;
-
-    private final DcpChannelConnectListener connectListener;
     private final DcpChannelCloseListener closeListener;
 
     public DcpChannel(InetAddress inetAddress, final ClientEnvironment env, final Conductor conductor) {
@@ -67,17 +60,6 @@ public class DcpChannel {
         this.failoverLogRequests = new boolean[conductor.config().numberOfPartitions()];
         this.controlHandler = new DcpChannelControlMessageHandler(this);
         this.openStreams = new boolean[conductor.config().numberOfPartitions()];
-        this.ackEnabled = env.dcpControl().ackEnabled();
-        this.ackCounter = 0;
-        if (ackEnabled) {
-            int bufferAckPercent = env.ackWaterMark();
-            int bufferSize = Integer.parseInt(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
-            this.ackWatermark = (int) Math.round(bufferSize / 100.0 * bufferAckPercent);
-            LOGGER.warn("BufferAckWatermark absolute is {}", ackWatermark);
-        } else {
-            this.ackWatermark = 0;
-        }
-        this.connectListener = new DcpChannelConnectListener(this);
         this.closeListener = new DcpChannelCloseListener(this);
     }
 
@@ -100,7 +82,12 @@ public class DcpChannel {
                         .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
                         .handler(new DcpPipeline(env, controlHandler)).group(env.eventLoopGroup());
                 ChannelFuture connectFuture = bootstrap.connect();
-                connectListener.listen(connectFuture);
+                connectFuture.await();
+                if (!connectFuture.isSuccess()) {
+                    throw connectFuture.cause();
+                }
+                LOGGER.warn("Connection established");
+                channel = connectFuture.channel();
                 setState(State.CONNECTED);
             } catch (Throwable e) {
                 if (failure == null) {
@@ -110,6 +97,7 @@ public class DcpChannel {
                 }
                 if (attempts == env.dcpChannelsReconnectMaxAttempts()) {
                     LOGGER.warn("Connection FAILED " + attempts + " times");
+                    channel = null;
                     setState(State.DISCONNECTED);
                     throw failure; // NOSONAR failure is not nullable
                 }
@@ -165,29 +153,12 @@ public class DcpChannel {
             default:
                 break;
         }
-        ackCounter = 0;
         wait(State.DISCONNECTED);
+        channel = null;
     }
 
     public InetAddress hostname() {
         return inetAddress;
-    }
-
-    public synchronized void acknowledgeBuffer(final int numBytes) {
-        if (getState() != State.CONNECTED) {
-            return;
-        }
-        LOGGER.trace("Acknowledging {} bytes against connection {}.", numBytes, channel.remoteAddress());
-        ackCounter += numBytes;
-        LOGGER.trace("BufferAckCounter is now {}", ackCounter);
-        if (ackCounter >= ackWatermark) {
-            LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.", channel.remoteAddress());
-            ByteBuf buffer = Unpooled.buffer();
-            DcpBufferAckRequest.init(buffer);
-            DcpBufferAckRequest.ackBytes(buffer, ackCounter);
-            channel.writeAndFlush(buffer);
-            ackCounter = 0;
-        }
     }
 
     public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno,
@@ -297,10 +268,6 @@ public class DcpChannel {
 
     public boolean[] openStreams() {
         return openStreams;
-    }
-
-    public boolean ackEnabled() {
-        return ackEnabled;
     }
 
     public void setChannel(Channel channel) {

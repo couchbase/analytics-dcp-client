@@ -39,17 +39,19 @@ public class DcpChannelCloseListener implements ChannelFutureListener {
     }
 
     private void revive() {
-        synchronized (channel) {
-            channel.setState(State.DISCONNECTED);
-            try {
-                LOGGER.warn("trying to reconnect");
-                wait(200);
-                channel.connect();
-            } catch (Throwable th) {
-                LOGGER.warn("Failed to re-establish a failed test. Notifying the user");
-                channel.getEnv().eventBus().publish(new ChannelDroppedEvent(channel, th));
+        new Thread(() -> {
+            synchronized (channel) {
+                channel.setState(State.DISCONNECTED);
+                try {
+                    LOGGER.warn("trying to reconnect");
+                    wait(200);
+                    channel.connect();
+                } catch (Throwable th) {
+                    LOGGER.warn("Failed to re-establish a failed test. Notifying the user");
+                    channel.getEnv().eventBus().publish(new ChannelDroppedEvent(channel, th));
+                }
             }
-        }
+        }).start();
     }
 
 }

@@ -18,7 +18,6 @@ import com.couchbase.client.dcp.message.DcpExpirationMessage;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
-import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.RollbackMessage;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
@@ -385,43 +384,6 @@ public class Client {
      */
     public boolean streamIsOpen(short vbid) {
         return conductor.streamIsOpen(vbid);
-    }
-
-    /**
-     * Acknowledge bytes read if DcpControl.Names.CONNECTION_BUFFER_SIZE is set on bootstrap.
-     *
-     * Note that acknowledgement will be stored but most likely not sent to the server immediately to save network
-     * overhead. Instead, depending on the value set through {@link ClientBuilder#bufferAckWatermark(int)} in percent
-     * the client will automatically determine when to send the message (when the watermark is reached).
-     *
-     * This method can always be called even if not enabled, if not enabled on bootstrap it will short-circuit.
-     *
-     * @param vbid
-     *            the partition id.
-     * @param numBytes
-     *            the number of bytes to acknowledge.
-     */
-    public void acknowledgeBuffer(int vbid, int numBytes) {
-        if (!ackEnabled) {
-            return;
-        }
-        conductor.acknowledgeBuffer((short) vbid, numBytes);
-    }
-
-    /**
-     * Acknowledge bytes read if DcpControl.Names.CONNECTION_BUFFER_SIZE is set on bootstrap.
-     *
-     * This method is a convenience method which extracts the partition ID and the number of bytes to
-     * acknowledge from the message. Make sure to only pass in legible buffers, coming from messages that are
-     * ack'able, especially mutations, expirations and deletions.
-     *
-     * This method can always be called even if not enabled, if not enabled on bootstrap it will short-circuit.
-     *
-     * @param buffer
-     *            the message to acknowledge.
-     */
-    public void acknowledgeBuffer(ByteBuf buffer) {
-        acknowledgeBuffer(MessageUtil.getVbucket(buffer), buffer.readableBytes());
     }
 
     public CouchbaseBucketConfig config() {
