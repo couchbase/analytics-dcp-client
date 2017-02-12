@@ -41,9 +41,9 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     private volatile Throwable cause;
     private final ChannelFutureListener closeListener = (ChannelFuture future) -> {
         synchronized (HttpStreamingConfigProvider.this) {
-            LOGGER.log(CouchbaseLogLevel.WARN, "Channel has been closed");
+            LOGGER.log(CouchbaseLogLevel.DEBUG, "Channel has been closed");
             if (!refreshed) {
-                LOGGER.log(CouchbaseLogLevel.WARN, "Before it is refereshed. Need to wake up the waiting thread");
+                LOGGER.log(CouchbaseLogLevel.DEBUG, "Before it is refereshed. Need to wake up the waiting thread");
                 failure = true;
                 HttpStreamingConfigProvider.this.notifyAll();
             }
@@ -109,9 +109,9 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
                     cause = connectFuture.cause();
                 }
             } finally {
-                LOGGER.log(CouchbaseLogLevel.WARN, "Closing the channel");
+                LOGGER.log(CouchbaseLogLevel.DEBUG, "Closing the channel");
                 connectFuture.channel().close().await();
-                LOGGER.log(CouchbaseLogLevel.WARN, "Channel closed");
+                LOGGER.log(CouchbaseLogLevel.DEBUG, "Channel closed");
             }
             if (cause != null && !(cause instanceof SocketException)) {
                 return false;
@@ -139,7 +139,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         for (NodeInfo node : config.nodes()) {
             newNodes.add(node.hostname().getHostAddress());
         }
-        LOGGER.warn("Updated config stream node list to {}.", newNodes);
+        LOGGER.debug("Updated config stream node list to {}.", newNodes);
         hostnames.set(newNodes);
         refreshed = true;
         notifyAll();

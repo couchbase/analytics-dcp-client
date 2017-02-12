@@ -56,7 +56,7 @@ public class Conductor {
     }
 
     public void stop() throws InterruptedException {
-        LOGGER.warn("Instructed to shutdown.");
+        LOGGER.debug("Instructed to shutdown.");
         for (DcpChannel channel : channels) {
             channel.disconnect();
         }
@@ -190,7 +190,7 @@ public class Conductor {
         if (channels.contains(node)) {
             return;
         }
-        LOGGER.warn("Adding DCP Channel against {}", node);
+        LOGGER.debug("Adding DCP Channel against {}", node);
         final DcpChannel channel = new DcpChannel(node, env, this);
         channels.add(channel);
         channel.connect();

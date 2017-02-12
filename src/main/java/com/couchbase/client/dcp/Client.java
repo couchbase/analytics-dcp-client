@@ -90,7 +90,7 @@ public class Client {
         }
 
         conductor = new Conductor(env, builder.configProvider());
-        LOGGER.info("Environment Configuration Used: {}", env);
+        LOGGER.debug("Environment Configuration Used: {}", env);
 
     }
 
@@ -210,7 +210,7 @@ public class Client {
             LOGGER.debug("Ignoring duplicate connect attempt, already connecting/connected.");
             return;
         }
-        LOGGER.info("Connecting to seed nodes and bootstrapping bucket {}.", env.bucket());
+        LOGGER.debug("Connecting to seed nodes and bootstrapping bucket {}.", env.bucket());
         conductor.connect();
     }
 
@@ -252,11 +252,11 @@ public class Client {
         int numPartitions = numPartitions();
         final List<Short> partitions = partitionsForVbids(numPartitions, vbids);
         ensureInitialized(partitions);
-        LOGGER.info("Starting to Stream for " + partitions.size() + " partitions");
-        LOGGER.info("Stream start against partitions: {}", partitions);
+        LOGGER.debug("Starting to Stream for " + partitions.size() + " partitions");
+        LOGGER.debug("Stream start against partitions: {}", partitions);
         for (short vbid : vbids) {
             PartitionState ps = sessionState().get(vbid);
-            LOGGER.warn("Starting partition " + vbid + " from the starting point " + ps.getStreamRequest());
+            LOGGER.debug("Starting partition " + vbid + " from the starting point " + ps.getStreamRequest());
         }
         for (short partition : partitions) {
             PartitionState partitionState = sessionState().get(partition);
@@ -300,7 +300,7 @@ public class Client {
      */
     public void stopStreaming(short... vbids) throws InterruptedException {
         List<Short> partitions = partitionsForVbids(numPartitions(), vbids);
-        LOGGER.info("Stopping to Stream for " + partitions.size() + " partitions");
+        LOGGER.debug("Stopping to Stream for " + partitions.size() + " partitions");
         LOGGER.debug("Stream stop against partitions: {}", partitions);
         for (short partition : partitions) {
             conductor.stopStreamForPartition(partition);

@@ -86,7 +86,7 @@ public class DcpChannel {
                 if (!connectFuture.isSuccess()) {
                     throw connectFuture.cause();
                 }
-                LOGGER.warn("Connection established");
+                LOGGER.debug("Connection established");
                 channel = connectFuture.channel();
                 setState(State.CONNECTED);
             } catch (Throwable e) {
@@ -96,7 +96,7 @@ public class DcpChannel {
                     failure.addSuppressed(e);
                 }
                 if (attempts == env.dcpChannelsReconnectMaxAttempts()) {
-                    LOGGER.warn("Connection FAILED " + attempts + " times");
+                    LOGGER.debug("Connection FAILED " + attempts + " times");
                     channel = null;
                     setState(State.DISCONNECTED);
                     throw failure; // NOSONAR failure is not nullable
@@ -110,7 +110,7 @@ public class DcpChannel {
         // attempt to restart the dropped streams
         for (int i = 0; i < openStreams.length; i++) {
             if (openStreams[i]) {
-                LOGGER.warn("Opening a stream that was dropped for vbucket " + i);
+                LOGGER.debug("Opening a stream that was dropped for vbucket " + i);
                 PartitionState ps = conductor.sessionState().get(i);
                 ps.prepareNextStreamRequest();
                 openStream((short) i, ps.getFailoverLog().get(0).getUuid(), ps.getSeqno(), SessionState.NO_END_SEQNO,
@@ -119,7 +119,7 @@ public class DcpChannel {
         }
         for (int i = 0; i < failoverLogRequests.length; i++) {
             if (failoverLogRequests[i]) {
-                LOGGER.warn("Re requesting failover logs for vbucket " + i);
+                LOGGER.debug("Re requesting failover logs for vbucket " + i);
                 getFailoverLog((short) i);
             }
         }
@@ -163,7 +163,7 @@ public class DcpChannel {
 
     public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno,
             final long endSeqno, final long snapshotStartSeqno, final long snapshotEndSeqno) {
-        LOGGER.warn("opening stream for " + vbid);
+        LOGGER.debug("opening stream for " + vbid);
         if (getState() != State.CONNECTED) {
             throw new NotConnectedException();
         }
@@ -218,7 +218,7 @@ public class DcpChannel {
     }
 
     public synchronized void getFailoverLog(final short vbid) {
-        LOGGER.warn("requesting failover logs for vbucket " + vbid);
+        LOGGER.debug("requesting failover logs for vbucket " + vbid);
         if (getState() != State.CONNECTED) {
             throw new NotConnectedException();
         }
