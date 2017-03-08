@@ -77,6 +77,12 @@ public class PartitionState {
         return failoverLog;
     }
 
+    public FailoverLogEntry getMostRecentFailoverLogEntry() {
+        synchronized (failoverLog) {
+            return failoverLog.get(failoverLog.size() - 1);
+        }
+    }
+
     /**
      * Add a new seqno/uuid combination to the failover log.
      *
@@ -86,7 +92,9 @@ public class PartitionState {
      *            the uuid for the sequence.
      */
     public void addToFailoverLog(long seqno, long vbuuid) {
-        failoverLog.add(new FailoverLogEntry(seqno, vbuuid));
+        synchronized (failoverLog) {
+            failoverLog.add(new FailoverLogEntry(seqno, vbuuid));
+        }
     }
 
     /**

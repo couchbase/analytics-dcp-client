@@ -66,7 +66,6 @@ public class Client {
     public Client(ClientBuilder builder) {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
-
         env = ClientEnvironment.builder().setClusterAt(builder.hostnames())
                 .setConnectionNameGenerator(builder.connectionNameGenerator()).setBucket(builder.bucket())
                 .setPassword(builder.password()).setDcpControl(builder.dcpControl())
@@ -415,6 +414,10 @@ public class Client {
 
     public short[] vbuckets() {
         return env.vbuckets();
+    }
+
+    public ClientEnvironment getEnvironment() {
+        return env;
     }
 
     public PartitionState getState(short vbid) {

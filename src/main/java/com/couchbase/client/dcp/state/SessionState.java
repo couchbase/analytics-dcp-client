@@ -105,4 +105,8 @@ public class SessionState {
     public String toString() {
         return "SessionState[" + partitionStates + ']';
     }
+
+    public int getNumOfPartitions() {
+        return partitionStates.size();
+    }
 }
