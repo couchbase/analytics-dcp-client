@@ -46,20 +46,21 @@ public class DcpChannel {
     private final Map<Integer, Short> vbuckets;
     private final boolean[] failoverLogRequests;
     private final boolean[] openStreams;
-    private final Conductor conductor;
+    private final SessionState sessionState;
     private final DcpChannelControlMessageHandler controlHandler;
     private volatile Channel channel;
     private final DcpChannelCloseListener closeListener;
 
-    public DcpChannel(InetAddress inetAddress, final ClientEnvironment env, final Conductor conductor) {
+    public DcpChannel(InetAddress inetAddress, final ClientEnvironment env, final SessionState sessionState,
+            int numOfPartitions) {
         setState(State.DISCONNECTED);
         this.inetAddress = inetAddress;
         this.env = env;
-        this.conductor = conductor;
+        this.sessionState = sessionState;
         this.vbuckets = new ConcurrentHashMap<>();
-        this.failoverLogRequests = new boolean[conductor.config().numberOfPartitions()];
+        this.failoverLogRequests = new boolean[numOfPartitions];
         this.controlHandler = new DcpChannelControlMessageHandler(this);
-        this.openStreams = new boolean[conductor.config().numberOfPartitions()];
+        this.openStreams = new boolean[numOfPartitions];
         this.closeListener = new DcpChannelCloseListener(this);
     }
 
@@ -111,9 +112,9 @@ public class DcpChannel {
         for (int i = 0; i < openStreams.length; i++) {
             if (openStreams[i]) {
                 LOGGER.debug("Opening a stream that was dropped for vbucket " + i);
-                PartitionState ps = conductor.sessionState().get(i);
+                PartitionState ps = sessionState.get(i);
                 ps.prepareNextStreamRequest();
-                openStream((short) i, ps.getFailoverLog().get(0).getUuid(), ps.getSeqno(), SessionState.NO_END_SEQNO,
+                openStream((short) i, ps.getUuid(), ps.getSeqno(), SessionState.NO_END_SEQNO,
                         ps.getSnapshotStartSeqno(), ps.getSnapshotEndSeqno());
             }
         }
@@ -161,8 +162,8 @@ public class DcpChannel {
         return inetAddress;
     }
 
-    public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno,
-            final long endSeqno, final long snapshotStartSeqno, final long snapshotEndSeqno) {
+    public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,
+            final long snapshotStartSeqno, final long snapshotEndSeqno) {
         LOGGER.debug("opening stream for " + vbid);
         if (getState() != State.CONNECTED) {
             throw new NotConnectedException();
@@ -171,7 +172,7 @@ public class DcpChannel {
                 "Opening Stream against {} with vbid: {}, vbuuid: {}, startSeqno: {}, "
                         + "endSeqno: {},  snapshotStartSeqno: {}, snapshotEndSeqno: {}",
                 channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno, snapshotEndSeqno);
-        conductor.getSessionState().get(vbid).setState(PartitionState.CONNECTING);
+        sessionState.get(vbid).setState(PartitionState.CONNECTING);
         openStreams[vbid] = true;
         int opaque = OPAQUE.incrementAndGet();
         ByteBuf buffer = Unpooled.buffer();
@@ -191,7 +192,7 @@ public class DcpChannel {
             throw new NotConnectedException();
         }
         LOGGER.debug("Closing Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
-        conductor.getSessionState().get(vbid).setState(PartitionState.DISCONNECTING);
+        sessionState.get(vbid).setState(PartitionState.DISCONNECTING);
         openStreams[vbid] = false;
         int opaque = OPAQUE.incrementAndGet();
         ByteBuf buffer = Unpooled.buffer();
@@ -240,9 +241,7 @@ public class DcpChannel {
     // Seriously!?
     @Override
     public boolean equals(Object o) {
-        if (o instanceof InetAddress) {
-            return inetAddress.equals(o);
-        } else if (o instanceof DcpChannel) {
+        if (o instanceof DcpChannel) {
             return inetAddress.equals(((DcpChannel) o).inetAddress);
         }
         return false;
@@ -286,8 +285,8 @@ public class DcpChannel {
         vbuckets.clear();
     }
 
-    public Conductor getConductor() {
-        return conductor;
+    public SessionState getSessionState() {
+        return sessionState;
     }
 
     public boolean[] getFailoverLogRequests() {

@@ -3,29 +3,18 @@
  */
 package com.couchbase.client.dcp.events;
 
-import java.util.Map;
-
-import com.couchbase.client.core.event.CouchbaseEvent;
-import com.couchbase.client.core.event.EventType;
-
-public class RollbackEvent implements CouchbaseEvent {
+public class RollbackEvent implements DcpEvent {
 
     private final short vbid;
-    private final long seq;
+    private long seq;
 
-    public RollbackEvent(short vbid, long seq) {
+    public RollbackEvent(short vbid) {
         this.vbid = vbid;
-        this.seq = seq;
     }
 
     @Override
-    public EventType type() {
-        return EventType.SYSTEM;
-    }
-
-    @Override
-    public Map<String, Object> toMap() {
-        return null;
+    public Type getType() {
+        return Type.ROLLBACK;
     }
 
     public short getVbid() {
@@ -34,6 +23,10 @@ public class RollbackEvent implements CouchbaseEvent {
 
     public long getSeq() {
         return seq;
+    }
+
+    public void setSeq(long seq) {
+        this.seq = seq;
     }
 
 }

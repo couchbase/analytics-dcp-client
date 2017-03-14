@@ -3,8 +3,13 @@
  */
 package com.couchbase.client.dcp.state;
 
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
 import com.couchbase.client.deps.com.fasterxml.jackson.annotation.JsonCreator;
 import com.couchbase.client.deps.com.fasterxml.jackson.annotation.JsonProperty;
+import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Represents a single entry in a failover log per partition state.
@@ -34,6 +39,18 @@ public class FailoverLogEntry {
 
     @Override
     public String toString() {
-        return "FailoverLogEntry{" + "seqno=" + seqno + ", uuid=" + uuid + '}';
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            return mapper.writeValueAsString(toMap());
+        } catch (IOException e) {
+            return "{\"object\"=\"failed\"}";
+        }
+    }
+
+    public Map<String, Object> toMap() {
+        Map<String, Object> tree = new HashMap<>();
+        tree.put("uuid", uuid);
+        tree.put("seqno", seqno);
+        return tree;
     }
 }

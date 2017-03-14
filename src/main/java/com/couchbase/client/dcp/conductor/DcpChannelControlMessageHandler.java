@@ -6,13 +6,14 @@ package com.couchbase.client.dcp.conductor;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
-import com.couchbase.client.dcp.events.RollbackEvent;
+import com.couchbase.client.dcp.events.NotMyVBuvketEvent;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpCloseStreamResponse;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
+import com.couchbase.client.dcp.message.DcpStateVbucketStateMessage;
 import com.couchbase.client.dcp.message.DcpStreamEndMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.StreamEndReason;
@@ -43,7 +44,13 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             handleDcpGetPartitionSeqnosResponse(buf);
         } else if (DcpSnapshotMarkerRequest.is(buf)) {
             handleDcpSnapshotMarker(buf);
+        } else if (DcpStateVbucketStateMessage.is(buf)) {
+            handleDcpStateVbucketStateMessage(buf);
         }
+    }
+
+    private void handleDcpStateVbucketStateMessage(ByteBuf buf) {
+        // this should only happen between kv nodes
     }
 
     private void handleDcpSnapshotMarker(ByteBuf buf) {
@@ -51,7 +58,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             short vbucket = DcpSnapshotMarkerRequest.partition(buf);
             long start = DcpSnapshotMarkerRequest.startSeqno(buf);
             long end = DcpSnapshotMarkerRequest.endSeqno(buf);
-            PartitionState ps = channel.getConductor().getSessionState().get(vbucket);
+            PartitionState ps = channel.getSessionState().get(vbucket);
             ps.useStreamRequest();
             ps.setSnapshotStartSeqno(start);
             ps.setSnapshotEndSeqno(end);
@@ -76,12 +83,12 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 case 0x07:
                     LOGGER.debug("stream not my vbucket response for vbucket " + vbid);
                     channel.openStreams()[vbid] = false;
-                    channel.getConductor().getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
+                    channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
                     channel.getEnv().eventBus().publish(new NotMyVBuvketEvent(channel, vbid));
                     break;
                 default:
                     channel.openStreams()[vbid] = false;
-                    channel.getConductor().getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
+                    channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
                     LOGGER.warn("stream unknown response for vbucket " + vbid);
             }
         } finally {
@@ -98,10 +105,11 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             ByteBuf copiedBuf = MessageUtil.getContent(buf).copy().writeShort(vbid);
             MessageUtil.setContent(copiedBuf, flog);
             copiedBuf.release();
-            PartitionState ps = channel.getConductor().getSessionState().get(vbid);
-            DcpFailoverLogResponse.fill(flog, ps.getFailoverLog());
+            PartitionState ps = channel.getSessionState().get(vbid);
+            DcpFailoverLogResponse.fill(flog, ps);
             channel.getFailoverLogRequests()[vbid] = false;
             ps.failoverUpdated();
+            channel.getEnv().eventBus().publish(ps.getFailoverLogUpdateEvent());
         } finally {
             buf.release();
         }
@@ -109,13 +117,15 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     private void handleOpenStreamRollback(ByteBuf buf, short vbid) {
         channel.openStreams()[vbid] = false;
-        channel.getConductor().getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-        channel.getEnv().eventBus().publish(new RollbackEvent(vbid, DcpOpenStreamResponse.rollbackSeqno(buf)));
+        PartitionState partitionState = channel.getSessionState().get(vbid);
+        partitionState.setState(PartitionState.DISCONNECTED);
+        partitionState.getRollbackEvent().setSeq(DcpOpenStreamResponse.rollbackSeqno(buf));
+        channel.getEnv().eventBus().publish(partitionState.getRollbackEvent());
     }
 
     private void handleOpenStreamSuccess(ByteBuf buf, short vbid) {
         channel.openStreams()[vbid] = true;
-        channel.getConductor().getSessionState().get(vbid).setState(PartitionState.CONNECTED);
+        channel.getSessionState().get(vbid).setState(PartitionState.CONNECTED);
         ByteBuf flog = Unpooled.buffer();
         DcpFailoverLogResponse.init(flog);
         DcpFailoverLogResponse.vbucket(flog, DcpOpenStreamResponse.vbucket(buf));
@@ -132,7 +142,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 int offset = i * 10;
                 short vbid = content.getShort(offset);
                 long seq = content.getLong(offset + Short.BYTES);
-                channel.getConductor().sessionState().get(vbid).setCurrentVBucketSeqnoInMaster(seq);
+                channel.getSessionState().get(vbid).setCurrentVBucketSeqnoInMaster(seq);
             }
         } finally {
             buf.release();
@@ -142,12 +152,15 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleDcpStreamEndMessage(ByteBuf buf) {
         try {
             short vbid = DcpStreamEndMessage.vbucket(buf);
+            channel.openStreams()[vbid] = false;
             StreamEndReason reason = DcpStreamEndMessage.reason(buf);
+            PartitionState state = channel.getSessionState().get(vbid);
+            StreamEndEvent endEvent = state.getEndEvent();
+            endEvent.setReason(reason);
             LOGGER.debug("Server closed Stream on vbid {} with reason {}", vbid, reason);
             if (channel.getEnv().eventBus() != null) {
-                channel.getEnv().eventBus().publish(new StreamEndEvent(vbid, reason));
+                channel.getEnv().eventBus().publish(endEvent);
             }
-            channel.openStreams()[vbid] = false;
         } finally {
             buf.release();
         }
@@ -157,7 +170,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         try {
             Short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
             channel.openStreams()[vbid] = false;
-            channel.getConductor().getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
+            channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
             LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getInetAddress(), vbid);
         } finally {
             buf.release();

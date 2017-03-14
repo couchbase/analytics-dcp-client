@@ -8,13 +8,6 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import com.couchbase.client.core.env.ConfigParserEnvironment;
-import com.couchbase.client.core.env.CoreScheduler;
-import com.couchbase.client.core.env.resources.NoOpShutdownHook;
-import com.couchbase.client.core.env.resources.ShutdownHook;
-import com.couchbase.client.core.event.CouchbaseEvent;
-import com.couchbase.client.core.event.DefaultEventBus;
-import com.couchbase.client.core.event.EventBus;
-import com.couchbase.client.core.event.EventType;
 import com.couchbase.client.core.node.DefaultMemcachedHashingStrategy;
 import com.couchbase.client.core.node.MemcachedHashingStrategy;
 import com.couchbase.client.core.time.Delay;
@@ -22,13 +15,12 @@ import com.couchbase.client.dcp.ConnectionNameGenerator;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DataEventHandler;
 import com.couchbase.client.dcp.SystemEventHandler;
+import com.couchbase.client.dcp.events.DefaultEventBus;
+import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 
 import rx.Completable;
 import rx.Observable;
-import rx.Scheduler;
-import rx.Subscriber;
-import rx.Subscription;
 
 /**
  * The {@link ClientEnvironment} is responsible to carry various configuration and
@@ -142,10 +134,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final int dcpChannelsReconnectMaxAttempts;
 
     private final EventBus eventBus;
-    private final Scheduler scheduler;
-    private final ShutdownHook schedulerShutdownHook;
-    private SystemEventHandler systemEventHandler;
-    private Subscription systemEventSubscription;
     private final boolean sslEnabled;
     private final String sslKeystoreFile;
     private final String sslKeystorePassword;
@@ -181,13 +169,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         dcpChannelsReconnectMaxAttempts = builder.dcpChannelsReconnectMaxAttempts;
         if (builder.eventBus != null) {
             eventBus = builder.eventBus;
-            this.scheduler = null;
-            this.schedulerShutdownHook = new NoOpShutdownHook();
         } else {
-            CoreScheduler coreScheduler = new CoreScheduler(3);
-            this.scheduler = coreScheduler;
-            this.schedulerShutdownHook = coreScheduler;
-            eventBus = new DefaultEventBus(coreScheduler);
+            eventBus = new DefaultEventBus();
         }
         bootstrapHttpDirectPort = builder.bootstrapHttpDirectPort;
         bootstrapHttpSslPort = builder.bootstrapHttpSslPort;
@@ -310,26 +293,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      * Set/Override the control event handler.
      */
     public void setSystemEventHandler(final SystemEventHandler systemEventHandler) {
-        if (systemEventSubscription != null) {
-            systemEventSubscription.unsubscribe();
-        }
-        if (systemEventHandler != null) {
-            systemEventSubscription = eventBus().get().filter(evt -> evt.type().equals(EventType.SYSTEM))
-                    .subscribe(new Subscriber<CouchbaseEvent>() {
-                        @Override
-                        public void onCompleted() {
-                            /* Ignoring on purpose. */}
-
-                        @Override
-                        public void onError(Throwable e) {
-                            /* Ignoring on purpose. */ }
-
-                        @Override
-                        public void onNext(CouchbaseEvent evt) {
-                            systemEventHandler.onEvent(evt);
-                        }
-                    });
-        }
+        eventBus.subscribe(systemEventHandler);
     }
 
     /**
@@ -640,8 +604,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
                         }
                     })).toObservable();
         }
-        return Observable.merge(schedulerShutdownHook.shutdown(), loopShutdown)
-                .reduce(true, (previous, current) -> previous && current).toCompletable();
+        return loopShutdown.toCompletable();
     }
 
     @Override

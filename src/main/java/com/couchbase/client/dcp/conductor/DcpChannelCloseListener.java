@@ -6,6 +6,7 @@ package com.couchbase.client.dcp.conductor;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
+import com.couchbase.client.dcp.events.ImpossibleEvent;
 import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
 import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
 

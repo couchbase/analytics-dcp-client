@@ -24,18 +24,13 @@ import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
 import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
 import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 
-/**
- * The {@link HttpStreamingConfigProvider}s only purpose is to keep new configs coming in all the time in a resilient manner.
- *
- * @author Michael Nitschinger
- */
 public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
     private static final CouchbaseLogger LOGGER =
             CouchbaseLoggerFactory.getInstance(HttpStreamingConfigProvider.class);
     private final AtomicReference<List<String>> hostnames;
     private final ClientEnvironment env;
-    private CouchbaseBucketConfig config;
+    private volatile CouchbaseBucketConfig config;
     private volatile boolean refreshed = false;
     private volatile boolean failure = false;
     private volatile Throwable cause;
@@ -44,6 +39,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
             LOGGER.log(CouchbaseLogLevel.DEBUG, "Channel has been closed");
             if (!refreshed) {
                 LOGGER.log(CouchbaseLogLevel.DEBUG, "Before it is refereshed. Need to wake up the waiting thread");
+                refreshed = true;
                 failure = true;
                 HttpStreamingConfigProvider.this.notifyAll();
             }
@@ -57,7 +53,6 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
 
     @Override
     public void refresh() throws Throwable {
-        refreshed = false;
         tryConnectHosts();
     }
 
@@ -88,6 +83,8 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         ByteBufAllocator allocator =
                 env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
         while (attempt < env.configProviderReconnectMaxAttempts()) {
+            failure = false;
+            refreshed = false;
             Bootstrap bootstrap = new Bootstrap()
                     .remoteAddress(hostname,
                             env.sslEnabled() ? env.bootstrapHttpSslPort() : env.bootstrapHttpDirectPort())
@@ -100,18 +97,16 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
                 connectFuture.await();
                 if (connectFuture.isSuccess()) {
                     waitForConfig(connectFuture);
-                    if (refreshed) {
-                        failure = false;
-                        cause = null;
-                        return true;
-                    }
                 } else {
-                    cause = connectFuture.cause();
+                    fail(connectFuture.cause());
                 }
             } finally {
                 LOGGER.log(CouchbaseLogLevel.DEBUG, "Closing the channel");
                 connectFuture.channel().close().await();
                 LOGGER.log(CouchbaseLogLevel.DEBUG, "Channel closed");
+            }
+            if (!failure) {
+                return true;
             }
             if (cause != null && !(cause instanceof SocketException)) {
                 return false;
@@ -125,9 +120,8 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     }
 
     private synchronized void waitForConfig(ChannelFuture connectFuture) throws InterruptedException {
-        failure = false;
         connectFuture.channel().closeFuture().addListener(closeListener);
-        while (!failure && !refreshed) {
+        while (!refreshed) {
             this.wait();
         }
     }
@@ -135,12 +129,21 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     @Override
     public synchronized void configure(CouchbaseBucketConfig config) {
         this.config = config;
+        this.cause = null;
         List<String> newNodes = new ArrayList<>();
         for (NodeInfo node : config.nodes()) {
             newNodes.add(node.hostname().getHostAddress());
         }
         LOGGER.debug("Updated config stream node list to {}.", newNodes);
         hostnames.set(newNodes);
+        refreshed = true;
+        notifyAll();
+    }
+
+    @Override
+    public synchronized void fail(Throwable throwable) {
+        failure = true;
+        cause = throwable;
         refreshed = true;
         notifyAll();
     }

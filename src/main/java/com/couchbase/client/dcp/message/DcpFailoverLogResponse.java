@@ -5,9 +5,7 @@ package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_FAILOVER_LOG_OPCODE;
 
-import java.util.List;
-
-import com.couchbase.client.dcp.state.FailoverLogEntry;
+import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public enum DcpFailoverLogResponse {
@@ -54,10 +52,10 @@ public enum DcpFailoverLogResponse {
         return sb.append("]]").toString();
     }
 
-    public static void fill(final ByteBuf buffer, List<FailoverLogEntry> logs) {
+    public static void fill(final ByteBuf buffer, PartitionState ps) {
         int numEntries = numLogEntries(buffer);
         for (int i = 0; i < numEntries; i++) {
-            logs.add(new FailoverLogEntry(seqnoEntry(buffer, i), vbuuidEntry(buffer, i)));
+            ps.addToFailoverLog(seqnoEntry(buffer, i), vbuuidEntry(buffer, i));
         }
     }
 }

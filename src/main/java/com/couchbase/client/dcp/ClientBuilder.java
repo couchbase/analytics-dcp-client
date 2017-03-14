@@ -8,11 +8,11 @@ import java.security.KeyStore;
 import java.util.Arrays;
 import java.util.List;
 
-import com.couchbase.client.core.event.EventBus;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.conductor.ConfigProvider;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
+import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 
 /**

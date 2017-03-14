@@ -3,48 +3,48 @@
  */
 package com.couchbase.client.dcp.events;
 
-import java.util.Map;
-
-import com.couchbase.client.core.event.CouchbaseEvent;
-import com.couchbase.client.core.event.EventType;
-import com.couchbase.client.core.utils.Events;
 import com.couchbase.client.dcp.message.StreamEndReason;
+import com.couchbase.client.dcp.state.PartitionState;
 
 /**
  * Event published when stream has stopped activity.
  */
-public class StreamEndEvent implements CouchbaseEvent {
-    private final short partition;
-    private final StreamEndReason reason;
+public class StreamEndEvent implements DcpEvent {
+    private final PartitionState state;
+    private StreamEndReason reason;
 
-    public StreamEndEvent(short partition, StreamEndReason reason) {
-        this.partition = partition;
-        this.reason = reason;
+    public StreamEndEvent(PartitionState state) {
+        this.state = state;
+        reason = StreamEndReason.INVALID;
     }
 
     @Override
-    public EventType type() {
-        return EventType.SYSTEM;
+    public Type getType() {
+        return Type.STREAM_END;
     }
 
     public short partition() {
-        return partition;
+        return state.vbid();
     }
 
     public StreamEndReason reason() {
         return reason;
     }
 
-    @Override
-    public Map<String, Object> toMap() {
-        Map<String, Object> result = Events.identityMap(this);
-        result.put("partition", partition);
-        result.put("reason", reason);
-        return result;
+    public void reset() {
+        reason = StreamEndReason.INVALID;
+    }
+
+    public void setReason(StreamEndReason reason) {
+        this.reason = reason;
     }
 
     @Override
     public String toString() {
-        return "StreamEndEvent{" + "partition=" + partition + "reason=" + reason + '}';
+        return "StreamEndEvent{" + "partition=" + state.vbid() + "reason=" + reason + '}';
+    }
+
+    public PartitionState getState() {
+        return state;
     }
 }

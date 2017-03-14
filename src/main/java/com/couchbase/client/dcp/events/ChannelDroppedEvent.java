@@ -3,13 +3,9 @@
  */
 package com.couchbase.client.dcp.events;
 
-import java.util.Map;
-
-import com.couchbase.client.core.event.CouchbaseEvent;
-import com.couchbase.client.core.event.EventType;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 
-public class ChannelDroppedEvent implements CouchbaseEvent {
+public class ChannelDroppedEvent implements DcpEvent {
     private final DcpChannel channel;
     private final Throwable cause;
 
@@ -19,13 +15,8 @@ public class ChannelDroppedEvent implements CouchbaseEvent {
     }
 
     @Override
-    public EventType type() {
-        return EventType.SYSTEM;
-    }
-
-    @Override
-    public Map<String, Object> toMap() {
-        return null;
+    public Type getType() {
+        return Type.CHANNEL_DROPPED;
     }
 
     public DcpChannel getChannel() {

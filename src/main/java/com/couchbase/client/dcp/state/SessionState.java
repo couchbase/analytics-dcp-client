@@ -101,12 +101,13 @@ public class SessionState {
         return new byte[0];
     }
 
-    @Override
-    public String toString() {
-        return "SessionState[" + partitionStates + ']';
-    }
-
     public int getNumOfPartitions() {
         return partitionStates.size();
+    }
+
+    @Override
+    public String toString() {
+        return partitionStates.toString();
+
     }
 }

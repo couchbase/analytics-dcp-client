@@ -3,11 +3,19 @@
  */
 package com.couchbase.client.dcp.state;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.dcp.events.FailoverLogUpdateEvent;
+import com.couchbase.client.dcp.events.RollbackEvent;
+import com.couchbase.client.dcp.events.StreamEndEvent;
+import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Represents the individual current session state for a given partition.
@@ -34,6 +42,8 @@ public class PartitionState {
      */
     private volatile long seqno = 0;
 
+    private volatile long uuid = 0;
+
     private volatile long snapshotStartSeqno = 0;
 
     private volatile long snapshotEndSeqno = 0;
@@ -44,6 +54,10 @@ public class PartitionState {
 
     private StreamRequest streamRequest;
 
+    private final StreamEndEvent endEvent;
+    private final FailoverLogUpdateEvent failoverLogUpdateEvent;
+    private final RollbackEvent rollbackEvent;
+
     /**
      * Initialize a new partition state.
      */
@@ -52,6 +66,9 @@ public class PartitionState {
         failoverLog = new ArrayList<>();
         setState(DISCONNECTED);
         failoverUpdated = false;
+        endEvent = new StreamEndEvent(this);
+        failoverLogUpdateEvent = new FailoverLogUpdateEvent(this);
+        rollbackEvent = new RollbackEvent(vbid);
     }
 
     public long getSnapshotStartSeqno() {
@@ -72,15 +89,14 @@ public class PartitionState {
 
     /**
      * Returns the full failover log stored, in sorted order.
+     * index of more recent history entry > index of less recent history entry
      */
     public List<FailoverLogEntry> getFailoverLog() {
-        return failoverLog;
+        return Collections.unmodifiableList(failoverLog);
     }
 
-    public FailoverLogEntry getMostRecentFailoverLogEntry() {
-        synchronized (failoverLog) {
-            return failoverLog.get(failoverLog.size() - 1);
-        }
+    public boolean hasFailoverLogs() {
+        return !failoverLog.isEmpty();
     }
 
     /**
@@ -93,7 +109,12 @@ public class PartitionState {
      */
     public void addToFailoverLog(long seqno, long vbuuid) {
         synchronized (failoverLog) {
+            // if the failover log exists, remove all failover logs after it
+            if (!failoverLog.isEmpty() && failoverLog.get(failoverLog.size() - 1).getUuid() >= vbuuid) {
+                return;
+            }
             failoverLog.add(new FailoverLogEntry(seqno, vbuuid));
+            this.uuid = vbuuid;
         }
     }
 
@@ -137,8 +158,8 @@ public class PartitionState {
 
     public void prepareNextStreamRequest() {
         if (streamRequest == null) {
-            this.streamRequest = new StreamRequest(vbid, seqno, SessionState.NO_END_SEQNO,
-                    failoverLog.get(failoverLog.size() - 1).getUuid(), snapshotStartSeqno, snapshotEndSeqno);
+            this.streamRequest = new StreamRequest(vbid, seqno, SessionState.NO_END_SEQNO, uuid, snapshotStartSeqno,
+                    snapshotEndSeqno);
         }
     }
 
@@ -160,8 +181,23 @@ public class PartitionState {
 
     @Override
     public String toString() {
-        return "vbid = " + vbid + ", maxSeq = " + currentVBucketSeqnoInMaster + ", seqno = " + seqno + ", state = "
-                + state + ", uuid = " + failoverLog.get(0).getUuid();
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            return mapper.writeValueAsString(toMap());
+        } catch (IOException e) {
+            return "{\"object\":\"failed\"}";
+        }
+    }
+
+    public Map<String, Object> toMap() {
+        Map<String, Object> tree = new HashMap<>();
+        tree.put("vbid", vbid);
+        tree.put("maxSeq", currentVBucketSeqnoInMaster);
+        tree.put("uuid", uuid);
+        tree.put("seqno", seqno);
+        tree.put("state", state);
+        tree.put("failoverLog", failoverLog);
+        return tree;
     }
 
     public synchronized void failoverUpdated() {
@@ -180,5 +216,29 @@ public class PartitionState {
         while (!failoverUpdated) {
             wait();
         }
+    }
+
+    public StreamEndEvent getEndEvent() {
+        return endEvent;
+    }
+
+    public FailoverLogUpdateEvent getFailoverLogUpdateEvent() {
+        return failoverLogUpdateEvent;
+    }
+
+    public RollbackEvent getRollbackEvent() {
+        return rollbackEvent;
+    }
+
+    public long getUuid() {
+        return uuid;
+    }
+
+    public int getFailoverLogSize() {
+        return failoverLog.size();
+    }
+
+    public FailoverLogEntry getFailoverLog(int i) {
+        return failoverLog.get(i);
     }
 }

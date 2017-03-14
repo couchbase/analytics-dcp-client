@@ -8,6 +8,10 @@ package com.couchbase.client.dcp.message;
  */
 public enum StreamEndReason {
     /**
+     * Invalid stream end reason
+     */
+    INVALID(0xFF),
+    /**
      * The stream has finished without error.
      */
     OK(0x00),
