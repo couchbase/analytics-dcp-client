@@ -6,7 +6,6 @@ package com.couchbase.client.dcp.conductor;
 import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
@@ -28,7 +27,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
 
     private static final CouchbaseLogger LOGGER =
             CouchbaseLoggerFactory.getInstance(HttpStreamingConfigProvider.class);
-    private final AtomicReference<List<String>> hostnames;
+    private final List<String> hostnames;
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
     private volatile boolean refreshed = false;
@@ -48,7 +47,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
 
     public HttpStreamingConfigProvider(ClientEnvironment env) {
         this.env = env;
-        this.hostnames = new AtomicReference<>(env.hostnames());
+        this.hostnames = new ArrayList<>(env.hostnames());
     }
 
     @Override
@@ -63,9 +62,8 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
 
     private void tryConnectHosts() throws Throwable {
         Throwable cause = null;
-        List<String> hosts = this.hostnames.get();
-        for (int i = 0; i < hosts.size(); i++) {
-            if (tryConnectHost(hosts.get(i))) {
+        for (int i = 0; i < hostnames.size(); i++) {
+            if (tryConnectHost(hostnames.get(i))) {
                 return;
             } else {
                 if (cause == null) {
@@ -112,7 +110,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
                 return false;
             }
             synchronized (this) {
-                wait(200);
+                wait(100);
             }
             attempt++;
         }
@@ -130,12 +128,11 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     public synchronized void configure(CouchbaseBucketConfig config) {
         this.config = config;
         this.cause = null;
-        List<String> newNodes = new ArrayList<>();
+        hostnames.clear();
         for (NodeInfo node : config.nodes()) {
-            newNodes.add(node.hostname().getHostAddress());
+            hostnames.add(node.hostname().getHostAddress());
         }
-        LOGGER.debug("Updated config stream node list to {}.", newNodes);
-        hostnames.set(newNodes);
+        LOGGER.debug("Updated config stream node list to {}.", hostnames);
         refreshed = true;
         notifyAll();
     }

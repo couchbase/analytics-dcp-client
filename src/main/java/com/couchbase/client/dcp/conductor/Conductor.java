@@ -37,6 +37,10 @@ public class Conductor {
         env.setSystemEventHandler(fixer);
     }
 
+    public ClientEnvironment getEnv() {
+        return env;
+    }
+
     public SessionState getSessionState() {
         return sessionState;
     }
@@ -95,7 +99,7 @@ public class Conductor {
         ps.waitTillFailoverUpdated();
     }
 
-    public void startStreamForPartition(StreamRequest request) throws InterruptedException {
+    public void startStreamForPartition(StreamRequest request) {
         DcpChannel channel = masterChannelByPartition(request.getPartition());
         channel.openStream(request.getPartition(), request.getVbucketUuid(), request.getStartSeqno(),
                 request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno());

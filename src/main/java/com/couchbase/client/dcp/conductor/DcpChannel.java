@@ -12,10 +12,12 @@ import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.dcp.config.ClientEnvironment;
+import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpCloseStreamRequest;
 import com.couchbase.client.dcp.message.DcpFailoverLogRequest;
 import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosRequest;
 import com.couchbase.client.dcp.message.DcpOpenStreamRequest;
+import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.message.VbucketState;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
@@ -166,7 +168,11 @@ public class DcpChannel {
             final long snapshotStartSeqno, final long snapshotEndSeqno) {
         LOGGER.debug("opening stream for " + vbid);
         if (getState() != State.CONNECTED) {
-            throw new NotConnectedException();
+            PartitionState state = sessionState.get(vbid);
+            StreamEndEvent endEvent = state.getEndEvent();
+            endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
+            LOGGER.warn("Attempt to open stream on disconnected channel");
+            env.eventBus().publish(endEvent);
         }
         LOGGER.debug(
                 "Opening Stream against {} with vbid: {}, vbuuid: {}, startSeqno: {}, "
