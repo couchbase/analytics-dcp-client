@@ -13,6 +13,7 @@ import java.util.Map;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.events.FailoverLogUpdateEvent;
+import com.couchbase.client.dcp.events.NotMyVBucketEvent;
 import com.couchbase.client.dcp.events.RollbackEvent;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,6 +58,7 @@ public class PartitionState {
     private final StreamEndEvent endEvent;
     private final FailoverLogUpdateEvent failoverLogUpdateEvent;
     private final RollbackEvent rollbackEvent;
+    private final NotMyVBucketEvent notMyVBucketEvent;
 
     /**
      * Initialize a new partition state.
@@ -69,6 +71,7 @@ public class PartitionState {
         endEvent = new StreamEndEvent(this);
         failoverLogUpdateEvent = new FailoverLogUpdateEvent(this);
         rollbackEvent = new RollbackEvent(vbid);
+        notMyVBucketEvent = new NotMyVBucketEvent(this);
     }
 
     public long getSnapshotStartSeqno() {
@@ -240,5 +243,9 @@ public class PartitionState {
 
     public FailoverLogEntry getFailoverLog(int i) {
         return failoverLog.get(i);
+    }
+
+    public NotMyVBucketEvent getNotMyVBucketEvent() {
+        return notMyVBucketEvent;
     }
 }

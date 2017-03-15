@@ -6,7 +6,7 @@ package com.couchbase.client.dcp.conductor;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
-import com.couchbase.client.dcp.events.NotMyVBuvketEvent;
+import com.couchbase.client.dcp.events.NotMyVBucketEvent;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpCloseStreamResponse;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
@@ -83,8 +83,11 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 case 0x07:
                     LOGGER.debug("stream not my vbucket response for vbucket " + vbid);
                     channel.openStreams()[vbid] = false;
-                    channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-                    channel.getEnv().eventBus().publish(new NotMyVBuvketEvent(channel, vbid));
+                    PartitionState ps = channel.getSessionState().get(vbid);
+                    ps.setState(PartitionState.DISCONNECTED);
+                    NotMyVBucketEvent nmvbe = ps.getNotMyVBucketEvent();
+                    nmvbe.setChannel(channel);
+                    channel.getEnv().eventBus().publish(nmvbe);
                     break;
                 default:
                     channel.openStreams()[vbid] = false;

@@ -8,9 +8,12 @@ import org.apache.log4j.Logger;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.dcp.SystemEventHandler;
+import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.events.DcpEvent;
 import com.couchbase.client.dcp.events.DcpEvent.Type;
+import com.couchbase.client.dcp.events.NotMyVBucketEvent;
 import com.couchbase.client.dcp.events.StreamEndEvent;
+import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.state.PartitionState;
 
 public class Fixer implements Runnable, SystemEventHandler {
@@ -69,12 +72,22 @@ public class Fixer implements Runnable, SystemEventHandler {
                     // 2. the partition is now owned by an existing connected kv node channel, add a stream there.
                     // 3. the partition is owned by a new kv node.
                     //    add a new channel and establish the stream for the partition
+                    fixDroppedChannel((ChannelDroppedEvent) event);
                     LOGGER.log(Level.WARN, "Channel dropped. should fix all vbuckets");
                     break;
                 case NOT_MY_VBUCKET:
                     // wait 100 ms, refresh the config, find the new assigned kv node
                     // (could still be the same one), and re-attempt connection
                     // this should never cause a permanent failure
+                    NotMyVBucketEvent notMyVbucketEvent = (NotMyVBucketEvent) event;
+                    conductor.configProvider().refresh();
+                    CouchbaseBucketConfig config = conductor.config();
+                    int index = config.nodeIndexForMaster(notMyVbucketEvent.getVbid(), false);
+                    NodeInfo node = config.nodeAtIndex(index);
+                    conductor.add(node, config);
+                    PartitionState state = notMyVbucketEvent.getPartitionState();
+                    state.prepareNextStreamRequest();
+                    conductor.startStreamForPartition(state.getStreamRequest());
                     LOGGER.log(Level.WARN,
                             "Attempted to open a vbucket from wrong master. refresh config and try again");
                     break;
@@ -103,14 +116,15 @@ public class Fixer implements Runnable, SystemEventHandler {
                             LOGGER.log(Level.INFO, "Stream reached the end of your request");
                             break;
                         case STATE_CHANGED:
+                        case CHANNEL_DROPPED:
                             // Preparing to rebalance, update the config
                             // get the new master for the partition and resume from there
                             conductor.configProvider().refresh();
-                            CouchbaseBucketConfig config = conductor.config();
-                            int index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
-                            NodeInfo node = config.nodeAtIndex(index);
+                            config = conductor.config();
+                            index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
+                            node = config.nodeAtIndex(index);
                             conductor.add(node, config);
-                            PartitionState state = streamEndEvent.getState();
+                            state = streamEndEvent.getState();
                             state.prepareNextStreamRequest();
                             conductor.startStreamForPartition(state.getStreamRequest());
                             break;
@@ -126,6 +140,46 @@ public class Fixer implements Runnable, SystemEventHandler {
                 default:
                     break;
 
+            }
+        } catch (InterruptedException e) {
+            throw e;
+        } catch (Throwable th) {
+            // there should be a way to pass non-recoverable failures
+            LOGGER.log(Level.ERROR, "Unexpected error in fixer thread while trying to fix a failure ", th);
+        }
+    }
+
+    private void fixDroppedChannel(ChannelDroppedEvent event) throws InterruptedException {
+        try {
+            DcpChannel channel = event.getChannel();
+            conductor.configProvider().refresh();
+            CouchbaseBucketConfig config = conductor.configProvider().config();
+            synchronized (channel) {
+                channel.setState(State.DISCONNECTED);
+                if (config.hasPrimaryPartitionsOnNode(channel.getInetAddress())) {
+                    try {
+                        LOGGER.debug("trying to reconnect");
+                        channel.wait(200);
+                        channel.connect();
+                    } catch (Throwable th) {
+                        LOGGER.warn("Failed to re-establish a failed dcp connection. Must notify the client", th);
+                    }
+                } else {
+                    int numPartitions = config.numberOfPartitions();
+                    for (short vb = 0; vb < numPartitions; vb++) {
+                        if (channel.streamIsOpen(vb)) {
+                            channel.openStreams()[vb] = false;
+                            PartitionState state = channel.getSessionState().get(vb);
+                            state.setState(PartitionState.DISCONNECTED);
+                            StreamEndEvent endEvent = state.getEndEvent();
+                            endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
+                            LOGGER.info("Server closed Stream on vbid " + vb + " with reason "
+                                    + StreamEndReason.CHANNEL_DROPPED);
+                            channel.getEnv().eventBus().publish(endEvent);
+                        }
+                    }
+                    conductor.removeChannel(channel);
+                }
             }
         } catch (InterruptedException e) {
             throw e;

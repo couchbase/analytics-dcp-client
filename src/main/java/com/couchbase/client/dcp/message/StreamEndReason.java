@@ -35,7 +35,11 @@ public enum StreamEndReason {
      * trying to serve the client. When the client is ready to read from the stream
      * again it should reconnect. This flag is available starting in Couchbase 4.5.
      */
-    TOO_SLOW(0x04);
+    TOO_SLOW(0x04),
+    /**
+     * the stream ended because its channel was dropped abruptly
+     */
+    CHANNEL_DROPPED(0x05);
 
     private final int value;
 

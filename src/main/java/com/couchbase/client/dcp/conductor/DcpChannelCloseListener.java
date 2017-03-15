@@ -27,7 +27,7 @@ public class DcpChannelCloseListener implements ChannelFutureListener {
         // otherwise, this should attempt to restart the connection
         switch (channel.getState()) {
             case CONNECTED:
-                revive();
+                channel.getEnv().eventBus().publish(new ChannelDroppedEvent(channel, null));
                 break;
             case DISCONNECTING:
                 channel.setState(State.DISCONNECTED);
@@ -38,21 +38,4 @@ public class DcpChannelCloseListener implements ChannelFutureListener {
                 break;
         }
     }
-
-    private void revive() {
-        new Thread(() -> {
-            synchronized (channel) {
-                channel.setState(State.DISCONNECTED);
-                try {
-                    LOGGER.debug("trying to reconnect");
-                    wait(200);
-                    channel.connect();
-                } catch (Throwable th) {
-                    LOGGER.warn("Failed to re-establish a failed dcp connection. Notifying the user");
-                    channel.getEnv().eventBus().publish(new ChannelDroppedEvent(channel, th));
-                }
-            }
-        }).start();
-    }
-
 }

@@ -186,7 +186,7 @@ public class Conductor {
         return masterChannelByPartition(vbid);
     }
 
-    public boolean hasChannle(InetAddress address) {
-        return channels.containsKey(address);
+    public synchronized void removeChannel(DcpChannel channel) {
+        channels.remove(channel.getInetAddress());
     }
 }
