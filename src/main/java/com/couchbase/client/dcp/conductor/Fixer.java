@@ -188,12 +188,23 @@ public class Fixer implements Runnable, SystemEventHandler {
             CouchbaseBucketConfig config = conductor.configProvider().config();
             int numPartitions = config.numberOfPartitions();
             synchronized (channel) {
-                channel.setState(State.DISCONNECTED);
-                if (config.hasPrimaryPartitionsOnNode(channel.getInetAddress())) {
-                    try {
-                        LOGGER.debug("trying to reconnect");
-                        channel.connect();
-                    } catch (Throwable th) {
+                if (channel.getState() == State.CONNECTED) {
+                    channel.setState(State.DISCONNECTED);
+                    if (config.hasPrimaryPartitionsOnNode(channel.getInetAddress())) {
+                        try {
+                            LOGGER.debug("trying to reconnect");
+                            channel.connect();
+                        } catch (Throwable th) {
+                            for (short vb = 0; vb < numPartitions; vb++) {
+                                if (channel.streamIsOpen(vb)) {
+                                    channel.openStreams()[vb] = false;
+                                    putPartitionInQueue(vb);
+                                }
+                            }
+                            conductor.removeChannel(channel);
+                            LOGGER.warn("Failed to re-establish a failed dcp connection. Must notify the client", th);
+                        }
+                    } else {
                         for (short vb = 0; vb < numPartitions; vb++) {
                             if (channel.streamIsOpen(vb)) {
                                 channel.openStreams()[vb] = false;
@@ -201,16 +212,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                             }
                         }
                         conductor.removeChannel(channel);
-                        LOGGER.warn("Failed to re-establish a failed dcp connection. Must notify the client", th);
                     }
-                } else {
-                    for (short vb = 0; vb < numPartitions; vb++) {
-                        if (channel.streamIsOpen(vb)) {
-                            channel.openStreams()[vb] = false;
-                            putPartitionInQueue(vb);
-                        }
-                    }
-                    conductor.removeChannel(channel);
                 }
             }
         } catch (InterruptedException e) {

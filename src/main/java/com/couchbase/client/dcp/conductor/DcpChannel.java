@@ -148,8 +148,14 @@ public class DcpChannel {
         switch (getState()) {
             case CONNECTED:
             case CONNECTING:
-                setState(State.DISCONNECTING);
-                channel.close();
+                if (channel != null && channel.isOpen()) {
+                    setState(State.DISCONNECTING);
+                    channel.close();
+                } else {
+                    setState(State.DISCONNECTED);
+                    channel = null;
+                    return;
+                }
                 break;
             case DISCONNECTED:
                 return;

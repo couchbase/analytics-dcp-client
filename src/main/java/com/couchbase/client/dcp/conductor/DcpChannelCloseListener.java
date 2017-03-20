@@ -20,7 +20,7 @@ public class DcpChannelCloseListener implements ChannelFutureListener {
     }
 
     @Override
-    public synchronized void operationComplete(ChannelFuture future) throws Exception {
+    public void operationComplete(ChannelFuture future) throws Exception {
         LOGGER.debug("DCP Connection dropped");
         channel.clear();
         // channel was closed. If the state is disconnecting, then this should be fine
