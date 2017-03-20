@@ -28,6 +28,8 @@ public class Conductor {
     private SessionState sessionState; // final
     private final Fixer fixer; // final
     private Thread fixerThread; // once per connect
+    private volatile boolean connected = false;
+    private volatile boolean established;
 
     public Conductor(final ClientEnvironment env, ConfigProvider cp) {
         this.env = env;
@@ -46,32 +48,46 @@ public class Conductor {
     }
 
     public void connect() throws Throwable {
-        channels.clear();
-        configProvider.refresh();
-        createSession(configProvider.config());
+        if (connected) {
+            return;
+        }
+        connected = true;
+        try {
+            channels.clear();
+            configProvider.refresh();
+            createSession(configProvider.config());
+        } catch (Exception e) {
+            connected = false;
+            throw e;
+        }
     }
 
     /**
      * Returns true if all channels and the config provider are in a disconnected state.
      */
     public boolean disconnected() {
-        for (DcpChannel channel : channels.values()) {
-            if (channel.getState() != State.DISCONNECTED) {
-                return false;
-            }
-        }
-        return true;
+        return !connected;
     }
 
     public void disconnect() throws InterruptedException {
-        if (fixerThread != null) {
-            fixer.poison();
+        fixer.poison();
+        if (!connected) {
+            return;
+        }
+        if (fixerThread != null && Thread.currentThread() != fixerThread) {
             fixerThread.join();
             fixerThread = null;
         }
-        LOGGER.debug("Instructed to shutdown.");
-        for (DcpChannel channel : channels.values()) {
-            channel.disconnect();
+        synchronized (this) {
+            if (!connected) {
+                return;
+            }
+            connected = false;
+            LOGGER.debug("Instructed to shutdown.");
+            for (DcpChannel channel : channels.values()) {
+                channel.disconnect();
+            }
+            established = false;
         }
     }
 
@@ -82,14 +98,14 @@ public class Conductor {
         return configProvider.config().numberOfPartitions();
     }
 
-    public void getSeqnos() {
+    public void getSeqnos() throws InterruptedException {
         for (DcpChannel channel : channels.values()) {
             getSeqnosForChannel(channel);
         }
     }
 
-    private void getSeqnosForChannel(final DcpChannel dcpChannel) {
-        dcpChannel.getSeqnos();
+    private void getSeqnosForChannel(final DcpChannel dcpChannel) throws InterruptedException {
+        dcpChannel.getSeqnos(true);
     }
 
     public void getFailoverLog(final short partition) throws InterruptedException {
@@ -145,23 +161,26 @@ public class Conductor {
 
     }
 
-    public synchronized void add(NodeInfo node, CouchbaseBucketConfig config) throws Throwable {
-        InetAddress hostname = node.hostname();
-        if (!(node.services().containsKey(ServiceType.BINARY) || node.sslServices().containsKey(ServiceType.BINARY))) {
-            return;
+    public void add(NodeInfo node, CouchbaseBucketConfig config) throws Throwable {
+        synchronized (channels) {
+            InetAddress hostname = node.hostname();
+            if (!(node.services().containsKey(ServiceType.BINARY)
+                    || node.sslServices().containsKey(ServiceType.BINARY))) {
+                return;
+            }
+            if (!config.hasPrimaryPartitionsOnNode(hostname)) {
+                return;
+            }
+            if (channels.containsKey(hostname)) {
+                return;
+            }
+            LOGGER.debug("Adding DCP Channel against {}", node);
+            final DcpChannel channel =
+                    new DcpChannel(hostname, env, sessionState, configProvider.config().numberOfPartitions());
+            channels.put(hostname, channel);
+            channel.connect();
+            LOGGER.debug("Planning to add {}", hostname);
         }
-        if (!config.hasPrimaryPartitionsOnNode(hostname)) {
-            return;
-        }
-        if (channels.containsKey(hostname)) {
-            return;
-        }
-        LOGGER.debug("Adding DCP Channel against {}", node);
-        final DcpChannel channel =
-                new DcpChannel(hostname, env, sessionState, configProvider.config().numberOfPartitions());
-        channels.put(hostname, channel);
-        channel.connect();
-        LOGGER.debug("Planning to add {}", hostname);
     }
 
     public void setSessionState(SessionState sessionState) {
@@ -177,6 +196,10 @@ public class Conductor {
     }
 
     public void establishDcpConnections() throws Throwable {
+        if (established) {
+            return;
+        }
+        established = true;
         // create fixer thread
         CouchbaseBucketConfig config = configProvider.config();
         fixerThread = new Thread(fixer);
@@ -190,7 +213,9 @@ public class Conductor {
         return masterChannelByPartition(vbid);
     }
 
-    public synchronized void removeChannel(DcpChannel channel) {
-        channels.remove(channel.getInetAddress());
+    public void removeChannel(DcpChannel channel) {
+        synchronized (channels) {
+            channels.remove(channel.getInetAddress());
+        }
     }
 }

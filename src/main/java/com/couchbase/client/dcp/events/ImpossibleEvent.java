@@ -7,6 +7,6 @@ public class ImpossibleEvent implements DcpEvent {
 
     @Override
     public Type getType() {
-        return Type.BUG;
+        return Type.UNEXPECTED_FAILURE;
     }
 }

@@ -67,30 +67,30 @@ public class Client {
     public Client(ClientBuilder builder) {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
-                env = ClientEnvironment.builder().setClusterAt(builder.hostnames())
-                        .setConnectionNameGenerator(builder.connectionNameGenerator()).setBucket(builder.bucket())
-                        .setPassword(builder.password()).setDcpControl(builder.dcpControl())
-                        .setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
-                        .setBufferAckWatermark(builder.bufferAckWatermark()).setBufferPooling(builder.poolBuffers())
-                        .setConnectTimeout(builder.connectTimeout()).setBootstrapTimeout(builder.bootstrapTimeout())
-                        .setSocketConnectTimeout(builder.socketConnectTimeout())
-                        .setConfigProviderReconnectDelay(builder.configProviderReconnectDelay())
-                        .setConfigProviderReconnectMaxAttempts(builder.configProviderReconnectMaxAttempts())
-                        .setDcpChannelsReconnectDelay(builder.dcpChannelsReconnectDelay())
-                        .setDcpChannelsReconnectMaxAttempts(builder.dcpChannelsReconnectMaxAttempts())
-                        .setEventBus(builder.eventBus()).setSslEnabled(builder.sslEnabled())
-                        .setSslKeystoreFile(builder.sslKeystoreFile()).setSslKeystorePassword(builder.sslKeystorePassword())
-                        .setSslKeystore(builder.sslKeystore()).setBootstrapHttpDirectPort(builder.configPort())
-                        .setBootstrapHttpSslPort(builder.sslConfigPort()).setDcpDirectPort(builder.dcpPort())
-                        .setDcpSslPort(builder.sslDcpPort()).setVbuckets(builder.vbuckets()).build();
+        env = ClientEnvironment.builder().setClusterAt(builder.hostnames())
+                .setConnectionNameGenerator(builder.connectionNameGenerator()).setBucket(builder.bucket())
+                .setPassword(builder.password()).setDcpControl(builder.dcpControl())
+                .setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
+                .setBufferAckWatermark(builder.bufferAckWatermark()).setBufferPooling(builder.poolBuffers())
+                .setConnectTimeout(builder.connectTimeout()).setBootstrapTimeout(builder.bootstrapTimeout())
+                .setSocketConnectTimeout(builder.socketConnectTimeout())
+                .setConfigProviderReconnectDelay(builder.configProviderReconnectDelay())
+                .setConfigProviderReconnectMaxAttempts(builder.configProviderReconnectMaxAttempts())
+                .setDcpChannelsReconnectDelay(builder.dcpChannelsReconnectDelay())
+                .setDcpChannelsReconnectMaxAttempts(builder.dcpChannelsReconnectMaxAttempts())
+                .setEventBus(builder.eventBus()).setSslEnabled(builder.sslEnabled())
+                .setSslKeystoreFile(builder.sslKeystoreFile()).setSslKeystorePassword(builder.sslKeystorePassword())
+                .setSslKeystore(builder.sslKeystore()).setBootstrapHttpDirectPort(builder.configPort())
+                .setBootstrapHttpSslPort(builder.sslConfigPort()).setDcpDirectPort(builder.dcpPort())
+                .setDcpSslPort(builder.sslDcpPort()).setVbuckets(builder.vbuckets()).build();
 
-                ackEnabled = env.dcpControl().ackEnabled();
-                if (ackEnabled && env.ackWaterMark() == 0) {
-                    throw new IllegalArgumentException("The bufferAckWatermark needs to be set if bufferAck is enabled.");
-                }
+        ackEnabled = env.dcpControl().ackEnabled();
+        if (ackEnabled && env.ackWaterMark() == 0) {
+            throw new IllegalArgumentException("The bufferAckWatermark needs to be set if bufferAck is enabled.");
+        }
 
-                conductor = new Conductor(env, builder.configProvider());
-                LOGGER.debug("Environment Configuration Used: {}", env);
+        conductor = new Conductor(env, builder.configProvider());
+        LOGGER.debug("Environment Configuration Used: {}", env);
 
     }
 
@@ -110,8 +110,9 @@ public class Client {
      * the second element is its sequence number.
      *
      * @return an {@link Observable} of sequence number arrays.
+     * @throws InterruptedException
      */
-    public void getSequenceNumbers() {
+    public void getSequenceNumbers() throws InterruptedException {
         conductor.getSeqnos();
     }
 
@@ -389,7 +390,7 @@ public class Client {
         return conductor.config();
     }
 
-    public void establishDcpConnections() throws Throwable {
+    public synchronized void establishDcpConnections() throws Throwable {
         if (env.vbuckets() == null) {
             CouchbaseBucketConfig configs = conductor.config();
             if (configs == null) {
@@ -422,5 +423,9 @@ public class Client {
 
     public PartitionState getState(short vbid) {
         return conductor.getSessionState().get(vbid);
+    }
+
+    public boolean isConnected() {
+        return !conductor.disconnected();
     }
 }

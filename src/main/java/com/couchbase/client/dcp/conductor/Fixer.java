@@ -19,8 +19,9 @@ import com.couchbase.client.dcp.state.PartitionState;
 
 public class Fixer implements Runnable, SystemEventHandler {
     private static final Logger LOGGER = Logger.getLogger(Fixer.class.getName());
-    private static final DcpEvent POISON_PILL = () -> Type.BUG;
+    private static final DcpEvent POISON_PILL = () -> Type.DISCONNECT;
     private final Conductor conductor;
+    private final UnexpectedFailureEvent failure = new UnexpectedFailureEvent();
     private volatile boolean running;
     private boolean[] brokenPartitions;
     private boolean broken;
@@ -86,9 +87,6 @@ public class Fixer implements Runnable, SystemEventHandler {
     private void handle(DcpEvent event) throws InterruptedException {
         try {
             switch (event.getType()) {
-                case BUG:
-                    LOGGER.log(Level.ERROR, "This should never happen. must abort");
-                    break;
                 case CHANNEL_DROPPED:
                     // Channel was dropped and failed to be re-created. Must fix all partitions
                     // that belonged to that channel:
@@ -118,7 +116,8 @@ public class Fixer implements Runnable, SystemEventHandler {
                             "Attempted to open a vbucket from wrong master. refresh config and try again");
                     break;
                 case ROLLBACK:
-                    // abort all, close the channels, and send a message to the cc
+                    // abort all, close the channels
+                    conductor.disconnect();
                     LOGGER.log(Level.WARN, "Rollback for a vbucket. abort");
                     break;
                 case STREAM_END:
@@ -166,6 +165,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                                     "Need more analytics ingestion nodes. we are slow for the producer node");
                             break;
                         default:
+                            LOGGER.log(Level.ERROR, "Unexpected event type " + event);
                             break;
                     }
                     break;
@@ -178,6 +178,9 @@ public class Fixer implements Runnable, SystemEventHandler {
         } catch (Throwable th) {
             // there should be a way to pass non-recoverable failures
             LOGGER.log(Level.ERROR, "Unexpected error in fixer thread while trying to fix a failure ", th);
+            conductor.disconnect();
+            failure.setCause(th);
+            conductor.getEnv().eventBus().publish(failure);
         }
     }
 
@@ -235,6 +238,9 @@ public class Fixer implements Runnable, SystemEventHandler {
     @Override
     public void onEvent(DcpEvent event) {
         if (running) {
+            if (event.getType() == Type.ROLLBACK) {
+                inbox.clear();
+            }
             inbox.offer(event); // NOSONAR: This will always succeed as the inbox is unbounded
             if (!running) {
                 inbox.clear();

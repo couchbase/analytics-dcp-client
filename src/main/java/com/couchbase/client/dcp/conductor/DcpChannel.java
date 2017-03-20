@@ -52,6 +52,7 @@ public class DcpChannel {
     private final DcpChannelControlMessageHandler controlHandler;
     private volatile Channel channel;
     private final DcpChannelCloseListener closeListener;
+    private volatile boolean stateFetched = true;
 
     public DcpChannel(InetAddress inetAddress, final ClientEnvironment env, final SessionState sessionState,
             int numOfPartitions) {
@@ -125,6 +126,9 @@ public class DcpChannel {
                 LOGGER.debug("Re requesting failover logs for vbucket " + i);
                 getFailoverLog((short) i);
             }
+        }
+        if (!stateFetched) {
+            getSeqnos(false);
         }
         channel.closeFuture().addListener(closeListener);
     }
@@ -217,8 +221,10 @@ public class DcpChannel {
 
     /**
      * Returns all seqnos for all vbuckets on that channel.
+     *
+     * @throws InterruptedException
      */
-    public synchronized void getSeqnos() {
+    public synchronized void getSeqnos(boolean waitForResults) throws InterruptedException {
         if (getState() != State.CONNECTED) {
             throw new NotConnectedException();
         }
@@ -227,7 +233,13 @@ public class DcpChannel {
         DcpGetPartitionSeqnosRequest.init(buffer);
         DcpGetPartitionSeqnosRequest.opaque(buffer, opaque);
         DcpGetPartitionSeqnosRequest.vbucketState(buffer, VbucketState.ACTIVE);
+        stateFetched = false;
         channel.writeAndFlush(buffer);
+        if (waitForResults) {
+            while (!stateFetched) {
+                this.wait();
+            }
+        }
     }
 
     public synchronized void getFailoverLog(final short vbid) {
@@ -303,5 +315,10 @@ public class DcpChannel {
 
     public boolean[] getFailoverLogRequests() {
         return failoverLogRequests;
+    }
+
+    public synchronized void stateFetched() {
+        stateFetched = true;
+        notifyAll();
     }
 }

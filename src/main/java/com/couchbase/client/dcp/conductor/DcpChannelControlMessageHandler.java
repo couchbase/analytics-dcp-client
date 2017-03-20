@@ -147,6 +147,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 long seq = content.getLong(offset + Short.BYTES);
                 channel.getSessionState().get(vbid).setCurrentVBucketSeqnoInMaster(seq);
             }
+            channel.stateFetched();
         } finally {
             buf.release();
         }

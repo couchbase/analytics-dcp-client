@@ -3,8 +3,11 @@
  */
 package com.couchbase.client.dcp.events;
 
-public class RollbackEvent implements DcpEvent {
+import java.io.Serializable;
 
+public class RollbackEvent implements DcpEvent, Serializable {
+
+    private static final long serialVersionUID = 1L;
     private final short vbid;
     private long seq;
 

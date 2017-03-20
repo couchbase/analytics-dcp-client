@@ -7,7 +7,8 @@ public interface DcpEvent {
         ROLLBACK,
         NOT_MY_VBUCKET,
         FAILOVER_UPDATE,
-        BUG
+        UNEXPECTED_FAILURE,
+        DISCONNECT
     }
 
     Type getType();
