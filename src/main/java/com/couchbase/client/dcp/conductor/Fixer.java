@@ -1,5 +1,6 @@
 package com.couchbase.client.dcp.conductor;
 
+import java.util.LinkedList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -23,11 +24,10 @@ public class Fixer implements Runnable, SystemEventHandler {
     private final Conductor conductor;
     private final UnexpectedFailureEvent failure = new UnexpectedFailureEvent();
     private volatile boolean running;
-    private boolean[] brokenPartitions;
-    private boolean broken;
 
     // unbounded
     private final LinkedBlockingQueue<DcpEvent> inbox = new LinkedBlockingQueue<>();
+    private final LinkedList<DcpEvent> failed = new LinkedList<>();
 
     public Fixer(Conductor conductor) {
         this.conductor = conductor;
@@ -48,9 +48,6 @@ public class Fixer implements Runnable, SystemEventHandler {
     @Override
     public void run() {
         try {
-            if (brokenPartitions == null) {
-                brokenPartitions = new boolean[conductor.config().numberOfPartitions()];
-            }
             running = true;
             DcpEvent next = inbox.take();
             while (next == null || next != POISON_PILL) {
@@ -58,7 +55,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                     handle(next);
                 }
                 attemptFixingBroken();
-                next = broken ? inbox.poll(2, TimeUnit.SECONDS) : inbox.take();
+                next = failed.isEmpty() ? inbox.take() : inbox.poll(100, TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException ie) { // NOSONAR
             LOGGER.log(Level.WARN, "Dcp Fixer thread has been interrupted");
@@ -68,20 +65,13 @@ public class Fixer implements Runnable, SystemEventHandler {
     }
 
     private void attemptFixingBroken() {
-        if (broken) {
-            for (int i = 0; i < brokenPartitions.length; i++) {
-
-            }
-        }
+        inbox.addAll(failed);
+        failed.clear();
     }
 
     private void reset() {
         inbox.clear();
-        if (broken) {
-            for (int i = 0; i < brokenPartitions.length; i++) {
-                brokenPartitions[i] = false;
-            }
-        }
+        failed.clear();
     }
 
     private void handle(DcpEvent event) throws InterruptedException {
@@ -100,7 +90,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                     LOGGER.log(Level.WARN, "Channel dropped. should fix all vbuckets");
                     break;
                 case NOT_MY_VBUCKET:
-                    // wait 100 ms, refresh the config, find the new assigned kv node
+                    // Refresh the config, find the new assigned kv node
                     // (could still be the same one), and re-attempt connection
                     // this should never cause a permanent failure
                     NotMyVBucketEvent notMyVbucketEvent = (NotMyVBucketEvent) event;
@@ -117,7 +107,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                     break;
                 case ROLLBACK:
                     // abort all, close the channels
-                    conductor.disconnect();
+                    conductor.disconnect(true);
                     LOGGER.log(Level.WARN, "Rollback for a vbucket. abort");
                     break;
                 case STREAM_END:
@@ -151,11 +141,30 @@ public class Fixer implements Runnable, SystemEventHandler {
                             node = config.nodeAtIndex(index);
                             try {
                                 conductor.add(node, config);
+                            } catch (InterruptedException e) {
+                                LOGGER.log(Level.WARN, "Interrupting while adding node " + node.hostname(), e);
+                                giveUp(streamEndEvent, e);
+                                throw e;
                             } catch (Throwable th) {
                                 LOGGER.log(Level.WARN, "Failed to add node " + node.hostname(), th);
-                                putPartitionInQueue(streamEndEvent.partition());
+                                streamEndEvent.incrementAttempts();
+                                if (streamEndEvent.getAttempts() > 100) {
+                                    LOGGER.log(Level.WARN, "Failed to fix a vbucket stream 100 times. Giving up", th);
+                                    giveUp(streamEndEvent, th);
+                                } else {
+                                    failed.add(streamEndEvent);
+                                }
                                 break;
                             }
+                            //request again.
+                            DcpChannel channel = conductor.getChannel(streamEndEvent.partition());
+                            if (streamEndEvent.isFailoverLogsRequested()) {
+                                channel.getFailoverLog(streamEndEvent.partition());
+                            }
+                            if (streamEndEvent.isSeqRequested()) {
+                                channel.getSeqnos();
+                            }
+                            streamEndEvent.reset();
                             state.prepareNextStreamRequest();
                             conductor.startStreamForPartition(state.getStreamRequest());
                             break;
@@ -178,10 +187,17 @@ public class Fixer implements Runnable, SystemEventHandler {
         } catch (Throwable th) {
             // there should be a way to pass non-recoverable failures
             LOGGER.log(Level.ERROR, "Unexpected error in fixer thread while trying to fix a failure ", th);
-            conductor.disconnect();
+            conductor.disconnect(true);
             failure.setCause(th);
             conductor.getEnv().eventBus().publish(failure);
         }
+    }
+
+    private void giveUp(StreamEndEvent streamEndEvent, Throwable e) throws InterruptedException {
+        streamEndEvent.getPartitionState().fail(e);
+        conductor.disconnect(false);
+        failure.setCause(e);
+        conductor.getEnv().eventBus().publish(failure);
     }
 
     private void fixDroppedChannel(ChannelDroppedEvent event) throws InterruptedException {
@@ -190,31 +206,32 @@ public class Fixer implements Runnable, SystemEventHandler {
             conductor.configProvider().refresh();
             CouchbaseBucketConfig config = conductor.configProvider().config();
             int numPartitions = config.numberOfPartitions();
-            synchronized (channel) {
-                if (channel.getState() == State.CONNECTED) {
-                    channel.setState(State.DISCONNECTED);
-                    if (config.hasPrimaryPartitionsOnNode(channel.getInetAddress())) {
-                        try {
-                            LOGGER.debug("trying to reconnect");
-                            channel.connect();
-                        } catch (Throwable th) {
+            synchronized (conductor.getChannels()) {
+                synchronized (channel) {
+                    if (channel.getState() == State.CONNECTED) {
+                        channel.setState(State.DISCONNECTED);
+                        if (config.hasPrimaryPartitionsOnNode(channel.getInetAddress())) {
+                            try {
+                                LOGGER.debug("trying to reconnect");
+                                channel.connect();
+                            } catch (Throwable th) {
+                                for (short vb = 0; vb < numPartitions; vb++) {
+                                    if (channel.streamIsOpen(vb)) {
+                                        putPartitionInQueue(channel, vb);
+                                    }
+                                }
+                                conductor.removeChannel(channel);
+                                LOGGER.warn("Failed to re-establish a failed dcp connection. Must notify the client",
+                                        th);
+                            }
+                        } else {
                             for (short vb = 0; vb < numPartitions; vb++) {
                                 if (channel.streamIsOpen(vb)) {
-                                    channel.openStreams()[vb] = false;
-                                    putPartitionInQueue(vb);
+                                    putPartitionInQueue(channel, vb);
                                 }
                             }
                             conductor.removeChannel(channel);
-                            LOGGER.warn("Failed to re-establish a failed dcp connection. Must notify the client", th);
                         }
-                    } else {
-                        for (short vb = 0; vb < numPartitions; vb++) {
-                            if (channel.streamIsOpen(vb)) {
-                                channel.openStreams()[vb] = false;
-                                putPartitionInQueue(vb);
-                            }
-                        }
-                        conductor.removeChannel(channel);
                     }
                 }
             }
@@ -226,11 +243,13 @@ public class Fixer implements Runnable, SystemEventHandler {
         }
     }
 
-    private void putPartitionInQueue(short vb) {
+    private void putPartitionInQueue(DcpChannel channel, short vb) {
         PartitionState state = conductor.getSessionState().get(vb);
         state.setState(PartitionState.DISCONNECTED);
         StreamEndEvent endEvent = state.getEndEvent();
         endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
+        endEvent.setFailoverLogsRequested(channel.getFailoverLogRequests()[vb]);
+        endEvent.setSeqRequested(!channel.isStateFetched());
         LOGGER.info("Server closed Stream on vbid " + vb + " with reason " + StreamEndReason.CHANNEL_DROPPED);
         conductor.getEnv().eventBus().publish(endEvent);
     }

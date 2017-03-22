@@ -112,7 +112,7 @@ public class Client {
      * @return an {@link Observable} of sequence number arrays.
      * @throws InterruptedException
      */
-    public void getSequenceNumbers() throws InterruptedException {
+    public void getSequenceNumbers() throws Throwable {
         conductor.getSeqnos();
     }
 
@@ -234,7 +234,7 @@ public class Client {
      * @throws InterruptedException
      */
     public synchronized void disconnect() throws InterruptedException {
-        conductor.disconnect();
+        conductor.disconnect(true);
         env.shutdown();
     }
 
@@ -248,7 +248,7 @@ public class Client {
      * @return a {@link Completable} indicating that streaming has started or failed.
      * @throws InterruptedException
      */
-    public void startStreaming(short... vbids) throws InterruptedException {
+    public void startStreaming(short... vbids) throws Throwable {
         validateStream();
         int numPartitions = numPartitions();
         final List<Short> partitions = partitionsForVbids(numPartitions, vbids);
@@ -266,7 +266,7 @@ public class Client {
         }
     }
 
-    private void ensureInitialized(List<Short> partitions) throws InterruptedException {
+    private void ensureInitialized(List<Short> partitions) throws Throwable {
         SessionState state = sessionState();
         List<Short> nonInitialized = new ArrayList<>();
         for (short partition : partitions) {
@@ -343,7 +343,7 @@ public class Client {
      * @return an {@link Observable} containing all failover logs.
      * @throws InterruptedException
      */
-    public void failoverLogs(short... vbids) throws InterruptedException {
+    public void failoverLogs(short... vbids) throws Throwable {
         List<Short> partitions = partitionsForVbids(numPartitions(), vbids);
         LOGGER.debug("Asking for failover logs on partitions {}", partitions);
         for (short partition : partitions) {
@@ -351,7 +351,7 @@ public class Client {
         }
     }
 
-    private void failoverLogs(List<Short> nonInitialized) throws InterruptedException {
+    private void failoverLogs(List<Short> nonInitialized) throws Throwable {
         short[] vbids = new short[nonInitialized.size()];
         for (int i = 0; i < nonInitialized.size(); i++) {
             vbids[i] = nonInitialized.get(i);
@@ -359,7 +359,7 @@ public class Client {
         failoverLogs(vbids);
     }
 
-    public void getFailoverLogs() throws InterruptedException {
+    public void getFailoverLogs() throws Throwable {
         failoverLogs(env.vbuckets());
     }
 

@@ -110,4 +110,16 @@ public class SessionState {
         return partitionStates.toString();
 
     }
+
+    public void setConnected() {
+        for (PartitionState ps : partitionStates) {
+            ps.clientConnected();
+        }
+    }
+
+    public void setDisconnected() {
+        for (PartitionState ps : partitionStates) {
+            ps.clientDisconnected();
+        }
+    }
 }

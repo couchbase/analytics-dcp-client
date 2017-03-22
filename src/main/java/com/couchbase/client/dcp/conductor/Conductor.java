@@ -69,23 +69,28 @@ public class Conductor {
         return !connected;
     }
 
-    public void disconnect() throws InterruptedException {
+    public void disconnect(boolean wait) throws InterruptedException {
         fixer.poison();
+        if (Thread.currentThread() != fixerThread) {
+            sessionState.setDisconnected();
+        }
         if (!connected) {
             return;
         }
-        if (fixerThread != null && Thread.currentThread() != fixerThread) {
+        if (Thread.currentThread() != fixerThread && fixerThread != null) {
             fixerThread.join();
-            fixerThread = null;
         }
+        fixerThread = null;
         synchronized (this) {
             if (!connected) {
                 return;
             }
             connected = false;
             LOGGER.debug("Instructed to shutdown.");
-            for (DcpChannel channel : channels.values()) {
-                channel.disconnect();
+            synchronized (channels) {
+                for (DcpChannel channel : channels.values()) {
+                    channel.disconnect(wait);
+                }
             }
             established = false;
         }
@@ -98,41 +103,58 @@ public class Conductor {
         return configProvider.config().numberOfPartitions();
     }
 
-    public void getSeqnos() throws InterruptedException {
-        for (DcpChannel channel : channels.values()) {
-            getSeqnosForChannel(channel);
+    public void getSeqnos() throws Throwable {
+        short[] vbuckets = env.vbuckets();
+        // set request to all
+        for (int i = 0; i < vbuckets.length; i++) {
+            sessionState.get(vbuckets[i]).currentSeqRequest();
+        }
+        synchronized (channels) {
+            for (DcpChannel channel : channels.values()) {
+                getSeqnosForChannel(channel);
+            }
+        }
+        for (int i = 0; i < vbuckets.length; i++) {
+            sessionState.get(vbuckets[i]).waitTillCurrentSeqUpdated(60000);
         }
     }
 
     private void getSeqnosForChannel(final DcpChannel dcpChannel) throws InterruptedException {
-        dcpChannel.getSeqnos(true);
+        dcpChannel.getSeqnos();
     }
 
-    public void getFailoverLog(final short partition) throws InterruptedException {
+    public void getFailoverLog(final short partition) throws Throwable {
         PartitionState ps = getSessionState().get(partition);
         ps.failoverRequest();
-        masterChannelByPartition(partition).getFailoverLog(partition);
-        ps.waitTillFailoverUpdated();
+        synchronized (channels) {
+            masterChannelByPartition(partition).getFailoverLog(partition);
+        }
+        ps.waitTillFailoverUpdated(60000);
     }
 
     public void startStreamForPartition(StreamRequest request) {
-        DcpChannel channel = masterChannelByPartition(request.getPartition());
-        channel.openStream(request.getPartition(), request.getVbucketUuid(), request.getStartSeqno(),
-                request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno());
+        synchronized (channels) {
+            DcpChannel channel = masterChannelByPartition(request.getPartition());
+            channel.openStream(request.getPartition(), request.getVbucketUuid(), request.getStartSeqno(),
+                    request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno());
+        }
     }
 
     public void stopStreamForPartition(final short partition) throws InterruptedException {
         if (streamIsOpen(partition)) {
             PartitionState ps = sessionState.get(partition);
-            DcpChannel channel = masterChannelByPartition(partition);
-            channel.closeStream(partition);
-            ps.wait(PartitionState.DISCONNECTED);
+            synchronized (channels) {
+                DcpChannel channel = masterChannelByPartition(partition);
+                channel.closeStream(partition);
+                ps.wait(PartitionState.DISCONNECTED);
+            }
         }
     }
 
     public boolean streamIsOpen(final short partition) {
-        DcpChannel channel = masterChannelByPartition(partition);
-        return channel.streamIsOpen(partition);
+        synchronized (channels) {
+            return masterChannelByPartition(partition).streamIsOpen(partition);
+        }
     }
 
     /**
@@ -143,22 +165,25 @@ public class Conductor {
      * mapping.
      */
     private DcpChannel masterChannelByPartition(short partition) {
-        CouchbaseBucketConfig config = configProvider.config();
-        int index = config.nodeIndexForMaster(partition, false);
-        NodeInfo node = config.nodeAtIndex(index);
-        DcpChannel theChannel = channels.get(node.hostname());
-        if (theChannel == null) {
-            throw new IllegalStateException("No DcpChannel found for partition " + partition + ". env vbuckets = "
-                    + Arrays.toString(env.vbuckets()));
+        synchronized (channels) {
+            CouchbaseBucketConfig config = configProvider.config();
+            int index = config.nodeIndexForMaster(partition, false);
+            NodeInfo node = config.nodeAtIndex(index);
+            DcpChannel theChannel = channels.get(node.hostname());
+            if (theChannel == null) {
+                throw new IllegalStateException("No DcpChannel found for partition " + partition + ". env vbuckets = "
+                        + Arrays.toString(env.vbuckets()));
+            }
+            return theChannel;
         }
-        return theChannel;
     }
 
     private synchronized void createSession(CouchbaseBucketConfig config) {
         if (sessionState == null) {
             sessionState = new SessionState(config.numberOfPartitions());
+        } else {
+            sessionState.setConnected();
         }
-
     }
 
     public void add(NodeInfo node, CouchbaseBucketConfig config) throws Throwable {
@@ -178,8 +203,12 @@ public class Conductor {
             final DcpChannel channel =
                     new DcpChannel(hostname, env, sessionState, configProvider.config().numberOfPartitions());
             channels.put(hostname, channel);
-            channel.connect();
-            LOGGER.debug("Planning to add {}", hostname);
+            try {
+                channel.connect();
+            } catch (Throwable th) {
+                channels.remove(hostname);
+                throw th;
+            }
         }
     }
 
@@ -217,5 +246,9 @@ public class Conductor {
         synchronized (channels) {
             channels.remove(channel.getInetAddress());
         }
+    }
+
+    public Map<InetAddress, DcpChannel> getChannels() {
+        return channels;
     }
 }

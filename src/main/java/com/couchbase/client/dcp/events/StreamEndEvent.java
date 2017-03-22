@@ -12,6 +12,9 @@ import com.couchbase.client.dcp.state.PartitionState;
 public class StreamEndEvent implements DcpEvent {
     private final PartitionState state;
     private StreamEndReason reason;
+    private boolean failoverLogsRequested;
+    private boolean seqRequested;
+    private int attempts = 0;
 
     public StreamEndEvent(PartitionState state) {
         this.state = state;
@@ -33,6 +36,9 @@ public class StreamEndEvent implements DcpEvent {
 
     public void reset() {
         reason = StreamEndReason.INVALID;
+        setFailoverLogsRequested(false);
+        setSeqRequested(false);
+        attempts = 0;
     }
 
     public void setReason(StreamEndReason reason) {
@@ -45,6 +51,34 @@ public class StreamEndEvent implements DcpEvent {
     }
 
     public PartitionState getState() {
+        return state;
+    }
+
+    public boolean isFailoverLogsRequested() {
+        return failoverLogsRequested;
+    }
+
+    public void setFailoverLogsRequested(boolean failoverLogsRequested) {
+        this.failoverLogsRequested = failoverLogsRequested;
+    }
+
+    public boolean isSeqRequested() {
+        return seqRequested;
+    }
+
+    public void setSeqRequested(boolean seqRequested) {
+        this.seqRequested = seqRequested;
+    }
+
+    public void incrementAttempts() {
+        attempts++;
+    }
+
+    public int getAttempts() {
+        return attempts;
+    }
+
+    public PartitionState getPartitionState() {
         return state;
     }
 }

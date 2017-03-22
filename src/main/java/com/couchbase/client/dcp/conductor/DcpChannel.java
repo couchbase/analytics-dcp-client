@@ -128,7 +128,7 @@ public class DcpChannel {
             }
         }
         if (!stateFetched) {
-            getSeqnos(false);
+            getSeqnos();
         }
         channel.closeFuture().addListener(closeListener);
     }
@@ -148,7 +148,7 @@ public class DcpChannel {
         }
     }
 
-    public synchronized void disconnect() throws InterruptedException {
+    public synchronized void disconnect(boolean wait) throws InterruptedException {
         switch (getState()) {
             case CONNECTED:
             case CONNECTING:
@@ -161,12 +161,12 @@ public class DcpChannel {
                     return;
                 }
                 break;
-            case DISCONNECTED:
-                return;
             default:
                 break;
         }
-        wait(State.DISCONNECTED);
+        if (wait) {
+            wait(State.DISCONNECTED);
+        }
         channel = null;
     }
 
@@ -224,28 +224,34 @@ public class DcpChannel {
      *
      * @throws InterruptedException
      */
-    public synchronized void getSeqnos(boolean waitForResults) throws InterruptedException {
+    public synchronized void getSeqnos() {
+        stateFetched = false;
         if (getState() != State.CONNECTED) {
-            throw new NotConnectedException();
+            for (int i = 0; i < openStreams.length; i++) {
+                PartitionState ps = sessionState.get(i);
+                if (!ps.isClientDisconnected()) {
+                    ps.fail(new NotConnectedException());
+                }
+            }
+            return;
         }
         int opaque = OPAQUE.incrementAndGet();
         ByteBuf buffer = Unpooled.buffer();
         DcpGetPartitionSeqnosRequest.init(buffer);
         DcpGetPartitionSeqnosRequest.opaque(buffer, opaque);
         DcpGetPartitionSeqnosRequest.vbucketState(buffer, VbucketState.ACTIVE);
-        stateFetched = false;
         channel.writeAndFlush(buffer);
-        if (waitForResults) {
-            while (!stateFetched) {
-                this.wait();
-            }
-        }
     }
 
     public synchronized void getFailoverLog(final short vbid) {
         LOGGER.debug("requesting failover logs for vbucket " + vbid);
+        failoverLogRequests[vbid] = true;
         if (getState() != State.CONNECTED) {
-            throw new NotConnectedException();
+            PartitionState ps = sessionState.get(vbid);
+            if (!ps.isClientDisconnected()) {
+                ps.fail(new NotConnectedException());
+            }
+            return;
         }
         int opaque = OPAQUE.incrementAndGet();
         ByteBuf buffer = Unpooled.buffer();
@@ -254,7 +260,6 @@ public class DcpChannel {
         DcpFailoverLogRequest.vbucket(buffer, vbid);
         vbuckets.put(opaque, vbid);
         channel.writeAndFlush(buffer);
-        failoverLogRequests[vbid] = true;
         LOGGER.debug("Asked for failover log on {} for vbid: {}", channel.remoteAddress(), vbid);
     }
 
@@ -278,7 +283,7 @@ public class DcpChannel {
 
     @Override
     public String toString() {
-        return "DcpChannel{inetAddress=" + inetAddress + '}';
+        return "DcpChannel{inetAddress=" + inetAddress + ", state=" + state + '}';
     }
 
     public ClientEnvironment getEnv() {
@@ -320,5 +325,9 @@ public class DcpChannel {
     public synchronized void stateFetched() {
         stateFetched = true;
         notifyAll();
+    }
+
+    public boolean isStateFetched() {
+        return stateFetched;
     }
 }

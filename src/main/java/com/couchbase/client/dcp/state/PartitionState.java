@@ -9,6 +9,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeoutException;
 
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
@@ -53,6 +55,14 @@ public class PartitionState {
 
     private volatile boolean failoverUpdated;
 
+    private volatile boolean currentSeqUpdated;
+
+    private volatile boolean clientDisconnected;
+
+    private volatile boolean failed;
+
+    private volatile Throwable failure;
+
     private StreamRequest streamRequest;
 
     private final StreamEndEvent endEvent;
@@ -68,6 +78,7 @@ public class PartitionState {
         failoverLog = new ArrayList<>();
         setState(DISCONNECTED);
         failoverUpdated = false;
+        currentSeqUpdated = false;
         endEvent = new StreamEndEvent(this);
         failoverLogUpdateEvent = new FailoverLogUpdateEvent(this);
         rollbackEvent = new RollbackEvent(vbid);
@@ -174,8 +185,10 @@ public class PartitionState {
         return currentVBucketSeqnoInMaster;
     }
 
-    public void setCurrentVBucketSeqnoInMaster(long currentVBucketSeqnoInMaster) {
+    public synchronized void setCurrentVBucketSeqnoInMaster(long currentVBucketSeqnoInMaster) {
         this.currentVBucketSeqnoInMaster = currentVBucketSeqnoInMaster;
+        currentSeqUpdated = true;
+        notifyAll();
     }
 
     public void useStreamRequest() {
@@ -214,10 +227,43 @@ public class PartitionState {
         failoverUpdated = false;
     }
 
-    public synchronized void waitTillFailoverUpdated() throws InterruptedException {
+    public void currentSeqRequest() {
+        LOGGER.debug("Current Seq requested");
+        currentSeqUpdated = false;
+    }
+
+    public synchronized void waitTillFailoverUpdated(long timeout) throws Throwable {
+        long startTime = System.currentTimeMillis();
         LOGGER.debug("Waiting until failover log updated");
-        while (!failoverUpdated) {
-            wait();
+        while (!clientDisconnected && !failed && !failoverUpdated && System.currentTimeMillis() - startTime < timeout) {
+            wait(timeout);
+        }
+        if (clientDisconnected) {
+            throw new CancellationException("Client disconnected while waiting for reply");
+        }
+        if (failed) {
+            throw failure;
+        }
+        if (!failoverUpdated) {
+            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining failover logs for this partition");
+        }
+    }
+
+    public synchronized void waitTillCurrentSeqUpdated(long timeout) throws Throwable {
+        long startTime = System.currentTimeMillis();
+        LOGGER.debug("Waiting until failover log updated");
+        while (!clientDisconnected && !failed && !currentSeqUpdated
+                && System.currentTimeMillis() - startTime < timeout) {
+            wait(timeout);
+        }
+        if (clientDisconnected) {
+            throw new CancellationException("Client disconnected while waiting for reply");
+        }
+        if (failed) {
+            throw failure;
+        }
+        if (!currentSeqUpdated) {
+            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining failover logs for this partition");
         }
     }
 
@@ -247,5 +293,25 @@ public class PartitionState {
 
     public NotMyVBucketEvent getNotMyVBucketEvent() {
         return notMyVBucketEvent;
+    }
+
+    public synchronized void fail(Throwable th) {
+        failed = true;
+        failure = th;
+        notifyAll();
+    }
+
+    public synchronized void clientDisconnected() {
+        clientDisconnected = true;
+        notifyAll();
+    }
+
+    public synchronized void clientConnected() {
+        clientDisconnected = false;
+        notifyAll();
+    }
+
+    public boolean isClientDisconnected() {
+        return clientDisconnected;
     }
 }
