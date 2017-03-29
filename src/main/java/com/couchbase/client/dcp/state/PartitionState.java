@@ -12,8 +12,9 @@ import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeoutException;
 
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
+
 import com.couchbase.client.dcp.events.FailoverLogUpdateEvent;
 import com.couchbase.client.dcp.events.NotMyVBucketEvent;
 import com.couchbase.client.dcp.events.RollbackEvent;
@@ -24,7 +25,7 @@ import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
  * Represents the individual current session state for a given partition.
  */
 public class PartitionState {
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(PartitionState.class);
+    private static final Logger LOGGER = Logger.getLogger(PartitionState.class.getName());
     public static final long INVALID = -1L;
     public static final byte DISCONNECTED = 0x00;
     public static final byte CONNECTING = 0x02;
@@ -143,6 +144,10 @@ public class PartitionState {
      * Allows to set the current sequence number.
      */
     public void setSeqno(long seqno) {
+        if (seqno <= this.seqno) {
+            LOGGER.warn("A bug. sequence number received(" + seqno + ") <= the previous sequence number(" + this.seqno
+                    + ")");
+        }
         this.seqno = seqno;
     }
 
@@ -201,7 +206,8 @@ public class PartitionState {
         try {
             return mapper.writeValueAsString(toMap());
         } catch (IOException e) {
-            return "{\"object\":\"failed\"}";
+            LOGGER.log(Level.WARN, e);
+            return "{\"" + this.getClass().getSimpleName() + "\":\"" + e.toString() + "\"}";
         }
     }
 

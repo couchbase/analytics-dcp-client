@@ -9,4 +9,9 @@ public class ImpossibleEvent implements DcpEvent {
     public Type getType() {
         return Type.UNEXPECTED_FAILURE;
     }
+
+    @Override
+    public String toString() {
+        return "{\"" + this.getClass().getSimpleName() + "\":\"UnexpectedFailure\"}";
+    }
 }

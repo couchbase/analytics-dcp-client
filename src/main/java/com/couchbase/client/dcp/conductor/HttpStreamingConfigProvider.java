@@ -25,8 +25,7 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 
 public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
-    private static final CouchbaseLogger LOGGER =
-            CouchbaseLoggerFactory.getInstance(HttpStreamingConfigProvider.class);
+    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(HttpStreamingConfigProvider.class);
     private final List<String> hostnames;
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
@@ -66,11 +65,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
             if (tryConnectHost(hostnames.get(i))) {
                 return;
             } else {
-                if (cause == null) {
-                    cause = this.cause;
-                } else {
-                    cause.addSuppressed(this.cause);
-                }
+                cause = this.cause;
             }
         }
         throw cause;
@@ -92,7 +87,8 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
                     .handler(new ConfigPipeline(env, hostname, this)).group(env.eventLoopGroup());
             ChannelFuture connectFuture = bootstrap.connect();
             try {
-                connectFuture.await();
+                connectFuture.await(2 * env.socketConnectTimeout());
+                connectFuture.cancel(true);
                 if (connectFuture.isSuccess()) {
                     waitForConfig(connectFuture);
                 } else {

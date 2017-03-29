@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.state.NotConnectedException;
@@ -78,6 +79,8 @@ public class DcpChannel {
         while (attempts < env.dcpChannelsReconnectMaxAttempts() && getState() == State.CONNECTING) {
             attempts++;
             try {
+                LOGGER.log(CouchbaseLogLevel.WARN, "DcpChannel connect attempt #" + attempts
+                        + " with socket connect timeout = " + (int) env.socketConnectTimeout());
                 ByteBufAllocator allocator =
                         env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
                 final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
@@ -86,7 +89,8 @@ public class DcpChannel {
                         .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
                         .handler(new DcpPipeline(env, controlHandler)).group(env.eventLoopGroup());
                 ChannelFuture connectFuture = bootstrap.connect();
-                connectFuture.await();
+                connectFuture.await(2 * env.socketConnectTimeout());
+                connectFuture.cancel(true);
                 if (!connectFuture.isSuccess()) {
                     throw connectFuture.cause();
                 }
@@ -94,20 +98,15 @@ public class DcpChannel {
                 channel = connectFuture.channel();
                 setState(State.CONNECTED);
             } catch (Throwable e) {
+                LOGGER.warn("Connection failed", e);
                 if (failure == null) {
                     failure = e;
-                } else {
-                    failure.addSuppressed(e);
                 }
                 if (attempts == env.dcpChannelsReconnectMaxAttempts()) {
-                    LOGGER.debug("Connection FAILED " + attempts + " times");
+                    LOGGER.warn("Connection FAILED " + attempts + " times");
                     channel = null;
                     setState(State.DISCONNECTED);
                     throw failure; // NOSONAR failure is not nullable
-                }
-                // Wait between attempts
-                synchronized (this) {
-                    wait(200);
                 }
             }
         }
@@ -283,7 +282,8 @@ public class DcpChannel {
 
     @Override
     public String toString() {
-        return "DcpChannel{inetAddress=" + inetAddress + ", state=" + state + '}';
+        return "{\"class\":\"" + this.getClass().getSimpleName() + "\", \"inetAddress\":\"" + inetAddress
+                + "\", \"state\":\"" + state + "\"}";
     }
 
     public ClientEnvironment getEnv() {

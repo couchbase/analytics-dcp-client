@@ -9,6 +9,7 @@ import org.apache.log4j.Logger;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
+import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.events.DcpEvent;
@@ -76,6 +77,7 @@ public class Fixer implements Runnable, SystemEventHandler {
 
     private void handle(DcpEvent event) throws InterruptedException {
         try {
+            LOGGER.log(Level.WARN, "Handling " + event);
             switch (event.getType()) {
                 case CHANNEL_DROPPED:
                     // Channel was dropped and failed to be re-created. Must fix all partitions
@@ -87,7 +89,6 @@ public class Fixer implements Runnable, SystemEventHandler {
                     // 3. the partition is owned by a new kv node.
                     //    add a new channel and establish the stream for the partition
                     fixDroppedChannel((ChannelDroppedEvent) event);
-                    LOGGER.log(Level.WARN, "Channel dropped. should fix all vbuckets");
                     break;
                 case NOT_MY_VBUCKET:
                     // Refresh the config, find the new assigned kv node
@@ -102,8 +103,6 @@ public class Fixer implements Runnable, SystemEventHandler {
                     PartitionState state = notMyVbucketEvent.getPartitionState();
                     state.prepareNextStreamRequest();
                     conductor.startStreamForPartition(state.getStreamRequest());
-                    LOGGER.log(Level.WARN,
-                            "Attempted to open a vbucket from wrong master. refresh config and try again");
                     break;
                 case ROLLBACK:
                     // abort all, close the channels
@@ -138,35 +137,37 @@ public class Fixer implements Runnable, SystemEventHandler {
                             config = conductor.config();
                             state = streamEndEvent.getState();
                             index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
-                            node = config.nodeAtIndex(index);
-                            try {
-                                conductor.add(node, config);
-                            } catch (InterruptedException e) {
-                                LOGGER.log(Level.WARN, "Interrupting while adding node " + node.hostname(), e);
-                                giveUp(streamEndEvent, e);
-                                throw e;
-                            } catch (Throwable th) {
-                                LOGGER.log(Level.WARN, "Failed to add node " + node.hostname(), th);
-                                streamEndEvent.incrementAttempts();
-                                if (streamEndEvent.getAttempts() > 100) {
-                                    LOGGER.log(Level.WARN, "Failed to fix a vbucket stream 100 times. Giving up", th);
-                                    giveUp(streamEndEvent, th);
-                                } else {
-                                    failed.add(streamEndEvent);
+                            if (index >= 0) {
+                                node = config.nodeAtIndex(index);
+                                LOGGER.log(Level.INFO,
+                                        "Was able to find a new master for the vbucket " + node.hostname());
+                                try {
+                                    conductor.add(node, config);
+                                } catch (InterruptedException e) {
+                                    LOGGER.log(Level.WARN, "Interrupting while adding node " + node.hostname(), e);
+                                    giveUp(streamEndEvent, e);
+                                    throw e;
+                                } catch (Throwable th) {
+                                    LOGGER.log(Level.WARN, "Failed to add node " + node.hostname(), th);
+                                    retry(streamEndEvent, th);
+                                    break;
                                 }
-                                break;
+                                //request again.
+                                DcpChannel channel = conductor.getChannel(streamEndEvent.partition());
+                                if (streamEndEvent.isFailoverLogsRequested()) {
+                                    channel.getFailoverLog(streamEndEvent.partition());
+                                }
+                                if (streamEndEvent.isSeqRequested()) {
+                                    channel.getSeqnos();
+                                }
+                                streamEndEvent.reset();
+                                state.prepareNextStreamRequest();
+                                conductor.startStreamForPartition(state.getStreamRequest());
+                            } else {
+                                LOGGER.log(Level.INFO,
+                                        "Vbucket " + streamEndEvent.partition() + " has no master at the moment");
+                                retry(streamEndEvent);
                             }
-                            //request again.
-                            DcpChannel channel = conductor.getChannel(streamEndEvent.partition());
-                            if (streamEndEvent.isFailoverLogsRequested()) {
-                                channel.getFailoverLog(streamEndEvent.partition());
-                            }
-                            if (streamEndEvent.isSeqRequested()) {
-                                channel.getSeqnos();
-                            }
-                            streamEndEvent.reset();
-                            state.prepareNextStreamRequest();
-                            conductor.startStreamForPartition(state.getStreamRequest());
                             break;
                         case TOO_SLOW:
                             // Log, requesting upgrade to analytics resources and re-open the stream
@@ -190,6 +191,27 @@ public class Fixer implements Runnable, SystemEventHandler {
             conductor.disconnect(true);
             failure.setCause(th);
             conductor.getEnv().eventBus().publish(failure);
+        }
+    }
+
+    private void retry(StreamEndEvent streamEndEvent, Throwable th) throws InterruptedException {
+        streamEndEvent.incrementAttempts();
+        if (streamEndEvent.getAttempts() > 100) {
+            LOGGER.log(Level.WARN, "Failed to fix a vbucket stream 100 times. Giving up", th);
+            giveUp(streamEndEvent, th);
+        } else {
+            LOGGER.log(Level.WARN, "Retrying for the " + streamEndEvent.getAttempts() + " time");
+            failed.add(streamEndEvent);
+        }
+    }
+
+    private void retry(StreamEndEvent streamEndEvent) throws InterruptedException {
+        streamEndEvent.incrementAttempts();
+        if (streamEndEvent.getAttempts() > 100) {
+            LOGGER.log(Level.WARN, "Failed to fix a vbucket stream 100 times. Giving up");
+            giveUp(streamEndEvent, new NotConnectedException());
+        } else {
+            failed.add(streamEndEvent);
         }
     }
 
@@ -225,6 +247,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                                         th);
                             }
                         } else {
+                            LOGGER.debug("dropped channel " + channel + " has no vbuckets");
                             for (short vb = 0; vb < numPartitions; vb++) {
                                 if (channel.streamIsOpen(vb)) {
                                     putPartitionInQueue(channel, vb);

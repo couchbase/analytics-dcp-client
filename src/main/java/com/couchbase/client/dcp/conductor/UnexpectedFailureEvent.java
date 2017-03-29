@@ -22,4 +22,10 @@ public class UnexpectedFailureEvent implements DcpEvent, Serializable {
         this.cause = cause;
     }
 
+    @Override
+    public String toString() {
+        return "{\"" + DcpEvent.class.getSimpleName() + "\":\"" + getClass().getSimpleName() + "\",\"exception\":\""
+                + cause.toString() + "\"}";
+    }
+
 }

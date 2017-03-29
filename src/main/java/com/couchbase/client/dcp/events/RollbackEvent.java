@@ -32,4 +32,9 @@ public class RollbackEvent implements DcpEvent, Serializable {
         this.seq = seq;
     }
 
+    @Override
+    public String toString() {
+        return "{\"" + DcpEvent.class.getSimpleName() + "\":\"" + getClass().getSimpleName() + "\",\"vbid\":" + vbid
+                + ",\"seq\":" + seq + "}";
+    }
 }
