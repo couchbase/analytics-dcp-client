@@ -95,14 +95,21 @@ public class Fixer implements Runnable, SystemEventHandler {
                     // (could still be the same one), and re-attempt connection
                     // this should never cause a permanent failure
                     NotMyVBucketEvent notMyVbucketEvent = (NotMyVBucketEvent) event;
-                    conductor.configProvider().refresh();
-                    CouchbaseBucketConfig config = conductor.config();
-                    int index = config.nodeIndexForMaster(notMyVbucketEvent.getVbid(), false);
-                    NodeInfo node = config.nodeAtIndex(index);
-                    conductor.add(node, config);
-                    PartitionState state = notMyVbucketEvent.getPartitionState();
-                    state.prepareNextStreamRequest();
-                    conductor.startStreamForPartition(state.getStreamRequest());
+                    try {
+                        synchronized (conductor.getChannels()) {
+                            conductor.configProvider().refresh();
+                            CouchbaseBucketConfig config = conductor.config();
+                            int index = config.nodeIndexForMaster(notMyVbucketEvent.getVbid(), false);
+                            NodeInfo node = config.nodeAtIndex(index);
+                            conductor.add(node, config);
+                            PartitionState state = notMyVbucketEvent.getPartitionState();
+                            state.prepareNextStreamRequest();
+                            conductor.startStreamForPartition(state.getStreamRequest());
+                        }
+                    } catch (Throwable th) {
+                        LOGGER.log(Level.ERROR, "Failure during attempt to handle not my vbucket event", th);
+                        failed.add(notMyVbucketEvent);
+                    }
                     break;
                 case ROLLBACK:
                     // abort all, close the channels
@@ -112,6 +119,9 @@ public class Fixer implements Runnable, SystemEventHandler {
                 case STREAM_END:
                     // A stream end can have many reasons.
                     StreamEndEvent streamEndEvent = (StreamEndEvent) event;
+                    CouchbaseBucketConfig config;
+                    PartitionState state;
+                    short index;
                     switch (streamEndEvent.reason()) {
                         case CLOSED:
                             // Normal op, user requested close of stream
@@ -133,12 +143,16 @@ public class Fixer implements Runnable, SystemEventHandler {
                         case CHANNEL_DROPPED:
                             // Preparing to rebalance, update the config
                             // get the new master for the partition and resume from there
-                            conductor.configProvider().refresh();
+                            try {
+                                conductor.configProvider().refresh();
+                            } catch (Throwable th) {
+                                LOGGER.log(Level.ERROR, "Failed to refresh configurations", th);
+                            }
                             config = conductor.config();
                             state = streamEndEvent.getState();
                             index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
                             if (index >= 0) {
-                                node = config.nodeAtIndex(index);
+                                NodeInfo node = config.nodeAtIndex(index);
                                 LOGGER.log(Level.INFO,
                                         "Was able to find a new master for the vbucket " + node.hostname());
                                 try {
@@ -181,7 +195,6 @@ public class Fixer implements Runnable, SystemEventHandler {
                     break;
                 default:
                     break;
-
             }
         } catch (InterruptedException e) {
             throw e;
@@ -224,45 +237,45 @@ public class Fixer implements Runnable, SystemEventHandler {
 
     private void fixDroppedChannel(ChannelDroppedEvent event) throws InterruptedException {
         try {
-            DcpChannel channel = event.getChannel();
             conductor.configProvider().refresh();
-            CouchbaseBucketConfig config = conductor.configProvider().config();
-            int numPartitions = config.numberOfPartitions();
-            synchronized (conductor.getChannels()) {
-                synchronized (channel) {
-                    if (channel.getState() == State.CONNECTED) {
-                        channel.setState(State.DISCONNECTED);
-                        if (config.hasPrimaryPartitionsOnNode(channel.getInetAddress())) {
-                            try {
-                                LOGGER.debug("trying to reconnect");
-                                channel.connect();
-                            } catch (Throwable th) {
-                                for (short vb = 0; vb < numPartitions; vb++) {
-                                    if (channel.streamIsOpen(vb)) {
-                                        putPartitionInQueue(channel, vb);
-                                    }
-                                }
-                                conductor.removeChannel(channel);
-                                LOGGER.warn("Failed to re-establish a failed dcp connection. Must notify the client",
-                                        th);
-                            }
-                        } else {
-                            LOGGER.debug("dropped channel " + channel + " has no vbuckets");
+        } catch (Throwable th) {
+            // An exception while refreshing configurations
+            LOGGER.log(Level.ERROR, "Failed to refresh configurations", th);
+        }
+        fixChannel(event.getChannel());
+    }
+
+    private void fixChannel(DcpChannel channel) throws InterruptedException {
+        CouchbaseBucketConfig config = conductor.configProvider().config();
+        int numPartitions = conductor.getSessionState().getNumOfPartitions();
+        synchronized (conductor.getChannels()) {
+            synchronized (channel) {
+                if (channel.getState() == State.CONNECTED) {
+                    channel.setState(State.DISCONNECTED);
+                    if (config.hasPrimaryPartitionsOnNode(channel.getInetAddress())) {
+                        try {
+                            LOGGER.debug("trying to reconnect");
+                            channel.connect();
+                        } catch (Throwable th) {
                             for (short vb = 0; vb < numPartitions; vb++) {
                                 if (channel.streamIsOpen(vb)) {
                                     putPartitionInQueue(channel, vb);
                                 }
                             }
                             conductor.removeChannel(channel);
+                            LOGGER.warn("Failed to re-establish a failed dcp connection. Must notify the client", th);
                         }
+                    } else {
+                        LOGGER.debug("dropped channel " + channel + " has no vbuckets");
+                        for (short vb = 0; vb < numPartitions; vb++) {
+                            if (channel.streamIsOpen(vb)) {
+                                putPartitionInQueue(channel, vb);
+                            }
+                        }
+                        conductor.removeChannel(channel);
                     }
                 }
             }
-        } catch (InterruptedException e) {
-            throw e;
-        } catch (Throwable th) {
-            // there should be a way to pass non-recoverable failures
-            LOGGER.log(Level.ERROR, "Unexpected error in fixer thread while trying to fix a failure ", th);
         }
     }
 

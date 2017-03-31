@@ -4,8 +4,8 @@
 package com.couchbase.client.dcp.conductor;
 
 import java.net.SocketException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
@@ -26,7 +26,7 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(HttpStreamingConfigProvider.class);
-    private final List<String> hostnames;
+    private final Set<String> hostnames;
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
     private volatile boolean refreshed = false;
@@ -46,7 +46,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
 
     public HttpStreamingConfigProvider(ClientEnvironment env) {
         this.env = env;
-        this.hostnames = new ArrayList<>(env.hostnames());
+        this.hostnames = new HashSet<>(env.hostnames());
     }
 
     @Override
@@ -60,15 +60,12 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     }
 
     private void tryConnectHosts() throws Throwable {
-        Throwable cause = null;
-        for (int i = 0; i < hostnames.size(); i++) {
-            if (tryConnectHost(hostnames.get(i))) {
+        for (String hostname : hostnames) {
+            if (tryConnectHost(hostname)) {
                 return;
-            } else {
-                cause = this.cause;
             }
         }
-        throw cause;
+        throw this.cause;
     }
 
     private boolean tryConnectHost(final String hostname) throws InterruptedException {
@@ -124,7 +121,6 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     public synchronized void configure(CouchbaseBucketConfig config) {
         this.config = config;
         this.cause = null;
-        hostnames.clear();
         for (NodeInfo node : config.nodes()) {
             hostnames.add(node.hostname().getHostAddress());
         }
