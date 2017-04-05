@@ -32,6 +32,6 @@ public interface DataEventHandler {
      * @param event
      *            the data event happening right now.
      */
-    void onEvent(ByteBuf event);
+    void onEvent(DcpAckHandle ackHandle, ByteBuf event);
 
 }

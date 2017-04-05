@@ -5,14 +5,18 @@ package com.couchbase.client.dcp.events;
 
 import java.io.Serializable;
 
-public class RollbackEvent implements DcpEvent, Serializable {
+import com.couchbase.client.dcp.state.PartitionState;
+
+public class RollbackEvent implements PartitionDcpEvent, Serializable {
 
     private static final long serialVersionUID = 1L;
+    private final transient PartitionState ps;
     private final short vbid;
     private long seq;
 
-    public RollbackEvent(short vbid) {
-        this.vbid = vbid;
+    public RollbackEvent(PartitionState ps) {
+        this.ps = ps;
+        vbid = ps.vbid();
     }
 
     @Override
@@ -36,5 +40,10 @@ public class RollbackEvent implements DcpEvent, Serializable {
     public String toString() {
         return "{\"" + DcpEvent.class.getSimpleName() + "\":\"" + getClass().getSimpleName() + "\",\"vbid\":" + vbid
                 + ",\"seq\":" + seq + "}";
+    }
+
+    @Override
+    public PartitionState getPartitionState() {
+        return ps;
     }
 }

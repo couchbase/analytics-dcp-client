@@ -3,7 +3,9 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import java.net.InetAddress;
 import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -46,7 +48,15 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
 
     public HttpStreamingConfigProvider(ClientEnvironment env) {
         this.env = env;
-        this.hostnames = new HashSet<>(env.hostnames());
+        this.hostnames = new HashSet<>();
+        for (String hostname : env.hostnames()) {
+            try {
+                InetAddress address = InetAddress.getByName(hostname);
+                hostnames.add(address.getHostAddress());
+            } catch (UnknownHostException uhe) {
+                LOGGER.log(CouchbaseLogLevel.WARN, "Ignoring host " + hostname, uhe);
+            }
+        }
     }
 
     @Override

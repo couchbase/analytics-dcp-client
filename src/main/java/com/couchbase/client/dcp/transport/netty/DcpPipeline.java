@@ -80,6 +80,6 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
         pipeline.addLast(new AuthHandler(environment.bucket(), environment.password()))
                 .addLast(new DcpConnectHandler(environment.connectionNameGenerator()))
                 .addLast(new DcpNegotiationHandler(environment.dcpControl()))
-                .addLast(new DcpMessageHandler(environment, environment.dataEventHandler(), controlHandler));
+                .addLast(new DcpMessageHandler(ch, environment, environment.dataEventHandler(), controlHandler));
     }
 }

@@ -32,6 +32,6 @@ public interface ControlEventHandler {
      * @param event
      *            the control event happening.
      */
-    void onEvent(ByteBuf event);
+    void onEvent(DcpAckHandle ackHandle, ByteBuf event);
 
 }

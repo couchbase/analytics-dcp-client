@@ -9,7 +9,7 @@ import com.couchbase.client.dcp.state.PartitionState;
 /**
  * Event published when stream has stopped activity.
  */
-public class StreamEndEvent implements DcpEvent {
+public class StreamEndEvent implements PartitionDcpEvent {
     private final PartitionState state;
     private StreamEndReason reason;
     private boolean failoverLogsRequested;
@@ -78,6 +78,7 @@ public class StreamEndEvent implements DcpEvent {
         return attempts;
     }
 
+    @Override
     public PartitionState getPartitionState() {
         return state;
     }

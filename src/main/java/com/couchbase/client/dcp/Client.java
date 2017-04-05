@@ -182,7 +182,7 @@ public class Client {
      *            the event handler to use.
      */
     public void dataEventHandler(final DataEventHandler dataEventHandler) {
-        env.setDataEventHandler(event -> {
+        env.setDataEventHandler((ackHandle, event) -> {
             if (DcpMutationMessage.is(event)) {
                 short partition = DcpMutationMessage.partition(event);
                 PartitionState ps = sessionState().get(partition);
@@ -196,7 +196,7 @@ public class Client {
                 PartitionState ps = sessionState().get(partition);
                 ps.setSeqno(DcpExpirationMessage.bySeqno(event));
             }
-            dataEventHandler.onEvent(event);
+            dataEventHandler.onEvent(ackHandle, event);
         });
     }
 

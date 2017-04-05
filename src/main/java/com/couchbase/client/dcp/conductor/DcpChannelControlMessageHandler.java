@@ -6,6 +6,7 @@ package com.couchbase.client.dcp.conductor;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
+import com.couchbase.client.dcp.DcpAckHandle;
 import com.couchbase.client.dcp.events.NotMyVBucketEvent;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpCloseStreamResponse;
@@ -31,7 +32,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     @Override
-    public void onEvent(ByteBuf buf) {
+    public void onEvent(DcpAckHandle ackHandle, ByteBuf buf) {
         if (DcpOpenStreamResponse.is(buf)) {
             handleOpenStreamResponse(buf);
         } else if (DcpFailoverLogResponse.is(buf)) {
@@ -47,6 +48,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         } else if (DcpStateVbucketStateMessage.is(buf)) {
             handleDcpStateVbucketStateMessage(buf);
         }
+        channel.getEnv().controlEventHandler().onEvent(ackHandle, buf);
     }
 
     private void handleDcpStateVbucketStateMessage(ByteBuf buf) {
@@ -54,68 +56,56 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleDcpSnapshotMarker(ByteBuf buf) {
-        try {
-            short vbucket = DcpSnapshotMarkerRequest.partition(buf);
-            long start = DcpSnapshotMarkerRequest.startSeqno(buf);
-            long end = DcpSnapshotMarkerRequest.endSeqno(buf);
-            PartitionState ps = channel.getSessionState().get(vbucket);
-            ps.useStreamRequest();
-            ps.setSnapshotStartSeqno(start);
-            ps.setSnapshotEndSeqno(end);
-        } finally {
-            buf.release();
-        }
+        short vbucket = DcpSnapshotMarkerRequest.partition(buf);
+        long start = DcpSnapshotMarkerRequest.startSeqno(buf);
+        long end = DcpSnapshotMarkerRequest.endSeqno(buf);
+        PartitionState ps = channel.getSessionState().get(vbucket);
+        ps.useStreamRequest();
+        ps.setSnapshotStartSeqno(start);
+        ps.setSnapshotEndSeqno(end);
     }
 
     private void handleOpenStreamResponse(ByteBuf buf) {
-        try {
-            short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
-            short status = MessageUtil.getStatus(buf);
-            switch (status) {
-                case 0x00:
-                    LOGGER.debug("stream opened successfully for vbucket " + vbid);
-                    handleOpenStreamSuccess(buf, vbid);
-                    break;
-                case 0x23:
-                    LOGGER.debug("stream rollback response for vbucket " + vbid);
-                    handleOpenStreamRollback(buf, vbid);
-                    break;
-                case 0x07:
-                    LOGGER.debug("stream not my vbucket response for vbucket " + vbid);
-                    channel.openStreams()[vbid] = false;
-                    PartitionState ps = channel.getSessionState().get(vbid);
-                    ps.setState(PartitionState.DISCONNECTED);
-                    NotMyVBucketEvent nmvbe = ps.getNotMyVBucketEvent();
-                    nmvbe.setChannel(channel);
-                    channel.getEnv().eventBus().publish(nmvbe);
-                    break;
-                default:
-                    channel.openStreams()[vbid] = false;
-                    channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-                    LOGGER.warn("stream unknown response for vbucket " + vbid);
-            }
-        } finally {
-            buf.release();
+        short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
+        short status = MessageUtil.getStatus(buf);
+        switch (status) {
+            case 0x00:
+                LOGGER.debug("stream opened successfully for vbucket " + vbid);
+                handleOpenStreamSuccess(buf, vbid);
+                break;
+            case 0x23:
+                LOGGER.debug("stream rollback response for vbucket " + vbid);
+                handleOpenStreamRollback(buf, vbid);
+                break;
+            case 0x07:
+                LOGGER.debug("stream not my vbucket response for vbucket " + vbid);
+                channel.openStreams()[vbid] = false;
+                PartitionState ps = channel.getSessionState().get(vbid);
+                ps.setState(PartitionState.DISCONNECTED);
+                NotMyVBucketEvent nmvbe = ps.getNotMyVBucketEvent();
+                nmvbe.setChannel(channel);
+                channel.getEnv().eventBus().publish(nmvbe);
+                break;
+            default:
+                channel.openStreams()[vbid] = false;
+                channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
+                LOGGER.warn("stream unknown response for vbucket " + vbid);
         }
     }
 
     private void handleFailoverLogResponse(ByteBuf buf) {
-        try {
-            short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
-            ByteBuf flog = Unpooled.buffer();
-            DcpFailoverLogResponse.init(flog);
-            DcpFailoverLogResponse.vbucket(flog, DcpFailoverLogResponse.vbucket(buf));
-            ByteBuf copiedBuf = MessageUtil.getContent(buf).copy().writeShort(vbid);
-            MessageUtil.setContent(copiedBuf, flog);
-            copiedBuf.release();
-            PartitionState ps = channel.getSessionState().get(vbid);
-            DcpFailoverLogResponse.fill(flog, ps);
-            channel.getFailoverLogRequests()[vbid] = false;
-            ps.failoverUpdated();
-            channel.getEnv().eventBus().publish(ps.getFailoverLogUpdateEvent());
-        } finally {
-            buf.release();
-        }
+        short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
+        ByteBuf flog = Unpooled.buffer();
+        DcpFailoverLogResponse.init(flog);
+        DcpFailoverLogResponse.vbucket(flog, DcpFailoverLogResponse.vbucket(buf));
+        ByteBuf copiedBuf = MessageUtil.getContent(buf).copy().writeShort(vbid);
+        MessageUtil.setContent(copiedBuf, flog);
+        copiedBuf.release();
+        PartitionState ps = channel.getSessionState().get(vbid);
+        DcpFailoverLogResponse.fill(flog, ps);
+        channel.getFailoverLogRequests()[vbid] = false;
+        ps.failoverUpdated();
+        channel.getEnv().eventBus().publish(ps.getFailoverLogUpdateEvent());
     }
 
     private void handleOpenStreamRollback(ByteBuf buf, short vbid) {
@@ -138,46 +128,34 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleDcpGetPartitionSeqnosResponse(ByteBuf buf) {
-        try {
-            ByteBuf content = MessageUtil.getContent(buf);
-            int size = content.readableBytes() / 10;
-            for (int i = 0; i < size; i++) {
-                int offset = i * 10;
-                short vbid = content.getShort(offset);
-                long seq = content.getLong(offset + Short.BYTES);
-                channel.getSessionState().get(vbid).setCurrentVBucketSeqnoInMaster(seq);
-            }
-            channel.stateFetched();
-        } finally {
-            buf.release();
+        ByteBuf content = MessageUtil.getContent(buf);
+        int size = content.readableBytes() / 10;
+        for (int i = 0; i < size; i++) {
+            int offset = i * 10;
+            short vbid = content.getShort(offset);
+            long seq = content.getLong(offset + Short.BYTES);
+            channel.getSessionState().get(vbid).setCurrentVBucketSeqnoInMaster(seq);
         }
+        channel.stateFetched();
     }
 
     private void handleDcpStreamEndMessage(ByteBuf buf) {
-        try {
-            short vbid = DcpStreamEndMessage.vbucket(buf);
-            channel.openStreams()[vbid] = false;
-            StreamEndReason reason = DcpStreamEndMessage.reason(buf);
-            PartitionState state = channel.getSessionState().get(vbid);
-            StreamEndEvent endEvent = state.getEndEvent();
-            endEvent.setReason(reason);
-            LOGGER.debug("Server closed Stream on vbid {} with reason {}", vbid, reason);
-            if (channel.getEnv().eventBus() != null) {
-                channel.getEnv().eventBus().publish(endEvent);
-            }
-        } finally {
-            buf.release();
+        short vbid = DcpStreamEndMessage.vbucket(buf);
+        channel.openStreams()[vbid] = false;
+        StreamEndReason reason = DcpStreamEndMessage.reason(buf);
+        PartitionState state = channel.getSessionState().get(vbid);
+        StreamEndEvent endEvent = state.getEndEvent();
+        endEvent.setReason(reason);
+        LOGGER.debug("Server closed Stream on vbid {} with reason {}", vbid, reason);
+        if (channel.getEnv().eventBus() != null) {
+            channel.getEnv().eventBus().publish(endEvent);
         }
     }
 
     private void handleDcpCloseStreamResponse(ByteBuf buf) {
-        try {
-            Short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
-            channel.openStreams()[vbid] = false;
-            channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-            LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getInetAddress(), vbid);
-        } finally {
-            buf.release();
-        }
+        Short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
+        channel.openStreams()[vbid] = false;
+        channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
+        LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getInetAddress(), vbid);
     }
 }

@@ -82,7 +82,7 @@ public class PartitionState {
         currentSeqUpdated = false;
         endEvent = new StreamEndEvent(this);
         failoverLogUpdateEvent = new FailoverLogUpdateEvent(this);
-        rollbackEvent = new RollbackEvent(vbid);
+        rollbackEvent = new RollbackEvent(this);
         notMyVBucketEvent = new NotMyVBucketEvent(this);
     }
 

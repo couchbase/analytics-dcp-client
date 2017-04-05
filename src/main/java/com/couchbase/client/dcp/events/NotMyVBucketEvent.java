@@ -10,7 +10,7 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
-public class NotMyVBucketEvent implements DcpEvent {
+public class NotMyVBucketEvent implements PartitionDcpEvent {
     private static final Logger LOGGER = Logger.getLogger(NotMyVBucketEvent.class.getName());
     private DcpChannel channel;
     private final PartitionState state;
@@ -31,6 +31,7 @@ public class NotMyVBucketEvent implements DcpEvent {
         return state.vbid();
     }
 
+    @Override
     public PartitionState getPartitionState() {
         return state;
     }

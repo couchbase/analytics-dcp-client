@@ -13,15 +13,15 @@ import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.events.DcpEvent;
-import com.couchbase.client.dcp.events.DcpEvent.Type;
 import com.couchbase.client.dcp.events.NotMyVBucketEvent;
+import com.couchbase.client.dcp.events.PartitionDcpEvent;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.state.PartitionState;
 
 public class Fixer implements Runnable, SystemEventHandler {
     private static final Logger LOGGER = Logger.getLogger(Fixer.class.getName());
-    private static final DcpEvent POISON_PILL = () -> Type.DISCONNECT;
+    private static final DcpEvent POISON_PILL = () -> DcpEvent.Type.DISCONNECT;
     private final Conductor conductor;
     private final UnexpectedFailureEvent failure = new UnexpectedFailureEvent();
     private volatile boolean running;
@@ -95,9 +95,9 @@ public class Fixer implements Runnable, SystemEventHandler {
                     // (could still be the same one), and re-attempt connection
                     // this should never cause a permanent failure
                     NotMyVBucketEvent notMyVbucketEvent = (NotMyVBucketEvent) event;
+                    refreshConfig();
                     try {
                         synchronized (conductor.getChannels()) {
-                            conductor.configProvider().refresh();
                             CouchbaseBucketConfig config = conductor.config();
                             int index = config.nodeIndexForMaster(notMyVbucketEvent.getVbid(), false);
                             NodeInfo node = config.nodeAtIndex(index);
@@ -106,6 +106,10 @@ public class Fixer implements Runnable, SystemEventHandler {
                             state.prepareNextStreamRequest();
                             conductor.startStreamForPartition(state.getStreamRequest());
                         }
+                    } catch (InterruptedException e) {
+                        LOGGER.log(Level.WARN, "Interrupted while handling not my vbucket event", e);
+                        giveUp(notMyVbucketEvent, e);
+                        throw e;
                     } catch (Throwable th) {
                         LOGGER.log(Level.ERROR, "Failure during attempt to handle not my vbucket event", th);
                         failed.add(notMyVbucketEvent);
@@ -119,79 +123,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                 case STREAM_END:
                     // A stream end can have many reasons.
                     StreamEndEvent streamEndEvent = (StreamEndEvent) event;
-                    CouchbaseBucketConfig config;
-                    PartitionState state;
-                    short index;
-                    switch (streamEndEvent.reason()) {
-                        case CLOSED:
-                            // Normal op, user requested close of stream
-                            LOGGER.log(Level.INFO, "Stream stopped as per your request");
-                            break;
-                        case DISCONNECTED:
-                            // The server is preparing to disconnect. wait for a channel drop which will come soon
-                            LOGGER.log(Level.WARN, "The channel is going to drop. not sure when this could happen."
-                                    + "Should wait for the drop event before attempting a fix");
-                            break;
-                        case INVALID:
-                            LOGGER.log(Level.ERROR, "This should never happen. must abort");
-                            break;
-                        case OK:
-                            // Normal op, reached the end of the requested DCP stream
-                            LOGGER.log(Level.INFO, "Stream reached the end of your request");
-                            break;
-                        case STATE_CHANGED:
-                        case CHANNEL_DROPPED:
-                            // Preparing to rebalance, update the config
-                            // get the new master for the partition and resume from there
-                            try {
-                                conductor.configProvider().refresh();
-                            } catch (Throwable th) {
-                                LOGGER.log(Level.ERROR, "Failed to refresh configurations", th);
-                            }
-                            config = conductor.config();
-                            state = streamEndEvent.getState();
-                            index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
-                            if (index >= 0) {
-                                NodeInfo node = config.nodeAtIndex(index);
-                                LOGGER.log(Level.INFO,
-                                        "Was able to find a new master for the vbucket " + node.hostname());
-                                try {
-                                    conductor.add(node, config);
-                                } catch (InterruptedException e) {
-                                    LOGGER.log(Level.WARN, "Interrupting while adding node " + node.hostname(), e);
-                                    giveUp(streamEndEvent, e);
-                                    throw e;
-                                } catch (Throwable th) {
-                                    LOGGER.log(Level.WARN, "Failed to add node " + node.hostname(), th);
-                                    retry(streamEndEvent, th);
-                                    break;
-                                }
-                                //request again.
-                                DcpChannel channel = conductor.getChannel(streamEndEvent.partition());
-                                if (streamEndEvent.isFailoverLogsRequested()) {
-                                    channel.getFailoverLog(streamEndEvent.partition());
-                                }
-                                if (streamEndEvent.isSeqRequested()) {
-                                    channel.getSeqnos();
-                                }
-                                streamEndEvent.reset();
-                                state.prepareNextStreamRequest();
-                                conductor.startStreamForPartition(state.getStreamRequest());
-                            } else {
-                                LOGGER.log(Level.INFO,
-                                        "Vbucket " + streamEndEvent.partition() + " has no master at the moment");
-                                retry(streamEndEvent);
-                            }
-                            break;
-                        case TOO_SLOW:
-                            // Log, requesting upgrade to analytics resources and re-open the stream
-                            LOGGER.log(Level.WARN,
-                                    "Need more analytics ingestion nodes. we are slow for the producer node");
-                            break;
-                        default:
-                            LOGGER.log(Level.ERROR, "Unexpected event type " + event);
-                            break;
-                    }
+                    fixStreamEnd(streamEndEvent);
                     break;
                 default:
                     break;
@@ -204,6 +136,84 @@ public class Fixer implements Runnable, SystemEventHandler {
             conductor.disconnect(true);
             failure.setCause(th);
             conductor.getEnv().eventBus().publish(failure);
+        }
+    }
+
+    private void fixStreamEnd(StreamEndEvent streamEndEvent) throws InterruptedException {
+        switch (streamEndEvent.reason()) {
+            case CLOSED:
+                // Normal op, user requested close of stream
+                LOGGER.log(Level.INFO, "Stream stopped as per your request");
+                break;
+            case DISCONNECTED:
+                // The server is preparing to disconnect. wait for a channel drop which will come soon
+                LOGGER.log(Level.WARN, "The channel is going to drop. not sure when this could happen."
+                        + "Should wait for the drop event before attempting a fix");
+                break;
+            case INVALID:
+                LOGGER.log(Level.ERROR, "This should never happen. must abort");
+                break;
+            case OK:
+                // Normal op, reached the end of the requested DCP stream
+                LOGGER.log(Level.INFO, "Stream reached the end of your request");
+                break;
+            case STATE_CHANGED:
+            case CHANNEL_DROPPED:
+                // Preparing to rebalance, update the config
+                // get the new master for the partition and resume from there
+                refreshConfig();
+                CouchbaseBucketConfig config = conductor.config();
+                PartitionState state = streamEndEvent.getState();
+                short index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
+                if (index >= 0) {
+                    NodeInfo node = config.nodeAtIndex(index);
+                    LOGGER.log(Level.INFO, "Was able to find a new master for the vbucket " + node.hostname());
+                    try {
+                        conductor.add(node, config);
+                    } catch (InterruptedException e) {
+                        LOGGER.log(Level.WARN, "Interrupting while adding node " + node.hostname(), e);
+                        giveUp(streamEndEvent, e);
+                        throw e;
+                    } catch (Throwable th) {
+                        LOGGER.log(Level.WARN, "Failed to add node " + node.hostname(), th);
+                        retry(streamEndEvent, th);
+                        break;
+                    }
+                    //request again.
+                    DcpChannel channel = conductor.getChannel(streamEndEvent.partition());
+                    if (streamEndEvent.isFailoverLogsRequested()) {
+                        channel.getFailoverLog(streamEndEvent.partition());
+                    }
+                    if (streamEndEvent.isSeqRequested()) {
+                        channel.getSeqnos();
+                    }
+                    streamEndEvent.reset();
+                    state.prepareNextStreamRequest();
+                    conductor.startStreamForPartition(state.getStreamRequest());
+                } else {
+                    LOGGER.log(Level.INFO, "Vbucket " + streamEndEvent.partition() + " has no master at the moment");
+                    retry(streamEndEvent);
+                }
+                break;
+            case TOO_SLOW:
+                // Log, requesting upgrade to analytics resources and re-open the stream
+                LOGGER.log(Level.WARN, "Need more analytics ingestion nodes. we are slow for the producer node");
+                break;
+            default:
+                LOGGER.log(Level.ERROR, "Unexpected event type " + streamEndEvent);
+                break;
+        }
+    }
+
+    private void refreshConfig() throws InterruptedException {
+        try {
+            conductor.configProvider().refresh();
+        } catch (InterruptedException e) {
+            LOGGER.log(Level.ERROR, "Interrupted while refreshing configurations", e);
+            giveUp(e);
+            throw e;
+        } catch (Throwable th) {
+            LOGGER.log(Level.ERROR, "Failed to refresh configurations", th);
         }
     }
 
@@ -228,20 +238,19 @@ public class Fixer implements Runnable, SystemEventHandler {
         }
     }
 
-    private void giveUp(StreamEndEvent streamEndEvent, Throwable e) throws InterruptedException {
-        streamEndEvent.getPartitionState().fail(e);
+    private void giveUp(PartitionDcpEvent event, Throwable e) throws InterruptedException {
+        event.getPartitionState().fail(e);
+        giveUp(e);
+    }
+
+    private void giveUp(Throwable e) throws InterruptedException {
         conductor.disconnect(false);
         failure.setCause(e);
         conductor.getEnv().eventBus().publish(failure);
     }
 
     private void fixDroppedChannel(ChannelDroppedEvent event) throws InterruptedException {
-        try {
-            conductor.configProvider().refresh();
-        } catch (Throwable th) {
-            // An exception while refreshing configurations
-            LOGGER.log(Level.ERROR, "Failed to refresh configurations", th);
-        }
+        refreshConfig();
         fixChannel(event.getChannel());
     }
 
@@ -256,6 +265,10 @@ public class Fixer implements Runnable, SystemEventHandler {
                         try {
                             LOGGER.debug("trying to reconnect");
                             channel.connect();
+                        } catch (InterruptedException e) {
+                            LOGGER.log(Level.ERROR, "Interrupted while attempting to connect channel", e);
+                            giveUp(e);
+                            throw e;
                         } catch (Throwable th) {
                             for (short vb = 0; vb < numPartitions; vb++) {
                                 if (channel.streamIsOpen(vb)) {
@@ -293,7 +306,7 @@ public class Fixer implements Runnable, SystemEventHandler {
     @Override
     public void onEvent(DcpEvent event) {
         if (running) {
-            if (event.getType() == Type.ROLLBACK) {
+            if (event.getType() == DcpEvent.Type.ROLLBACK) {
                 inbox.clear();
             }
             inbox.offer(event); // NOSONAR: This will always succeed as the inbox is unbounded
