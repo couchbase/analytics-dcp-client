@@ -82,7 +82,8 @@ public class Client {
                 .setSslKeystoreFile(builder.sslKeystoreFile()).setSslKeystorePassword(builder.sslKeystorePassword())
                 .setSslKeystore(builder.sslKeystore()).setBootstrapHttpDirectPort(builder.configPort())
                 .setBootstrapHttpSslPort(builder.sslConfigPort()).setDcpDirectPort(builder.dcpPort())
-                .setDcpSslPort(builder.sslDcpPort()).setVbuckets(builder.vbuckets()).build();
+                .setDcpSslPort(builder.sslDcpPort()).setVbuckets(builder.vbuckets()).setUsername(builder.username())
+                .build();
 
         ackEnabled = env.dcpControl().ackEnabled();
         if (ackEnabled && env.ackWaterMark() == 0) {

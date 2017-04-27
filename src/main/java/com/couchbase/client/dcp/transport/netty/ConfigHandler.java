@@ -3,6 +3,11 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import java.io.IOException;
+
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
+
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.parser.BucketConfigParser;
 import com.couchbase.client.dcp.conductor.IConfigurable;
@@ -24,6 +29,7 @@ import rx.subjects.Subject;
  * @since 1.0.0
  */
 class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
+    public static final Logger LOGGER = Logger.getLogger(ConfigHandler.class.getName());
 
     /**
      * Hostname used to replace $HOST parts in the config when used against localhost.
@@ -78,7 +84,6 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
      */
     private boolean decodeChunk(final ByteBuf chunk) {
         responseContent.writeBytes(chunk);
-
         String currentChunk = responseContent.toString(CharsetUtil.UTF_8);
         int separatorIndex = currentChunk.indexOf("\n\n\n\n");
         if (separatorIndex > 0) {
@@ -110,5 +115,17 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
             responseContent.release();
             responseContent = null;
         }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        if (cause instanceof IOException && cause.getMessage().contains("Connection reset by peer")) {
+            LOGGER.log(Level.WARN, "Connection was closed by the other side", cause);
+            configurable.fail(cause);
+            ctx.close();
+            return;
+        }
+        // forward exception
+        ctx.fireExceptionCaught(cause);
     }
 }

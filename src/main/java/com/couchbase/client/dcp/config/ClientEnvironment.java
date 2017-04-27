@@ -54,6 +54,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final ConnectionNameGenerator connectionNameGenerator;
 
     /**
+     * The username
+     */
+    private final String username;
+
+    /**
      * The name of the bucket.
      */
     private final String bucket;
@@ -180,7 +185,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         sslKeystoreFile = builder.sslKeystoreFile;
         sslKeystorePassword = builder.sslKeystorePassword;
         sslKeystore = builder.sslKeystore;
-        vbuckets = builder.getVbuckets();
+        vbuckets = builder.vbuckets;
+        username = builder.username;
     }
 
     /**
@@ -400,14 +406,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private String sslKeystorePassword;
         private KeyStore sslKeystore;
         private short[] vbuckets;
+        private String username;
 
         public Builder setClusterAt(List<String> clusterAt) {
             this.clusterAt = clusterAt;
             return this;
-        }
-
-        public short[] getVbuckets() {
-            return vbuckets;
         }
 
         public Builder setBufferAckWatermark(int watermark) {
@@ -577,6 +580,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
             return this;
         }
 
+        public Builder setUsername(String username) {
+            this.username = username;
+            return this;
+        }
+
         public ClientEnvironment build() {
             return new ClientEnvironment(this);
         }
@@ -626,5 +634,9 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
     public int dcpChannelsReconnectMaxAttempts() {
         return dcpChannelsReconnectMaxAttempts;
+    }
+
+    public String username() {
+        return username;
     }
 }

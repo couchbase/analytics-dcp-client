@@ -45,6 +45,7 @@ public class ClientBuilder {
     private int dcpPort = ClientEnvironment.DCP_DIRECT_PORT;
     private int sslDcpPort = ClientEnvironment.DCP_SSL_PORT;
     private short[] vbuckets;
+    private String username;
 
     /**
      * The buffer acknowledge watermark in percent.
@@ -459,5 +460,14 @@ public class ClientBuilder {
 
     public short[] vbuckets() {
         return vbuckets;
+    }
+
+    public ClientBuilder username(String username) {
+        this.username = username;
+        return this;
+    }
+
+    public String username() {
+        return username;
     }
 }

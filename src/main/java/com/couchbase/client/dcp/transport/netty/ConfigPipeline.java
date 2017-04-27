@@ -40,9 +40,14 @@ public class ConfigPipeline extends ChannelInitializer<Channel> {
     private final String hostname;
 
     /**
-     * The name of the bucket (used for http auth).
+     * The name of the bucket
      */
     private final String bucket;
+
+    /**
+     * The username (used for http auth).
+     */
+    private final String username;
 
     /**
      * THe password of the bucket (used for http auth).
@@ -69,6 +74,7 @@ public class ConfigPipeline extends ChannelInitializer<Channel> {
             final IConfigurable configurable) {
         this.hostname = hostname;
         this.bucket = environment.bucket();
+        this.username = environment.username();
         this.password = environment.password();
         this.configurable = configurable;
         this.environment = environment;
@@ -97,7 +103,7 @@ public class ConfigPipeline extends ChannelInitializer<Channel> {
             pipeline.addLast(new LoggingHandler(LogLevel.TRACE));
         }
 
-        pipeline.addLast(new HttpClientCodec()).addLast(new StartStreamHandler(bucket, password))
+        pipeline.addLast(new HttpClientCodec()).addLast(new StartStreamHandler(bucket, username, password))
                 .addLast(new ConfigHandler(hostname, configurable, environment));
     }
 

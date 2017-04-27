@@ -132,7 +132,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             throw e;
         } catch (Throwable th) {
             // there should be a way to pass non-recoverable failures
-            LOGGER.log(Level.ERROR, "Unexpected error in fixer thread while trying to fix a failure ", th);
+            LOGGER.log(Level.WARN, "Unexpected error in fixer thread while trying to fix a failure", th);
             conductor.disconnect(true);
             failure.setCause(th);
             conductor.getEnv().eventBus().publish(failure);

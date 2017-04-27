@@ -3,6 +3,9 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import java.io.IOException;
+
+import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
@@ -153,5 +156,16 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
                     channel.remoteAddress());
         }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        if (cause instanceof IOException && cause.getMessage().contains("Connection reset by peer")) {
+            LOGGER.log(CouchbaseLogLevel.WARN, "Connection was closed by the other side", cause);
+            ctx.close();
+            return;
+        }
+        // forward exception
+        ctx.fireExceptionCaught(cause);
     }
 }
