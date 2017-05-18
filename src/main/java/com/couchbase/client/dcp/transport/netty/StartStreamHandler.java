@@ -59,7 +59,10 @@ class StartStreamHandler extends ConnectInterceptingHandler<HttpResponse> {
             switch (statusCode) {
                 case 401:
                     exception = new CouchbaseException(
-                            "Unauthorized (bucket/password invalid) - please check credentials!");
+                            "Unauthorized - Incorrect credentials or bucket " + bucket + " does not exist");
+                    break;
+                case 404:
+                    exception = new CouchbaseException("Bucket " + bucket + " does not exist");
                     break;
                 default:
                     exception = new CouchbaseException("Unknown error code during connect: " + msg.getStatus());
