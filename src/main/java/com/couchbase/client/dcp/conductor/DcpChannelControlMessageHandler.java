@@ -156,6 +156,6 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         Short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
         channel.openStreams()[vbid] = false;
         channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-        LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getInetAddress(), vbid);
+        LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getAddress(), vbid);
     }
 }

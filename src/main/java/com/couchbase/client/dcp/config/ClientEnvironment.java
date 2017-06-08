@@ -3,7 +3,9 @@
  */
 package com.couchbase.client.dcp.config;
 
+import java.net.InetSocketAddress;
 import java.security.KeyStore;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -11,6 +13,7 @@ import com.couchbase.client.core.env.ConfigParserEnvironment;
 import com.couchbase.client.core.node.DefaultMemcachedHashingStrategy;
 import com.couchbase.client.core.node.MemcachedHashingStrategy;
 import com.couchbase.client.core.time.Delay;
+import com.couchbase.client.core.utils.ConnectionString;
 import com.couchbase.client.dcp.ConnectionNameGenerator;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DataEventHandler;
@@ -145,8 +148,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final KeyStore sslKeystore;
     private final int bootstrapHttpDirectPort;
     private final int bootstrapHttpSslPort;
-    private final int dcpDirectPort;
-    private final int dcpSslPort;
     private short[] vbuckets;
 
     /**
@@ -179,8 +180,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         }
         bootstrapHttpDirectPort = builder.bootstrapHttpDirectPort;
         bootstrapHttpSslPort = builder.bootstrapHttpSslPort;
-        dcpDirectPort = builder.dcpDirectPort;
-        dcpSslPort = builder.dcpSslPort;
         sslEnabled = builder.sslEnabled;
         sslKeystoreFile = builder.sslKeystoreFile;
         sslKeystorePassword = builder.sslKeystorePassword;
@@ -345,14 +344,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         return bootstrapHttpSslPort;
     }
 
-    public int dcpDirectPort() {
-        return dcpDirectPort;
-    }
-
-    public int dcpSslPort() {
-        return dcpSslPort;
-    }
-
     @Override
     public boolean sslEnabled() {
         return sslEnabled;
@@ -397,8 +388,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private int dcpChannelsReconnectMaxAttempts = DEFAULT_DCP_CHANNELS_RECONNECT_MAX_ATTEMPTS;
         private int bootstrapHttpDirectPort = BOOTSTRAP_HTTP_DIRECT_PORT;
         private int bootstrapHttpSslPort = BOOTSTRAP_HTTP_SSL_PORT;
-        private int dcpDirectPort = DCP_DIRECT_PORT;
-        private int dcpSslPort = DCP_SSL_PORT;
         private int bufferAckWatermark;
         private EventBus eventBus;
         private boolean sslEnabled = DEFAULT_SSL_ENABLED;
@@ -408,8 +397,18 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private short[] vbuckets;
         private String username;
 
-        public Builder setClusterAt(List<String> clusterAt) {
-            this.clusterAt = clusterAt;
+        public Builder setClusterAt(List<String> hostnames, String connectionString) {
+            if (connectionString != null) {
+                this.clusterAt = new ArrayList<>();
+                List<InetSocketAddress> addresses = ConnectionString.create(connectionString).hosts();
+                for (InetSocketAddress address : addresses) {
+                    String host = address.getAddress().getHostAddress();
+                    host = address.getPort() != 0 ? host + ":" + address.getPort() : host;
+                    clusterAt.add(host);
+                }
+            } else {
+                this.clusterAt = hostnames;
+            }
             return this;
         }
 
@@ -510,24 +509,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
          */
         public Builder setBootstrapHttpSslPort(final int bootstrapHttpSslPort) {
             this.bootstrapHttpSslPort = bootstrapHttpSslPort;
-            return this;
-        }
-
-        /**
-         * If SSL not enabled, sets the port to use for DCP interaction
-         * (default value {@value #DCP_DIRECT_PORT}).
-         */
-        public Builder setDcpDirectPort(final int dcpDirectPort) {
-            this.dcpDirectPort = dcpDirectPort;
-            return this;
-        }
-
-        /**
-         * If SSL enabled, sets the port to use for DCP interaction
-         * (default value {@value #DCP_SSL_PORT}).
-         */
-        public Builder setDcpSslPort(final int dcpSslPort) {
-            this.dcpSslPort = dcpSslPort;
             return this;
         }
 

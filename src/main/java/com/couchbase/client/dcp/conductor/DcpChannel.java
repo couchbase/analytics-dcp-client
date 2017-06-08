@@ -4,6 +4,7 @@
 package com.couchbase.client.dcp.conductor;
 
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -45,7 +46,7 @@ public class DcpChannel {
     private static final AtomicInteger OPAQUE = new AtomicInteger(0);
     private volatile State state;
     private final ClientEnvironment env;
-    private final InetAddress inetAddress;
+    private final InetSocketAddress inetAddress;
     private final Map<Integer, Short> vbuckets;
     private final boolean[] failoverLogRequests;
     private final boolean[] openStreams;
@@ -55,7 +56,7 @@ public class DcpChannel {
     private final DcpChannelCloseListener closeListener;
     private volatile boolean stateFetched = true;
 
-    public DcpChannel(InetAddress inetAddress, final ClientEnvironment env, final SessionState sessionState,
+    public DcpChannel(InetSocketAddress inetAddress, final ClientEnvironment env, final SessionState sessionState,
             int numOfPartitions) {
         setState(State.DISCONNECTED);
         this.inetAddress = inetAddress;
@@ -85,7 +86,7 @@ public class DcpChannel {
                         env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
                 final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
                         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
-                        .remoteAddress(inetAddress, env.sslEnabled() ? env.dcpSslPort() : env.dcpDirectPort())
+                        .remoteAddress(inetAddress.getHostString(), inetAddress.getPort())
                         .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
                         .handler(new DcpPipeline(env, controlHandler)).group(env.eventLoopGroup());
                 ChannelFuture connectFuture = bootstrap.connect();
@@ -167,10 +168,6 @@ public class DcpChannel {
             wait(State.DISCONNECTED);
         }
         channel = null;
-    }
-
-    public InetAddress hostname() {
-        return inetAddress;
     }
 
     public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,
@@ -302,7 +299,7 @@ public class DcpChannel {
         this.channel = channel;
     }
 
-    public InetAddress getInetAddress() {
+    public InetSocketAddress getAddress() {
         return inetAddress;
     }
 

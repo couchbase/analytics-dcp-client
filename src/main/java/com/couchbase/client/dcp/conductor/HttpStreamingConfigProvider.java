@@ -6,7 +6,10 @@ package com.couchbase.client.dcp.conductor;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
@@ -14,6 +17,7 @@ import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.ConfigPipeline;
@@ -28,7 +32,7 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(HttpStreamingConfigProvider.class);
-    private final Set<String> hostnames;
+    private final Map<String, Set<Integer>> sockets;
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
     private volatile boolean refreshed = false;
@@ -48,11 +52,21 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
 
     public HttpStreamingConfigProvider(ClientEnvironment env) {
         this.env = env;
-        this.hostnames = new HashSet<>();
+        this.sockets = new HashMap<>();
+        int defaultPort = env.sslEnabled() ? env.bootstrapHttpSslPort() : env.bootstrapHttpDirectPort();
         for (String hostname : env.hostnames()) {
+            int port = hostname.contains(":") ? Integer.parseInt(hostname.substring(hostname.indexOf(':') + 1))
+                    : defaultPort;
+            String host = hostname.indexOf(':') > -1 ? hostname.substring(0, hostname.indexOf(':')) : hostname;
             try {
-                InetAddress address = InetAddress.getByName(hostname);
-                hostnames.add(address.getHostAddress());
+                InetAddress address = InetAddress.getByName(host);
+                LOGGER.error("Adding a config node " + hostname + ":" + port);
+                Set<Integer> ports = sockets.get(address.getHostAddress());
+                if (ports == null) {
+                    ports = new HashSet<>();
+                    sockets.put(address.getHostAddress(), ports);
+                }
+                ports.add(port);
             } catch (UnknownHostException uhe) {
                 LOGGER.log(CouchbaseLogLevel.WARN, "Ignoring host " + hostname, uhe);
             }
@@ -70,28 +84,28 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     }
 
     private void tryConnectHosts() throws Throwable {
-        for (String hostname : hostnames) {
-            if (tryConnectHost(hostname)) {
-                return;
+        for (Entry<String, Set<Integer>> addresses : sockets.entrySet()) {
+            for (Integer port : addresses.getValue()) {
+                if (tryConnectHost(addresses.getKey(), port)) {
+                    return;
+                }
             }
         }
         throw this.cause;
     }
 
-    private boolean tryConnectHost(final String hostname) throws InterruptedException {
+    private boolean tryConnectHost(String hostname, Integer port) throws InterruptedException {
         int attempt = 0;
         ByteBufAllocator allocator =
                 env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
         while (attempt < env.configProviderReconnectMaxAttempts()) {
             failure = false;
             refreshed = false;
-            Bootstrap bootstrap = new Bootstrap()
-                    .remoteAddress(hostname,
-                            env.sslEnabled() ? env.bootstrapHttpSslPort() : env.bootstrapHttpDirectPort())
-                    .option(ChannelOption.ALLOCATOR, allocator)
-                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
-                    .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
-                    .handler(new ConfigPipeline(env, hostname, this)).group(env.eventLoopGroup());
+            Bootstrap bootstrap =
+                    new Bootstrap().remoteAddress(hostname, port).option(ChannelOption.ALLOCATOR, allocator)
+                            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
+                            .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
+                            .handler(new ConfigPipeline(env, hostname, this)).group(env.eventLoopGroup());
             ChannelFuture connectFuture = bootstrap.connect();
             try {
                 connectFuture.await(2 * env.socketConnectTimeout());
@@ -132,9 +146,17 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         this.config = config;
         this.cause = null;
         for (NodeInfo node : config.nodes()) {
-            hostnames.add(node.hostname().getHostAddress());
+            Integer port = (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.CONFIG);
+            LOGGER.error("Adding a config node " + node.hostname() + ":" + port);
+            String hostname = node.hostname().getHostAddress();
+            Set<Integer> ports = sockets.get(hostname);
+            if (ports == null) {
+                ports = new HashSet<>();
+                sockets.put(hostname, ports);
+            }
+            ports.add(port);
         }
-        LOGGER.debug("Updated config stream node list to {}.", hostnames);
+        LOGGER.debug("Updated config stream node list to {}.", sockets);
         refreshed = true;
         notifyAll();
     }

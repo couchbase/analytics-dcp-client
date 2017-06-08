@@ -3,7 +3,7 @@
  */
 package com.couchbase.client.dcp.conductor;
 
-import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,7 +23,7 @@ public class Conductor {
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Conductor.class);
 
     private final ConfigProvider configProvider; // changes
-    private final Map<InetAddress, DcpChannel> channels; // changes
+    private final Map<InetSocketAddress, DcpChannel> channels; // changes
     private final ClientEnvironment env; // constant
     private SessionState sessionState; // final
     private final Fixer fixer; // final
@@ -169,7 +169,9 @@ public class Conductor {
             CouchbaseBucketConfig config = configProvider.config();
             int index = config.nodeIndexForMaster(partition, false);
             NodeInfo node = config.nodeAtIndex(index);
-            DcpChannel theChannel = channels.get(node.hostname());
+            InetSocketAddress address = new InetSocketAddress(node.hostname(),
+                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
+            DcpChannel theChannel = channels.get(address);
             if (theChannel == null) {
                 throw new IllegalStateException("No DcpChannel found for partition " + partition + ". env vbuckets = "
                         + Arrays.toString(env.vbuckets()));
@@ -188,25 +190,26 @@ public class Conductor {
 
     public void add(NodeInfo node, CouchbaseBucketConfig config) throws Throwable {
         synchronized (channels) {
-            InetAddress hostname = node.hostname();
+            InetSocketAddress address = new InetSocketAddress(node.hostname(),
+                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
             if (!(node.services().containsKey(ServiceType.BINARY)
                     || node.sslServices().containsKey(ServiceType.BINARY))) {
                 return;
             }
-            if (!config.hasPrimaryPartitionsOnNode(hostname)) {
+            if (!config.hasPrimaryPartitionsOnNode(address.getAddress())) {
                 return;
             }
-            if (channels.containsKey(hostname)) {
+            if (channels.containsKey(address)) {
                 return;
             }
             LOGGER.debug("Adding DCP Channel against {}", node);
             final DcpChannel channel =
-                    new DcpChannel(hostname, env, sessionState, configProvider.config().numberOfPartitions());
-            channels.put(hostname, channel);
+                    new DcpChannel(address, env, sessionState, configProvider.config().numberOfPartitions());
+            channels.put(address, channel);
             try {
                 channel.connect();
             } catch (Throwable th) {
-                channels.remove(hostname);
+                channels.remove(address);
                 throw th;
             }
         }
@@ -244,11 +247,11 @@ public class Conductor {
 
     public void removeChannel(DcpChannel channel) {
         synchronized (channels) {
-            channels.remove(channel.getInetAddress());
+            channels.remove(channel.getAddress());
         }
     }
 
-    public Map<InetAddress, DcpChannel> getChannels() {
+    public Map<InetSocketAddress, DcpChannel> getChannels() {
         return channels;
     }
 }

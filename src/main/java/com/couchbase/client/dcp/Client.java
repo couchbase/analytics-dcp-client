@@ -67,9 +67,8 @@ public class Client {
     public Client(ClientBuilder builder) {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
-        env = ClientEnvironment.builder().setClusterAt(builder.hostnames())
-                .setConnectionNameGenerator(builder.connectionNameGenerator()).setBucket(builder.bucket())
-                .setPassword(builder.password()).setDcpControl(builder.dcpControl())
+        env = ClientEnvironment.builder().setConnectionNameGenerator(builder.connectionNameGenerator())
+                .setBucket(builder.bucket()).setPassword(builder.password()).setDcpControl(builder.dcpControl())
                 .setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
                 .setBufferAckWatermark(builder.bufferAckWatermark()).setBufferPooling(builder.poolBuffers())
                 .setConnectTimeout(builder.connectTimeout()).setBootstrapTimeout(builder.bootstrapTimeout())
@@ -81,9 +80,8 @@ public class Client {
                 .setEventBus(builder.eventBus()).setSslEnabled(builder.sslEnabled())
                 .setSslKeystoreFile(builder.sslKeystoreFile()).setSslKeystorePassword(builder.sslKeystorePassword())
                 .setSslKeystore(builder.sslKeystore()).setBootstrapHttpDirectPort(builder.configPort())
-                .setBootstrapHttpSslPort(builder.sslConfigPort()).setDcpDirectPort(builder.dcpPort())
-                .setDcpSslPort(builder.sslDcpPort()).setVbuckets(builder.vbuckets()).setUsername(builder.username())
-                .build();
+                .setBootstrapHttpSslPort(builder.sslConfigPort()).setVbuckets(builder.vbuckets())
+                .setUsername(builder.username()).setClusterAt(builder.hostnames(), builder.connectionString()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
         if (ackEnabled && env.ackWaterMark() == 0) {

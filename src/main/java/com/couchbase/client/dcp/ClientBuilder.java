@@ -5,6 +5,7 @@ package com.couchbase.client.dcp;
 
 import java.net.InetAddress;
 import java.security.KeyStore;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -20,6 +21,7 @@ import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
  */
 public class ClientBuilder {
     private List<String> hostnames = Arrays.asList(InetAddress.getLoopbackAddress().getHostAddress());
+    private String connectionString;
     private EventLoopGroup eventLoopGroup;
     private String bucket = "default";
     private String password = "";
@@ -42,8 +44,6 @@ public class ClientBuilder {
     private KeyStore sslKeystore;
     private int configPort = ClientEnvironment.BOOTSTRAP_HTTP_DIRECT_PORT;
     private int sslConfigPort = ClientEnvironment.BOOTSTRAP_HTTP_SSL_PORT;
-    private int dcpPort = ClientEnvironment.DCP_DIRECT_PORT;
-    private int sslDcpPort = ClientEnvironment.DCP_SSL_PORT;
     private short[] vbuckets;
     private String username;
 
@@ -71,7 +71,7 @@ public class ClientBuilder {
      * @return this {@link ClientBuilder} for nice chainability.
      */
     public ClientBuilder hostnames(final List<String> hostnames) {
-        this.hostnames = hostnames;
+        this.hostnames = new ArrayList<>(hostnames);
         return this;
     }
 
@@ -327,28 +327,6 @@ public class ClientBuilder {
     }
 
     /**
-     * Sets the Port that will be used for DCP streams
-     *
-     * @param dcpPort
-     *            the port to use
-     */
-    public ClientBuilder dcpPort(final int dcpPort) {
-        this.dcpPort = dcpPort;
-        return this;
-    }
-
-    /**
-     * Sets the Port that will be used for encrypted DCP streams
-     *
-     * @param sslDcpPort
-     *            the port to use
-     */
-    public ClientBuilder sslDcpPort(final int sslDcpPort) {
-        this.sslDcpPort = sslDcpPort;
-        return this;
-    }
-
-    /**
      * Create the client instance ready to use.
      *
      * @return the built client instance.
@@ -359,6 +337,11 @@ public class ClientBuilder {
 
     public List<String> hostnames() {
         return hostnames;
+    }
+
+    public ClientBuilder connectionString(String connectionString) {
+        this.connectionString = connectionString;
+        return this;
     }
 
     public ConnectionNameGenerator connectionNameGenerator() {
@@ -441,14 +424,6 @@ public class ClientBuilder {
         return sslConfigPort;
     }
 
-    public int dcpPort() {
-        return dcpPort;
-    }
-
-    public int sslDcpPort() {
-        return sslDcpPort;
-    }
-
     public ConfigProvider configProvider() {
         return configProvider;
     }
@@ -469,5 +444,9 @@ public class ClientBuilder {
 
     public String username() {
         return username;
+    }
+
+    public String connectionString() {
+        return connectionString;
     }
 }

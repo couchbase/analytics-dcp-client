@@ -84,5 +84,4 @@ class StartStreamHandler extends ConnectInterceptingHandler<HttpResponse> {
         encoded.release();
         raw.release();
     }
-
 }
