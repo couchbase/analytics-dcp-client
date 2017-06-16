@@ -88,6 +88,7 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
         int separatorIndex = currentChunk.indexOf("\n\n\n\n");
         if (separatorIndex > 0) {
             String rawConfig = currentChunk.substring(0, separatorIndex).trim().replace("$HOST", hostname);
+            LOGGER.log(Level.INFO, "Received Config: " + rawConfig);
             try {
                 configurable.configure((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment));
             } catch (Exception e) {

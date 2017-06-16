@@ -190,12 +190,12 @@ public class Conductor {
 
     public void add(NodeInfo node, CouchbaseBucketConfig config) throws Throwable {
         synchronized (channels) {
-            InetSocketAddress address = new InetSocketAddress(node.hostname(),
-                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
             if (!(node.services().containsKey(ServiceType.BINARY)
                     || node.sslServices().containsKey(ServiceType.BINARY))) {
                 return;
             }
+            InetSocketAddress address = new InetSocketAddress(node.hostname(),
+                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
             if (!config.hasPrimaryPartitionsOnNode(address.getAddress())) {
                 return;
             }
