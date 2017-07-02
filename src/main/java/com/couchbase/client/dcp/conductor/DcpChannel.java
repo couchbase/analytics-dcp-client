@@ -13,6 +13,7 @@ import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.state.NotConnectedException;
+import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpCloseStreamRequest;
@@ -46,6 +47,7 @@ public class DcpChannel {
     private static final AtomicInteger OPAQUE = new AtomicInteger(0);
     private volatile State state;
     private final ClientEnvironment env;
+    private final NetworkAddress networkAddress;
     private final InetSocketAddress inetAddress;
     private final Map<Integer, Short> vbuckets;
     private final boolean[] failoverLogRequests;
@@ -56,10 +58,11 @@ public class DcpChannel {
     private final DcpChannelCloseListener closeListener;
     private volatile boolean stateFetched = true;
 
-    public DcpChannel(InetSocketAddress inetAddress, final ClientEnvironment env, final SessionState sessionState,
-            int numOfPartitions) {
+    public DcpChannel(InetSocketAddress inetAddress, NetworkAddress networkAddress, final ClientEnvironment env,
+            final SessionState sessionState, int numOfPartitions) {
         setState(State.DISCONNECTED);
         this.inetAddress = inetAddress;
+        this.networkAddress = networkAddress;
         this.env = env;
         this.sessionState = sessionState;
         this.vbuckets = new ConcurrentHashMap<>();
@@ -326,5 +329,18 @@ public class DcpChannel {
 
     public boolean isStateFetched() {
         return stateFetched;
+    }
+
+    public synchronized boolean anyStreamIsOpen() {
+        for (boolean bool : openStreams) {
+            if (bool == true) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public NetworkAddress getNetworkAddress() {
+        return networkAddress;
     }
 }

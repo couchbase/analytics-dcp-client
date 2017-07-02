@@ -3,9 +3,7 @@
  */
 package com.couchbase.client.dcp.conductor;
 
-import java.net.InetAddress;
 import java.net.SocketException;
-import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -18,6 +16,7 @@ import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.service.ServiceType;
+import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.ConfigPipeline;
@@ -32,7 +31,7 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(HttpStreamingConfigProvider.class);
-    private final Map<String, Set<Integer>> sockets;
+    private final Map<NetworkAddress, Set<Integer>> sockets;
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
     private volatile boolean refreshed = false;
@@ -58,18 +57,14 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
             int port = hostname.contains(":") ? Integer.parseInt(hostname.substring(hostname.indexOf(':') + 1))
                     : defaultPort;
             String host = hostname.indexOf(':') > -1 ? hostname.substring(0, hostname.indexOf(':')) : hostname;
-            try {
-                InetAddress address = InetAddress.getByName(host);
-                LOGGER.error("Adding a config node " + hostname + ":" + port);
-                Set<Integer> ports = sockets.get(address.getHostAddress());
-                if (ports == null) {
-                    ports = new HashSet<>();
-                    sockets.put(address.getHostAddress(), ports);
-                }
-                ports.add(port);
-            } catch (UnknownHostException uhe) {
-                LOGGER.log(CouchbaseLogLevel.WARN, "Ignoring host " + hostname, uhe);
+            NetworkAddress address = NetworkAddress.create(host);
+            LOGGER.error("Adding a config node " + hostname + ":" + port);
+            Set<Integer> ports = sockets.get(address);
+            if (ports == null) {
+                ports = new HashSet<>();
+                sockets.put(address, ports);
             }
+            ports.add(port);
         }
     }
 
@@ -84,7 +79,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     }
 
     private void tryConnectHosts() throws Throwable {
-        for (Entry<String, Set<Integer>> addresses : sockets.entrySet()) {
+        for (Entry<NetworkAddress, Set<Integer>> addresses : sockets.entrySet()) {
             for (Integer port : addresses.getValue()) {
                 if (tryConnectHost(addresses.getKey(), port)) {
                     return;
@@ -94,7 +89,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         throw this.cause;
     }
 
-    private boolean tryConnectHost(String hostname, Integer port) throws InterruptedException {
+    private boolean tryConnectHost(NetworkAddress hostname, Integer port) throws InterruptedException {
         int attempt = 0;
         ByteBufAllocator allocator =
                 env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
@@ -102,10 +97,10 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
             failure = false;
             refreshed = false;
             Bootstrap bootstrap =
-                    new Bootstrap().remoteAddress(hostname, port).option(ChannelOption.ALLOCATOR, allocator)
+                    new Bootstrap().remoteAddress(hostname.address(), port).option(ChannelOption.ALLOCATOR, allocator)
                             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
                             .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
-                            .handler(new ConfigPipeline(env, hostname, this)).group(env.eventLoopGroup());
+                            .handler(new ConfigPipeline(env, hostname.address(), this)).group(env.eventLoopGroup());
             ChannelFuture connectFuture = bootstrap.connect();
             try {
                 connectFuture.await(2 * env.socketConnectTimeout());
@@ -148,11 +143,11 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         for (NodeInfo node : config.nodes()) {
             Integer port = (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.CONFIG);
             LOGGER.error("Adding a config node " + node.hostname() + ":" + port);
-            String hostname = node.hostname().getHostAddress();
-            Set<Integer> ports = sockets.get(hostname);
+            NetworkAddress address = node.hostname();
+            Set<Integer> ports = sockets.get(address);
             if (ports == null) {
                 ports = new HashSet<>();
-                sockets.put(hostname, ports);
+                sockets.put(address, ports);
             }
             ports.add(port);
         }

@@ -169,7 +169,7 @@ public class Conductor {
             CouchbaseBucketConfig config = configProvider.config();
             int index = config.nodeIndexForMaster(partition, false);
             NodeInfo node = config.nodeAtIndex(index);
-            InetSocketAddress address = new InetSocketAddress(node.hostname(),
+            InetSocketAddress address = new InetSocketAddress(node.hostname().address(),
                     (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
             DcpChannel theChannel = channels.get(address);
             if (theChannel == null) {
@@ -194,17 +194,17 @@ public class Conductor {
                     || node.sslServices().containsKey(ServiceType.BINARY))) {
                 return;
             }
-            InetSocketAddress address = new InetSocketAddress(node.hostname(),
-                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
-            if (!config.hasPrimaryPartitionsOnNode(address.getAddress())) {
+            if (!config.hasPrimaryPartitionsOnNode(node.hostname())) {
                 return;
             }
+            InetSocketAddress address = new InetSocketAddress(node.hostname().address(),
+                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
             if (channels.containsKey(address)) {
                 return;
             }
             LOGGER.debug("Adding DCP Channel against {}", node);
-            final DcpChannel channel =
-                    new DcpChannel(address, env, sessionState, configProvider.config().numberOfPartitions());
+            final DcpChannel channel = new DcpChannel(address, node.hostname(), env, sessionState,
+                    configProvider.config().numberOfPartitions());
             channels.put(address, channel);
             try {
                 channel.connect();

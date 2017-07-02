@@ -1,8 +1,6 @@
 package com.couchbase.client.dcp.conductor;
 
-import java.net.InetSocketAddress;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -11,7 +9,6 @@ import org.apache.log4j.Logger;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
-import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
@@ -257,37 +254,6 @@ public class Fixer implements Runnable, SystemEventHandler {
         fixChannel(event.getChannel());
     }
 
-    /**
-     * Pre-computes a set of nodes that have primary partitions active.
-     * TODO: this should be precomupted in CouchbaseBucketConfig on initialization
-     *
-     * @param nodeInfos
-     *            the list of nodes.
-     * @param partitions
-     *            the partitions.
-     * @return a set containing the addresses of nodes with primary partitions.
-     */
-    private boolean hasPrimaryPartition(CouchbaseBucketConfig config, InetSocketAddress address) {
-        String hostname = address.getAddress().getHostAddress();
-        int port = address.getPort();
-        List<NodeInfo> nodes = config.nodes();
-        int numPartitions = config.numberOfPartitions();
-        for (int partition = 0; partition < numPartitions; partition++) {
-            int index = config.nodeIndexForMaster(partition, false);
-            if (index >= 0) {
-                NodeInfo master = nodes.get(index);
-                if (master.hostname().getHostAddress().equals(hostname)) {
-                    int dcpPort = (conductor.getEnv().sslEnabled() ? master.sslServices() : master.services())
-                            .get(ServiceType.BINARY);
-                    if (dcpPort == port) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
     private void fixChannel(DcpChannel channel) throws InterruptedException {
         CouchbaseBucketConfig config = conductor.configProvider().config();
         int numPartitions = conductor.getSessionState().getNumOfPartitions();
@@ -295,8 +261,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             synchronized (channel) {
                 if (channel.getState() == State.CONNECTED) {
                     channel.setState(State.DISCONNECTED);
-                    if (config.hasPrimaryPartitionsOnNode(channel.getAddress().getAddress())
-                            && hasPrimaryPartition(config, channel.getAddress())) {
+                    if (config.hasPrimaryPartitionsOnNode(channel.getNetworkAddress())) {
                         try {
                             LOGGER.debug("trying to reconnect");
                             channel.connect();
