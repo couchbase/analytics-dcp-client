@@ -21,10 +21,10 @@ import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
  */
 public class ClientBuilder {
     private List<String> hostnames = Arrays.asList(InetAddress.getLoopbackAddress().getHostAddress());
+    private CredentialsProvider credentialsProvider;
     private String connectionString;
     private EventLoopGroup eventLoopGroup;
     private String bucket = "default";
-    private String password = "";
     private ConnectionNameGenerator connectionNameGenerator = DefaultConnectionNameGenerator.INSTANCE;
     private DcpControl dcpControl = new DcpControl();
     private ConfigProvider configProvider = null;
@@ -45,7 +45,6 @@ public class ClientBuilder {
     private int configPort = ClientEnvironment.BOOTSTRAP_HTTP_DIRECT_PORT;
     private int sslConfigPort = ClientEnvironment.BOOTSTRAP_HTTP_SSL_PORT;
     private short[] vbuckets;
-    private String username;
 
     /**
      * The buffer acknowledge watermark in percent.
@@ -116,14 +115,14 @@ public class ClientBuilder {
     }
 
     /**
-     * The password of the bucket to use.
+     * The credentials provider of the bucket to use.
      *
-     * @param password
-     *            the password.
+     * @param credentialsProvider
+     *            the credentials provider.
      * @return this {@link ClientBuilder} for nice chainability.
      */
-    public ClientBuilder password(final String password) {
-        this.password = password;
+    public ClientBuilder credentialsProvider(final CredentialsProvider credentialsProvider) {
+        this.credentialsProvider = credentialsProvider;
         return this;
     }
 
@@ -352,8 +351,8 @@ public class ClientBuilder {
         return bucket;
     }
 
-    public String password() {
-        return password;
+    public CredentialsProvider credentialsProvider() {
+        return credentialsProvider;
     }
 
     public DcpControl dcpControl() {
@@ -435,15 +434,6 @@ public class ClientBuilder {
 
     public short[] vbuckets() {
         return vbuckets;
-    }
-
-    public ClientBuilder username(String username) {
-        this.username = username;
-        return this;
-    }
-
-    public String username() {
-        return username;
     }
 
     public String connectionString() {

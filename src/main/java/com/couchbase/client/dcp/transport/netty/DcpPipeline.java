@@ -3,6 +3,8 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import java.net.InetSocketAddress;
+
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
@@ -40,16 +42,21 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
      */
     private final ControlEventHandler controlHandler;
     private final SSLEngineFactory sslEngineFactory;
+    private final InetSocketAddress address;
 
     /**
      * Creates the pipeline.
+     *
+     * @param address
      *
      * @param environment
      *            the stateful environment.
      * @param controlHandler
      *            the control event observable.
      */
-    public DcpPipeline(final ClientEnvironment environment, final ControlEventHandler controlHandler) {
+    public DcpPipeline(InetSocketAddress address, final ClientEnvironment environment,
+            final ControlEventHandler controlHandler) {
+        this.address = address;
         this.environment = environment;
         this.controlHandler = controlHandler;
         if (environment.sslEnabled()) {
@@ -77,7 +84,7 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
             pipeline.addLast(new LoggingHandler(LogLevel.TRACE));
         }
 
-        pipeline.addLast(new AuthHandler(environment.username(), environment.password()))
+        pipeline.addLast(new AuthHandler(environment.credentialsProvider(), address))
                 .addLast(new DcpConnectHandler(environment))
                 .addLast(new DcpNegotiationHandler(environment.dcpControl()))
                 .addLast(new DcpMessageHandler(ch, environment, environment.dataEventHandler(), controlHandler));

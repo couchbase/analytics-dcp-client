@@ -4,6 +4,7 @@
 package com.couchbase.client.dcp.transport.netty;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
@@ -12,10 +13,13 @@ import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.sasl.SaslClient;
 
+import org.apache.commons.lang3.tuple.Pair;
+
 import com.couchbase.client.core.endpoint.kv.AuthenticationException;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.security.sasl.Sasl;
+import com.couchbase.client.dcp.CredentialsProvider;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.SaslAuthRequest;
 import com.couchbase.client.dcp.message.SaslAuthResponse;
@@ -78,14 +82,15 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
     /**
      * Creates a new auth handler.
      *
-     * @param username
+     * @param credentialsProvider
      *            user/bucket name.
-     * @param password
+     * @param address
      *            password of the user/bucket.
      */
-    AuthHandler(final String username, final String password) {
-        this.username = username;
-        this.password = password == null ? "" : password;
+    AuthHandler(final CredentialsProvider credentialsProvider, final InetSocketAddress address) throws Exception {
+        Pair<String, String> creds = credentialsProvider.get(address.getHostName() + ':' + address.getPort());
+        this.username = creds.getLeft();
+        this.password = creds.getRight();
     }
 
     /**

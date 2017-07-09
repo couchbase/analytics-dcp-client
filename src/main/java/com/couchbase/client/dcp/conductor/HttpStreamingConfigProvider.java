@@ -89,18 +89,18 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         throw this.cause;
     }
 
-    private boolean tryConnectHost(NetworkAddress hostname, Integer port) throws InterruptedException {
+    private boolean tryConnectHost(NetworkAddress hostname, Integer port) throws Exception {
         int attempt = 0;
         ByteBufAllocator allocator =
                 env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
         while (attempt < env.configProviderReconnectMaxAttempts()) {
             failure = false;
             refreshed = false;
-            Bootstrap bootstrap =
-                    new Bootstrap().remoteAddress(hostname.address(), port).option(ChannelOption.ALLOCATOR, allocator)
-                            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
-                            .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
-                            .handler(new ConfigPipeline(env, hostname.address(), this)).group(env.eventLoopGroup());
+            Bootstrap bootstrap = new Bootstrap().remoteAddress(hostname.address(), port)
+                    .option(ChannelOption.ALLOCATOR, allocator)
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
+                    .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
+                    .handler(new ConfigPipeline(env, hostname.address(), port, this)).group(env.eventLoopGroup());
             ChannelFuture connectFuture = bootstrap.connect();
             try {
                 connectFuture.await(2 * env.socketConnectTimeout());

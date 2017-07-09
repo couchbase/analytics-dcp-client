@@ -16,6 +16,7 @@ import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.core.utils.ConnectionString;
 import com.couchbase.client.dcp.ConnectionNameGenerator;
 import com.couchbase.client.dcp.ControlEventHandler;
+import com.couchbase.client.dcp.CredentialsProvider;
 import com.couchbase.client.dcp.DataEventHandler;
 import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.events.DefaultEventBus;
@@ -43,8 +44,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     public static final boolean DEFAULT_SSL_ENABLED = false;
     public static final int BOOTSTRAP_HTTP_DIRECT_PORT = 8091;
     public static final int BOOTSTRAP_HTTP_SSL_PORT = 18091;
-    public static final int DCP_DIRECT_PORT = 11210;
-    public static final int DCP_SSL_PORT = 11207;
 
     /**
      * Stores the list of bootstrap nodes (where the cluster is).
@@ -57,19 +56,14 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final ConnectionNameGenerator connectionNameGenerator;
 
     /**
-     * The username
+     * provide username/password pairs.
      */
-    private final String username;
+    private final CredentialsProvider credentialsProvider;
 
     /**
      * The name of the bucket.
      */
     private final String bucket;
-
-    /**
-     * The password of the bucket.
-     */
-    private final String password;
 
     /**
      * Time in milliseconds to wait for initial configuration during bootstrap.
@@ -160,7 +154,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         hostnames = builder.clusterAt;
         connectionNameGenerator = builder.connectionNameGenerator;
         bucket = builder.bucket;
-        password = builder.password;
+        credentialsProvider = builder.credentialsProvider;
         bootstrapTimeout = builder.bootstrapTimeout;
         connectTimeout = builder.connectTimeout;
         dcpControl = builder.dcpControl;
@@ -185,7 +179,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         sslKeystorePassword = builder.sslKeystorePassword;
         sslKeystore = builder.sslKeystore;
         vbuckets = builder.vbuckets;
-        username = builder.username;
     }
 
     /**
@@ -228,13 +221,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      */
     public String bucket() {
         return bucket;
-    }
-
-    /**
-     * Password of the bucket used.
-     */
-    public String password() {
-        return password;
     }
 
     /**
@@ -374,7 +360,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private List<String> clusterAt;
         private ConnectionNameGenerator connectionNameGenerator;
         private String bucket;
-        private String password;
+        private CredentialsProvider credentialsProvider;
         private long bootstrapTimeout = DEFAULT_BOOTSTRAP_TIMEOUT;
         private long connectTimeout = DEFAULT_CONNECT_TIMEOUT;
         private DcpControl dcpControl;
@@ -395,7 +381,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private String sslKeystorePassword;
         private KeyStore sslKeystore;
         private short[] vbuckets;
-        private String username;
 
         public Builder setClusterAt(List<String> hostnames, String connectionString) {
             if (connectionString != null) {
@@ -427,8 +412,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
             return this;
         }
 
-        public Builder setPassword(String password) {
-            this.password = password;
+        public Builder setCredentialsProvider(CredentialsProvider credentialsProvider) {
+            this.credentialsProvider = credentialsProvider;
             return this;
         }
 
@@ -561,11 +546,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
             return this;
         }
 
-        public Builder setUsername(String username) {
-            this.username = username;
-            return this;
-        }
-
         public ClientEnvironment build() {
             return new ClientEnvironment(this);
         }
@@ -600,7 +580,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     public String toString() {
         return "ClientEnvironment{" + "clusterAt=" + hostnames + ", connectionNameGenerator="
                 + connectionNameGenerator.getClass().getSimpleName() + ", bucket='" + bucket + '\'' + ", passwordSet="
-                + !password.isEmpty() + ", dcpControl=" + dcpControl + ", eventLoopGroup="
+                + (credentialsProvider != null) + ", dcpControl=" + dcpControl + ", eventLoopGroup="
                 + eventLoopGroup.getClass().getSimpleName() + ", eventLoopGroupIsPrivate=" + eventLoopGroupIsPrivate
                 + ", poolBuffers=" + poolBuffers + ", bufferAckWatermark=" + bufferAckWatermark + ", connectTimeout="
                 + connectTimeout + ", bootstrapTimeout=" + bootstrapTimeout + ", sslEnabled=" + sslEnabled
@@ -617,7 +597,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         return dcpChannelsReconnectMaxAttempts;
     }
 
-    public String username() {
-        return username;
+    public CredentialsProvider credentialsProvider() {
+        return credentialsProvider;
     }
 }

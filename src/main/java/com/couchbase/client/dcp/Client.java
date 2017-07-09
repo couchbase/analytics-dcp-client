@@ -68,8 +68,8 @@ public class Client {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
         env = ClientEnvironment.builder().setConnectionNameGenerator(builder.connectionNameGenerator())
-                .setBucket(builder.bucket()).setPassword(builder.password()).setDcpControl(builder.dcpControl())
-                .setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
+                .setBucket(builder.bucket()).setCredentialsProvider(builder.credentialsProvider())
+                .setDcpControl(builder.dcpControl()).setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
                 .setBufferAckWatermark(builder.bufferAckWatermark()).setBufferPooling(builder.poolBuffers())
                 .setConnectTimeout(builder.connectTimeout()).setBootstrapTimeout(builder.bootstrapTimeout())
                 .setSocketConnectTimeout(builder.socketConnectTimeout())
@@ -81,7 +81,7 @@ public class Client {
                 .setSslKeystoreFile(builder.sslKeystoreFile()).setSslKeystorePassword(builder.sslKeystorePassword())
                 .setSslKeystore(builder.sslKeystore()).setBootstrapHttpDirectPort(builder.configPort())
                 .setBootstrapHttpSslPort(builder.sslConfigPort()).setVbuckets(builder.vbuckets())
-                .setUsername(builder.username()).setClusterAt(builder.hostnames(), builder.connectionString()).build();
+                .setClusterAt(builder.hostnames(), builder.connectionString()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
         if (ackEnabled && env.ackWaterMark() == 0) {

@@ -3,6 +3,8 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import org.apache.commons.lang3.tuple.Pair;
+
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.conductor.IConfigurable;
@@ -67,15 +69,17 @@ public class ConfigPipeline extends ChannelInitializer<Channel> {
      *            the stateful environment.
      * @param hostname
      *            hostname of the remote server.
+     * @param port
      * @param configStream
      *            config stream where to send the configs.
      */
-    public ConfigPipeline(final ClientEnvironment environment, final String hostname,
-            final IConfigurable configurable) {
+    public ConfigPipeline(final ClientEnvironment environment, final String hostname, Integer port,
+            final IConfigurable configurable) throws Exception {
         this.hostname = hostname;
         this.bucket = environment.bucket();
-        this.username = environment.username();
-        this.password = environment.password();
+        Pair<String, String> creds = environment.credentialsProvider().get(hostname + ':' + port);
+        this.username = creds.getLeft();
+        this.password = creds.getRight();
         this.configurable = configurable;
         this.environment = environment;
         if (environment.sslEnabled()) {
