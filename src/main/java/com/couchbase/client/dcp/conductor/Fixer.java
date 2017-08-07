@@ -77,7 +77,6 @@ public class Fixer implements Runnable, SystemEventHandler {
 
     private void handle(DcpEvent event) throws InterruptedException {
         try {
-            LOGGER.log(Level.WARN, "Handling " + event);
             switch (event.getType()) {
                 case CHANNEL_DROPPED:
                     // Channel was dropped and failed to be re-created. Must fix all partitions
@@ -89,11 +88,13 @@ public class Fixer implements Runnable, SystemEventHandler {
                     // 3. the partition is owned by a new kv node.
                     //    add a new channel and establish the stream for the partition
                     fixDroppedChannel((ChannelDroppedEvent) event);
+                    LOGGER.log(Level.WARN, "Handling " + event);
                     break;
                 case NOT_MY_VBUCKET:
                     // Refresh the config, find the new assigned kv node
                     // (could still be the same one), and re-attempt connection
                     // this should never cause a permanent failure
+                    LOGGER.log(Level.WARN, "Handling " + event);
                     NotMyVBucketEvent notMyVbucketEvent = (NotMyVBucketEvent) event;
                     refreshConfig();
                     try {
@@ -116,11 +117,12 @@ public class Fixer implements Runnable, SystemEventHandler {
                     }
                     break;
                 case ROLLBACK:
+                    LOGGER.log(Level.WARN, "Handling " + event);
                     // abort all, close the channels
                     conductor.disconnect(true);
-                    LOGGER.log(Level.WARN, "Rollback for a vbucket. abort");
                     break;
                 case STREAM_END:
+                    LOGGER.log(Level.WARN, "Handling " + event);
                     // A stream end can have many reasons.
                     StreamEndEvent streamEndEvent = (StreamEndEvent) event;
                     fixStreamEnd(streamEndEvent);

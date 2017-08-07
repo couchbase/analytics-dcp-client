@@ -95,14 +95,14 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     private void handleFailoverLogResponse(ByteBuf buf) {
         short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
-        ByteBuf flog = Unpooled.buffer();
-        DcpFailoverLogResponse.init(flog);
-        DcpFailoverLogResponse.vbucket(flog, DcpFailoverLogResponse.vbucket(buf));
+        ByteBuf failoverLog = Unpooled.buffer();
+        DcpFailoverLogResponse.init(failoverLog);
+        DcpFailoverLogResponse.vbucket(failoverLog, DcpFailoverLogResponse.vbucket(buf));
         ByteBuf copiedBuf = MessageUtil.getContent(buf).copy().writeShort(vbid);
-        MessageUtil.setContent(copiedBuf, flog);
+        MessageUtil.setContent(copiedBuf, failoverLog);
         copiedBuf.release();
         PartitionState ps = channel.getSessionState().get(vbid);
-        DcpFailoverLogResponse.fill(flog, ps);
+        DcpFailoverLogResponse.fill(failoverLog, ps);
         channel.getFailoverLogRequests()[vbid] = false;
         ps.failoverUpdated();
         channel.getEnv().eventBus().publish(ps.getFailoverLogUpdateEvent());

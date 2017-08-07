@@ -210,7 +210,7 @@ public class Client {
             LOGGER.debug("Ignoring duplicate connect attempt, already connecting/connected.");
             return;
         }
-        LOGGER.debug("Connecting to seed nodes and bootstrapping bucket {}.", env.bucket());
+        LOGGER.info("Connecting to seed nodes and bootstrapping bucket {}.", env.bucket());
         conductor.connect();
     }
 

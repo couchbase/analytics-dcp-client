@@ -88,7 +88,8 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
      *            password of the user/bucket.
      */
     AuthHandler(final CredentialsProvider credentialsProvider, final InetSocketAddress address) throws Exception {
-        Pair<String, String> creds = credentialsProvider.get(address.getHostName() + ':' + address.getPort());
+        Pair<String, String> creds =
+                credentialsProvider.get(address.getAddress().getHostAddress() + ':' + address.getPort());
         this.username = creds.getLeft();
         this.password = creds.getRight();
     }
