@@ -8,6 +8,7 @@ import java.net.InetSocketAddress;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
+import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.SSLEngineFactory;
 import com.couchbase.client.dcp.message.MessageUtil;
@@ -43,9 +44,12 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
     private final ControlEventHandler controlHandler;
     private final SSLEngineFactory sslEngineFactory;
     private final InetSocketAddress address;
+    private final DcpChannel dcpChannel;
 
     /**
      * Creates the pipeline.
+     *
+     * @param dcpChannel
      *
      * @param address
      *
@@ -54,8 +58,9 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
      * @param controlHandler
      *            the control event observable.
      */
-    public DcpPipeline(InetSocketAddress address, final ClientEnvironment environment,
+    public DcpPipeline(DcpChannel dcpChannel, InetSocketAddress address, final ClientEnvironment environment,
             final ControlEventHandler controlHandler) {
+        this.dcpChannel = dcpChannel;
         this.address = address;
         this.environment = environment;
         this.controlHandler = controlHandler;
@@ -86,7 +91,7 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
 
         pipeline.addLast(new AuthHandler(environment.credentialsProvider(), address))
                 .addLast(new DcpConnectHandler(environment))
-                .addLast(new DcpNegotiationHandler(environment.dcpControl()))
-                .addLast(new DcpMessageHandler(ch, environment, environment.dataEventHandler(), controlHandler));
+                .addLast(new DcpNegotiationHandler(environment.dcpControl())).addLast(new DcpMessageHandler(dcpChannel,
+                        ch, environment, environment.dataEventHandler(), controlHandler));
     }
 }

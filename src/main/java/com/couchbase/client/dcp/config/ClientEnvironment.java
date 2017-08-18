@@ -19,6 +19,7 @@ import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.CredentialsProvider;
 import com.couchbase.client.dcp.DataEventHandler;
 import com.couchbase.client.dcp.SystemEventHandler;
+import com.couchbase.client.dcp.config.DcpControl.Names;
 import com.couchbase.client.dcp.events.DefaultEventBus;
 import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
@@ -599,5 +600,10 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
     public CredentialsProvider credentialsProvider() {
         return credentialsProvider;
+    }
+
+    public long getDeadConnectionDetectionInterval() {
+        String noOpInterval = dcpControl().get(Names.SET_NOOP_INTERVAL);
+        return noOpInterval == null ? Long.MAX_VALUE : Long.parseLong(noOpInterval) * 2000;
     }
 }

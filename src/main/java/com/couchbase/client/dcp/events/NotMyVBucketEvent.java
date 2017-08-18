@@ -55,7 +55,7 @@ public class NotMyVBucketEvent implements PartitionDcpEvent {
     private Map<String, Object> toMap() {
         Map<String, Object> tree = new HashMap<>();
         tree.put(DcpEvent.class.getSimpleName(), this.getClass().getSimpleName());
-        tree.put(DcpChannel.class.getSimpleName(), channel);
+        tree.put(DcpChannel.class.getSimpleName(), channel.toString());
         tree.put("partition", state.vbid());
         return tree;
     }

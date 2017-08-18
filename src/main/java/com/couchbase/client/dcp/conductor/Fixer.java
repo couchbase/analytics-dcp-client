@@ -13,6 +13,7 @@ import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.events.DcpEvent;
+import com.couchbase.client.dcp.events.DeadConnectionDetection;
 import com.couchbase.client.dcp.events.NotMyVBucketEvent;
 import com.couchbase.client.dcp.events.PartitionDcpEvent;
 import com.couchbase.client.dcp.events.StreamEndEvent;
@@ -50,13 +51,17 @@ public class Fixer implements Runnable, SystemEventHandler {
     public void run() {
         try {
             running = true;
+            DeadConnectionDetection detection = new DeadConnectionDetection(conductor);
             DcpEvent next = inbox.take();
             while (next == null || next != POISON_PILL) {
                 if (next != null) {
                     handle(next);
+                } else {
+                    attemptFixingBroken();
+                    detection.run();
                 }
-                attemptFixingBroken();
-                next = failed.isEmpty() ? inbox.take() : inbox.poll(100, TimeUnit.MILLISECONDS);
+                next = failed.isEmpty() ? inbox.poll(detection.timeToCheck(), TimeUnit.MILLISECONDS)
+                        : inbox.poll(100, TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException ie) { // NOSONAR
             LOGGER.log(Level.WARN, "Dcp Fixer thread has been interrupted");
@@ -267,6 +272,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                         try {
                             LOGGER.debug("trying to reconnect");
                             channel.connect();
+                            channel.setChannelDroppedReported(false);
                         } catch (InterruptedException e) {
                             LOGGER.log(Level.ERROR, "Interrupted while attempting to connect channel", e);
                             giveUp(e);

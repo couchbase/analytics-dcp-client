@@ -10,10 +10,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
+import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.dcp.config.ClientEnvironment;
+import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamRequest;
@@ -253,5 +255,32 @@ public class Conductor {
 
     public Map<InetSocketAddress, DcpChannel> getChannels() {
         return channels;
+    }
+
+    public void reviveDeadConnections() {
+        synchronized (channels) {
+            for (DcpChannel channel : channels.values()) {
+                synchronized (channel) {
+                    if (channel.producerDroppedConnection()) {
+                        try {
+                            channel.disconnect(true);
+                            try {
+                                channel.connect();
+                            } catch (Throwable e) {
+                                // Disconnect succeeded but connect failed
+                                LOGGER.log(CouchbaseLogLevel.WARN,
+                                        "Dead connection detected, channel was disconnected successfully but connecting failed. Creating a channel dropped event",
+                                        e);
+                                channel.setState(State.CONNECTED);
+                                env.eventBus().publish(new ChannelDroppedEvent(channel, e));
+                            }
+                        } catch (Exception e) {
+                            LOGGER.log(CouchbaseLogLevel.WARN,
+                                    "Failure disconnecting a dead dcp channel. ignoring till next round", e);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

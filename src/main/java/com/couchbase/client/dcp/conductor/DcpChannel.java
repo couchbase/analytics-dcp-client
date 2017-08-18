@@ -56,7 +56,10 @@ public class DcpChannel {
     private final DcpChannelControlMessageHandler controlHandler;
     private volatile Channel channel;
     private final DcpChannelCloseListener closeListener;
+    private final long deadConnectionDetectionInterval;
     private volatile boolean stateFetched = true;
+    private volatile long lastConnectionTime = System.currentTimeMillis();
+    private boolean channelDroppedReported = false;
 
     public DcpChannel(InetSocketAddress inetAddress, NetworkAddress networkAddress, final ClientEnvironment env,
             final SessionState sessionState, int numOfPartitions) {
@@ -70,6 +73,7 @@ public class DcpChannel {
         this.controlHandler = new DcpChannelControlMessageHandler(this);
         this.openStreams = new boolean[numOfPartitions];
         this.closeListener = new DcpChannelCloseListener(this);
+        this.deadConnectionDetectionInterval = env.getDeadConnectionDetectionInterval();
     }
 
     public synchronized void connect() throws Throwable {
@@ -91,7 +95,7 @@ public class DcpChannel {
                         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
                         .remoteAddress(inetAddress.getHostString(), inetAddress.getPort())
                         .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
-                        .handler(new DcpPipeline(inetAddress, env, controlHandler)).group(env.eventLoopGroup());
+                        .handler(new DcpPipeline(this, inetAddress, env, controlHandler)).group(env.eventLoopGroup());
                 ChannelFuture connectFuture = bootstrap.connect();
                 connectFuture.await(2 * env.socketConnectTimeout());
                 connectFuture.cancel(true);
@@ -342,5 +346,27 @@ public class DcpChannel {
 
     public NetworkAddress getNetworkAddress() {
         return networkAddress;
+    }
+
+    public synchronized boolean producerDroppedConnection() {
+        if (state != State.CONNECTED || channelDroppedReported) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastConnectionTime > deadConnectionDetectionInterval) {
+            LOGGER.log(CouchbaseLogLevel.INFO, "Detected dead connection on " + this);
+            return true;
+        } else {
+            LOGGER.log(CouchbaseLogLevel.INFO, "Connection " + this + " is not dead");
+            return false;
+        }
+    }
+
+    public void newMessageRecieved() {
+        lastConnectionTime = System.currentTimeMillis();
+    }
+
+    public void setChannelDroppedReported(boolean b) {
+        this.channelDroppedReported = b;
     }
 }

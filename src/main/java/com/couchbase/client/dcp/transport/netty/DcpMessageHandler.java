@@ -11,6 +11,7 @@ import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DataEventHandler;
 import com.couchbase.client.dcp.DcpAckHandle;
+import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.message.DcpBufferAckRequest;
@@ -61,6 +62,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     private final boolean ackEnabled;
     private int ackCounter;
     private final int ackWatermark;
+    private final DcpChannel dcpChannel;
 
     /**
      * Create a new message handler.
@@ -74,8 +76,9 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
      * @param controlHandler
      *            control event subject.
      */
-    DcpMessageHandler(Channel ch, ClientEnvironment env, final DataEventHandler dataEventHandler,
+    DcpMessageHandler(DcpChannel dcpChannel, Channel ch, ClientEnvironment env, final DataEventHandler dataEventHandler,
             final ControlEventHandler controlEventHandler) {
+        this.dcpChannel = dcpChannel;
         this.channel = ch;
         this.env = env;
         this.dataEventHandler = dataEventHandler;
@@ -97,6 +100,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
      */
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
+        dcpChannel.newMessageRecieved();
         ByteBuf message = (ByteBuf) msg;
         if (isDataMessage(message)) {
             dataEventHandler.onEvent(this, message);
@@ -106,6 +110,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             ByteBuf buffer = ctx.alloc().buffer();
             DcpNoopResponse.init(buffer);
             MessageUtil.setOpaque(MessageUtil.getOpaque(message), buffer);
+            LOGGER.info("Sending back a NoOp response" + dcpChannel);
             ctx.writeAndFlush(buffer);
         } else {
             LOGGER.warn("Unknown DCP Message, ignoring. \n{}", MessageUtil.humanize(message));
