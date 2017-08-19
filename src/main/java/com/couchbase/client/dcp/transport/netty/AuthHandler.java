@@ -4,7 +4,6 @@
 package com.couchbase.client.dcp.transport.netty;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
 
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
@@ -87,9 +86,8 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
      * @param address
      *            password of the user/bucket.
      */
-    AuthHandler(final CredentialsProvider credentialsProvider, final InetSocketAddress address) throws Exception {
-        Pair<String, String> creds =
-                credentialsProvider.get(address.getAddress().getHostAddress() + ':' + address.getPort());
+    AuthHandler(final CredentialsProvider credentialsProvider, final String host, int port) throws Exception {
+        Pair<String, String> creds = credentialsProvider.get(host + ':' + port);
         this.username = creds.getLeft();
         this.password = creds.getRight();
     }

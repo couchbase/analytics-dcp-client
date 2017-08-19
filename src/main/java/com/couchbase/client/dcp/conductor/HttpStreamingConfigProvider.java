@@ -96,7 +96,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         while (attempt < env.configProviderReconnectMaxAttempts()) {
             failure = false;
             refreshed = false;
-            LOGGER.log(CouchbaseLogLevel.INFO, "Getting bucket config from " + hostname.address() + ":" + port);
+            LOGGER.log(CouchbaseLogLevel.INFO, "Getting bucket config from " + hostname.nameOrAddress() + ":" + port);
             Bootstrap bootstrap = new Bootstrap().remoteAddress(hostname.address(), port)
                     .option(ChannelOption.ALLOCATOR, allocator)
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())

@@ -95,7 +95,9 @@ public class DcpChannel {
                         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
                         .remoteAddress(inetAddress.getHostString(), inetAddress.getPort())
                         .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
-                        .handler(new DcpPipeline(this, inetAddress, env, controlHandler)).group(env.eventLoopGroup());
+                        .handler(new DcpPipeline(this, networkAddress.nameOrAddress(), inetAddress.getPort(), env,
+                                controlHandler))
+                        .group(env.eventLoopGroup());
                 ChannelFuture connectFuture = bootstrap.connect();
                 connectFuture.await(2 * env.socketConnectTimeout());
                 connectFuture.cancel(true);

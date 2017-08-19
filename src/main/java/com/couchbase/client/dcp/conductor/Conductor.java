@@ -171,7 +171,7 @@ public class Conductor {
             CouchbaseBucketConfig config = configProvider.config();
             int index = config.nodeIndexForMaster(partition, false);
             NodeInfo node = config.nodeAtIndex(index);
-            InetSocketAddress address = new InetSocketAddress(node.hostname().address(),
+            InetSocketAddress address = new InetSocketAddress(node.hostname().nameOrAddress(),
                     (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
             DcpChannel theChannel = channels.get(address);
             if (theChannel == null) {
@@ -199,7 +199,7 @@ public class Conductor {
             if (!config.hasPrimaryPartitionsOnNode(node.hostname())) {
                 return;
             }
-            InetSocketAddress address = new InetSocketAddress(node.hostname().address(),
+            InetSocketAddress address = new InetSocketAddress(node.hostname().nameOrAddress(),
                     (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
             if (channels.containsKey(address)) {
                 return;
