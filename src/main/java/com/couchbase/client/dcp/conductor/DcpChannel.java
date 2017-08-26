@@ -188,6 +188,7 @@ public class DcpChannel {
             endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
             LOGGER.warn("Attempt to open stream on disconnected channel");
             env.eventBus().publish(endEvent);
+            return;
         }
         LOGGER.debug(
                 "Opening Stream against {} with vbid: {}, vbuuid: {}, startSeqno: {}, "
