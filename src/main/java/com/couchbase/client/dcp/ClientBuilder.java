@@ -14,6 +14,7 @@ import com.couchbase.client.dcp.conductor.ConfigProvider;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.events.EventBus;
+import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 
 /**
@@ -45,6 +46,7 @@ public class ClientBuilder {
     private int configPort = ClientEnvironment.BOOTSTRAP_HTTP_DIRECT_PORT;
     private int sslConfigPort = ClientEnvironment.BOOTSTRAP_HTTP_SSL_PORT;
     private short[] vbuckets;
+    private FlowControlCallback flowControlCallback = FlowControlCallback.NOOP;
 
     /**
      * The buffer acknowledge watermark in percent.
@@ -112,6 +114,15 @@ public class ClientBuilder {
     public ClientBuilder bucket(final String bucket) {
         this.bucket = bucket;
         return this;
+    }
+
+    public ClientBuilder flowControlCallback(final FlowControlCallback callback) {
+        this.flowControlCallback = callback;
+        return this;
+    }
+
+    public FlowControlCallback flowControlCallback() {
+        return flowControlCallback;
     }
 
     /**

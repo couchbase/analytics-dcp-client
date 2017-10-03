@@ -31,6 +31,8 @@ import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.Channel;
 import com.couchbase.client.deps.io.netty.channel.ChannelDuplexHandler;
+import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
+import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
 
 /**
@@ -58,11 +60,11 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
      * The subject for the control events since they need more advanced handling up the stack.
      */
     private final ControlEventHandler controlEventHandler;
-
     private final boolean ackEnabled;
     private int ackCounter;
     private final int ackWatermark;
     private final DcpChannel dcpChannel;
+    private final ChannelFutureListener ackListener;
 
     /**
      * Create a new message handler.
@@ -90,8 +92,10 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             int bufferSize = Integer.parseInt(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
             this.ackWatermark = (int) Math.round(bufferSize / 100.0 * bufferAckPercent);
             LOGGER.warn("BufferAckWatermark absolute is {}", ackWatermark);
+            ackListener = future -> env.flowControlCallback().ackFlushedThroughNetwork(this, this.dcpChannel);
         } else {
             this.ackWatermark = 0;
+            ackListener = null;
         }
     }
 
@@ -150,12 +154,14 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             ackCounter += message.readableBytes();
             LOGGER.trace("BufferAckCounter is now {}", ackCounter);
             if (ackCounter >= ackWatermark) {
+                env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
                 LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.",
                         channel.remoteAddress());
                 ByteBuf buffer = channel.alloc().buffer();
                 DcpBufferAckRequest.init(buffer);
                 DcpBufferAckRequest.ackBytes(buffer, ackCounter);
-                channel.writeAndFlush(buffer);
+                ChannelFuture future = channel.writeAndFlush(buffer);
+                future.addListener(ackListener);
                 ackCounter = 0;
             }
             LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
@@ -172,5 +178,9 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         }
         // forward exception
         ctx.fireExceptionCaught(cause);
+    }
+
+    public DcpChannel getDcpChannel() {
+        return dcpChannel;
     }
 }

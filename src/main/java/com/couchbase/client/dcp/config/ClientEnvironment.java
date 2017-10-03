@@ -22,6 +22,7 @@ import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.config.DcpControl.Names;
 import com.couchbase.client.dcp.events.DefaultEventBus;
 import com.couchbase.client.dcp.events.EventBus;
+import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 
 import rx.Completable;
@@ -143,6 +144,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final KeyStore sslKeystore;
     private final int bootstrapHttpDirectPort;
     private final int bootstrapHttpSslPort;
+    private final FlowControlCallback flowControlCallback;
     private short[] vbuckets;
 
     /**
@@ -180,6 +182,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         sslKeystorePassword = builder.sslKeystorePassword;
         sslKeystore = builder.sslKeystore;
         vbuckets = builder.vbuckets;
+        flowControlCallback = builder.flowControlCallback;
     }
 
     /**
@@ -201,6 +204,13 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      */
     public DataEventHandler dataEventHandler() {
         return dataEventHandler;
+    }
+
+    /**
+     * Returns the Flow Control Callback
+     */
+    public FlowControlCallback flowControlCallback() {
+        return flowControlCallback;
     }
 
     /**
@@ -382,6 +392,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private String sslKeystorePassword;
         private KeyStore sslKeystore;
         private short[] vbuckets;
+        private FlowControlCallback flowControlCallback;
 
         public Builder setClusterAt(List<String> hostnames, String connectionString) {
             if (connectionString != null) {
@@ -544,6 +555,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
         public Builder setVbuckets(final short[] vbuckets) {
             this.vbuckets = vbuckets;
+            return this;
+        }
+
+        public Builder setFlowControlCallback(final FlowControlCallback flowControlCallback) {
+            this.flowControlCallback = flowControlCallback;
             return this;
         }
 

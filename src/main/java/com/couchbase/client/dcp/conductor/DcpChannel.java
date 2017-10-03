@@ -289,8 +289,8 @@ public class DcpChannel {
 
     @Override
     public String toString() {
-        return "{\"class\":\"" + this.getClass().getSimpleName() + "\", \"inetAddress\":\"" + inetAddress
-                + "\", \"state\":\"" + state + "\"}";
+        return "{\"class\" : \"" + this.getClass().getSimpleName() + "\", \"inetAddress\" : \"" + inetAddress
+                + "\", \"bucket\" : \"" + env.bucket() + "\", \"state\" : \"" + state + "\"}";
     }
 
     public ClientEnvironment getEnv() {
