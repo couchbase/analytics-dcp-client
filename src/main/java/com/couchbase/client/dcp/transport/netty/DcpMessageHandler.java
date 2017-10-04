@@ -94,6 +94,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             LOGGER.warn("BufferAckWatermark absolute is {}", ackWatermark);
             ackListener = future -> {
                 if (!future.isSuccess()) {
+                    LOGGER.log(CouchbaseLogLevel.WARN, "Failed to send the ack to the dcp producer", future.cause());
                     ch.close();
                 } else {
                     env.flowControlCallback().ackFlushedThroughNetwork(this, this.dcpChannel);
@@ -120,7 +121,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             ByteBuf buffer = ctx.alloc().buffer();
             DcpNoopResponse.init(buffer);
             MessageUtil.setOpaque(MessageUtil.getOpaque(message), buffer);
-            LOGGER.info("Sending back a NoOp response" + dcpChannel);
+            LOGGER.info("Sending back a NoOp response" + dcpChannel + ". Current ack counter = " + ackCounter);
             ctx.writeAndFlush(buffer);
         } else {
             LOGGER.warn("Unknown DCP Message, ignoring. \n{}", MessageUtil.humanize(message));
