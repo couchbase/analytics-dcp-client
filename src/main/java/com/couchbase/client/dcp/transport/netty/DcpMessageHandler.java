@@ -92,7 +92,13 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             int bufferSize = Integer.parseInt(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
             this.ackWatermark = (int) Math.round(bufferSize / 100.0 * bufferAckPercent);
             LOGGER.warn("BufferAckWatermark absolute is {}", ackWatermark);
-            ackListener = future -> env.flowControlCallback().ackFlushedThroughNetwork(this, this.dcpChannel);
+            ackListener = future -> {
+                if (!future.isSuccess()) {
+                    ch.close();
+                } else {
+                    env.flowControlCallback().ackFlushedThroughNetwork(this, this.dcpChannel);
+                }
+            };
         } else {
             this.ackWatermark = 0;
             ackListener = null;
