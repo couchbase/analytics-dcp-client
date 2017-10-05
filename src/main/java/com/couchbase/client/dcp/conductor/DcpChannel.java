@@ -158,6 +158,7 @@ public class DcpChannel {
     }
 
     public synchronized void disconnect(boolean wait) throws InterruptedException {
+        LOGGER.info(toString() + " is disconnecting");
         switch (getState()) {
             case CONNECTED:
             case CONNECTING:
@@ -177,6 +178,7 @@ public class DcpChannel {
             wait(State.DISCONNECTED);
         }
         channel = null;
+        LOGGER.info(toString() + " disconnected");
     }
 
     public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,

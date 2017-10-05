@@ -234,8 +234,11 @@ public class Client {
      * @throws InterruptedException
      */
     public synchronized void disconnect() throws InterruptedException {
+        LOGGER.info("Disconnecting the client: " + env.connectionNameGenerator().name() + " started");
         conductor.disconnect(true);
+        LOGGER.info("Shutting down the environment of the client: " + env.connectionNameGenerator().name());
         env.shutdown();
+        LOGGER.info("Disconnecting the client: " + env.connectionNameGenerator().name() + " completed");
     }
 
     /**

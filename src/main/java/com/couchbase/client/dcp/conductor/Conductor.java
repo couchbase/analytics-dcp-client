@@ -72,6 +72,7 @@ public class Conductor {
     }
 
     public void disconnect(boolean wait) throws InterruptedException {
+        LOGGER.info("Conductor.disconnect called.");
         fixer.poison();
         if (Thread.currentThread() != fixerThread) {
             sessionState.setDisconnected();
@@ -80,7 +81,9 @@ public class Conductor {
             return;
         }
         if (Thread.currentThread() != fixerThread && fixerThread != null) {
+            LOGGER.info("Waiting for fixer thread to finish.");
             fixerThread.join();
+            LOGGER.info("Fixer thread finished.");
         }
         fixerThread = null;
         synchronized (this) {
@@ -88,7 +91,7 @@ public class Conductor {
                 return;
             }
             connected = false;
-            LOGGER.debug("Instructed to shutdown.");
+            LOGGER.info("Instructed to shutdown dcp channels.");
             synchronized (channels) {
                 for (DcpChannel channel : channels.values()) {
                     channel.disconnect(wait);

@@ -18,6 +18,7 @@ import com.couchbase.client.dcp.ConnectionNameGenerator;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.CredentialsProvider;
 import com.couchbase.client.dcp.DataEventHandler;
+import com.couchbase.client.dcp.DefaultConnectionNameGenerator;
 import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.config.DcpControl.Names;
 import com.couchbase.client.dcp.events.DefaultEventBus;
@@ -369,7 +370,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
     public static class Builder {
         private List<String> clusterAt;
-        private ConnectionNameGenerator connectionNameGenerator;
+        private ConnectionNameGenerator connectionNameGenerator = DefaultConnectionNameGenerator.INSTANCE;
         private String bucket;
         private CredentialsProvider credentialsProvider;
         private long bootstrapTimeout = DEFAULT_BOOTSTRAP_TIMEOUT;
