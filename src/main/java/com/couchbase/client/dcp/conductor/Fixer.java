@@ -63,8 +63,12 @@ public class Fixer implements Runnable, SystemEventHandler {
                 next = failed.isEmpty() ? inbox.poll(detection.timeToCheck(), TimeUnit.MILLISECONDS)
                         : inbox.poll(100, TimeUnit.MILLISECONDS);
             }
-        } catch (InterruptedException ie) { // NOSONAR
-            LOGGER.log(Level.WARN, "Dcp Fixer thread has been interrupted");
+            if (next == POISON_PILL) {
+                LOGGER.log(Level.INFO, this + " has been poisoned");
+            }
+        } catch (InterruptedException ie) {
+            LOGGER.log(Level.WARN, this + " has been interrupted");
+            Thread.currentThread().interrupt();
         }
         running = false;
         reset();
@@ -92,8 +96,8 @@ public class Fixer implements Runnable, SystemEventHandler {
                     // 2. the partition is now owned by an existing connected kv node channel, add a stream there.
                     // 3. the partition is owned by a new kv node.
                     //    add a new channel and establish the stream for the partition
-                    fixDroppedChannel((ChannelDroppedEvent) event);
                     LOGGER.log(Level.WARN, "Handling " + event);
+                    fixDroppedChannel((ChannelDroppedEvent) event);
                     break;
                 case NOT_MY_VBUCKET:
                     // Refresh the config, find the new assigned kv node
@@ -150,19 +154,19 @@ public class Fixer implements Runnable, SystemEventHandler {
         switch (streamEndEvent.reason()) {
             case CLOSED:
                 // Normal op, user requested close of stream
-                LOGGER.log(Level.INFO, "Stream stopped as per your request");
+                LOGGER.log(Level.INFO, this + " stream stopped as per your request");
                 break;
             case DISCONNECTED:
                 // The server is preparing to disconnect. wait for a channel drop which will come soon
-                LOGGER.log(Level.WARN, "The channel is going to drop. not sure when this could happen."
+                LOGGER.log(Level.WARN, this + " the channel is going to drop. not sure when this could happen."
                         + "Should wait for the drop event before attempting a fix");
                 break;
             case INVALID:
-                LOGGER.log(Level.ERROR, "This should never happen. must abort");
+                LOGGER.log(Level.ERROR, this + " this should never happen. must abort");
                 break;
             case OK:
                 // Normal op, reached the end of the requested DCP stream
-                LOGGER.log(Level.INFO, "Stream reached the end of your request");
+                LOGGER.log(Level.INFO, this + " stream reached the end of your request");
                 break;
             case STATE_CHANGED:
             case CHANNEL_DROPPED:
@@ -174,15 +178,15 @@ public class Fixer implements Runnable, SystemEventHandler {
                 short index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
                 if (index >= 0) {
                     NodeInfo node = config.nodeAtIndex(index);
-                    LOGGER.log(Level.INFO, "Was able to find a new master for the vbucket " + node.hostname());
+                    LOGGER.log(Level.INFO, this + " was able to find a new master for the vbucket " + node.hostname());
                     try {
                         conductor.add(node, config);
                     } catch (InterruptedException e) {
-                        LOGGER.log(Level.WARN, "Interrupting while adding node " + node.hostname(), e);
+                        LOGGER.log(Level.WARN, this + " interrupted while adding node " + node.hostname(), e);
                         giveUp(streamEndEvent, e);
                         throw e;
                     } catch (Throwable th) {
-                        LOGGER.log(Level.WARN, "Failed to add node " + node.hostname(), th);
+                        LOGGER.log(Level.WARN, this + " failed to add node " + node.hostname(), th);
                         retry(streamEndEvent, th);
                         break;
                     }
@@ -198,16 +202,18 @@ public class Fixer implements Runnable, SystemEventHandler {
                     state.prepareNextStreamRequest();
                     conductor.startStreamForPartition(state.getStreamRequest());
                 } else {
-                    LOGGER.log(Level.INFO, "Vbucket " + streamEndEvent.partition() + " has no master at the moment");
+                    LOGGER.log(Level.INFO,
+                            this + " vbucket " + streamEndEvent.partition() + " has no master at the moment");
                     retry(streamEndEvent);
                 }
                 break;
             case TOO_SLOW:
                 // Log, requesting upgrade to analytics resources and re-open the stream
-                LOGGER.log(Level.WARN, "Need more analytics ingestion nodes. we are slow for the producer node");
+                LOGGER.log(Level.WARN,
+                        this + " need more analytics ingestion nodes. we are slow for the producer node");
                 break;
             default:
-                LOGGER.log(Level.ERROR, "Unexpected event type " + streamEndEvent);
+                LOGGER.log(Level.ERROR, this + " unexpected event type " + streamEndEvent);
                 break;
         }
     }
@@ -216,21 +222,21 @@ public class Fixer implements Runnable, SystemEventHandler {
         try {
             conductor.configProvider().refresh();
         } catch (InterruptedException e) {
-            LOGGER.log(Level.ERROR, "Interrupted while refreshing configurations", e);
+            LOGGER.log(Level.ERROR, this + " interrupted while refreshing configurations", e);
             giveUp(e);
             throw e;
         } catch (Throwable th) {
-            LOGGER.log(Level.ERROR, "Failed to refresh configurations", th);
+            LOGGER.log(Level.ERROR, this + " failed to refresh configurations", th);
         }
     }
 
     private void retry(StreamEndEvent streamEndEvent, Throwable th) throws InterruptedException {
         streamEndEvent.incrementAttempts();
         if (streamEndEvent.getAttempts() > 100) {
-            LOGGER.log(Level.WARN, "Failed to fix a vbucket stream 100 times. Giving up", th);
+            LOGGER.log(Level.WARN, this + " failed to fix a vbucket stream 100 times. Giving up", th);
             giveUp(streamEndEvent, th);
         } else {
-            LOGGER.log(Level.WARN, "Retrying for the " + streamEndEvent.getAttempts() + " time");
+            LOGGER.log(Level.WARN, this + " retrying for the " + streamEndEvent.getAttempts() + " time");
             failed.add(streamEndEvent);
         }
     }
@@ -238,7 +244,7 @@ public class Fixer implements Runnable, SystemEventHandler {
     private void retry(StreamEndEvent streamEndEvent) throws InterruptedException {
         streamEndEvent.incrementAttempts();
         if (streamEndEvent.getAttempts() > 100) {
-            LOGGER.log(Level.WARN, "Failed to fix a vbucket stream 100 times. Giving up");
+            LOGGER.log(Level.WARN, this + " failed to fix a vbucket stream 100 times. Giving up");
             giveUp(streamEndEvent, new NotConnectedException());
         } else {
             failed.add(streamEndEvent);
@@ -270,11 +276,12 @@ public class Fixer implements Runnable, SystemEventHandler {
                     channel.setState(State.DISCONNECTED);
                     if (config.hasPrimaryPartitionsOnNode(channel.getNetworkAddress())) {
                         try {
-                            LOGGER.debug("trying to reconnect");
+                            LOGGER.debug(this + " trying to reconnect " + channel);
                             channel.connect();
                             channel.setChannelDroppedReported(false);
                         } catch (InterruptedException e) {
-                            LOGGER.log(Level.ERROR, "Interrupted while attempting to connect channel", e);
+                            LOGGER.log(Level.ERROR,
+                                    this + " interrupted while attempting to connect channel:" + channel, e);
                             giveUp(e);
                             throw e;
                         } catch (Throwable th) {
@@ -284,10 +291,12 @@ public class Fixer implements Runnable, SystemEventHandler {
                                 }
                             }
                             conductor.removeChannel(channel);
-                            LOGGER.warn("Failed to re-establish a failed dcp connection. Must notify the client", th);
+                            LOGGER.warn(
+                                    this + " failed to re-establish a failed dcp connection. Must notify the client",
+                                    th);
                         }
                     } else {
-                        LOGGER.debug("dropped channel " + channel + " has no vbuckets");
+                        LOGGER.debug(this + " the dropped channel " + channel + " has no vbuckets");
                         for (short vb = 0; vb < numPartitions; vb++) {
                             if (channel.streamIsOpen(vb)) {
                                 putPartitionInQueue(channel, vb);
@@ -307,7 +316,7 @@ public class Fixer implements Runnable, SystemEventHandler {
         endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
         endEvent.setFailoverLogsRequested(channel.getFailoverLogRequests()[vb]);
         endEvent.setSeqRequested(!channel.isStateFetched());
-        LOGGER.info("Server closed Stream on vbid " + vb + " with reason " + StreamEndReason.CHANNEL_DROPPED);
+        LOGGER.info(this + " server closed Stream on vbid " + vb + " with reason " + StreamEndReason.CHANNEL_DROPPED);
         conductor.getEnv().eventBus().publish(endEvent);
     }
 
@@ -322,5 +331,10 @@ public class Fixer implements Runnable, SystemEventHandler {
                 inbox.clear();
             }
         }
+    }
+
+    @Override
+    public String toString() {
+        return "FixerThread:" + conductor.getEnv().connectionNameGenerator().name();
     }
 }
