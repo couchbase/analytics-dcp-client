@@ -11,6 +11,9 @@ import com.couchbase.client.dcp.conductor.Conductor;
 public class DeadConnectionDetection {
 
     private static final Logger LOGGER = Logger.getLogger(DeadConnectionDetection.class.getName());
+    private static final int TIMEOUT = 2000;
+    private static final int ATTEMPTS = 1;
+
     private final Conductor conductor;
     private final long interval;
     private long lastRun;
@@ -26,7 +29,7 @@ public class DeadConnectionDetection {
         if (now - lastRun > interval) {
             lastRun = now;
             LOGGER.log(Level.WARNING, "Running Dead connection detection");
-            conductor.reviveDeadConnections();
+            conductor.reviveDeadConnections(TIMEOUT, ATTEMPTS);
         }
     }
 

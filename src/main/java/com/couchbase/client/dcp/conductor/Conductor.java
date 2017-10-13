@@ -23,6 +23,7 @@ import com.couchbase.client.dcp.state.StreamRequest;
 public class Conductor {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Conductor.class);
+    private static final long WAIT_BETWEN_ATTEMPTS = 500L;
 
     private final ConfigProvider configProvider; // changes
     private final Map<InetSocketAddress, DcpChannel> channels; // changes
@@ -56,7 +57,8 @@ public class Conductor {
         connected = true;
         try {
             channels.clear();
-            configProvider.refresh();
+            // passing 0 timeout and 0 retries will use the configured timeout
+            configProvider.refresh(0, 0, WAIT_BETWEN_ATTEMPTS);
             createSession(configProvider.config());
         } catch (Exception e) {
             connected = false;
@@ -193,7 +195,7 @@ public class Conductor {
         }
     }
 
-    public void add(NodeInfo node, CouchbaseBucketConfig config) throws Throwable {
+    public void add(NodeInfo node, CouchbaseBucketConfig config, int timeout, int attempts) throws Throwable {
         synchronized (channels) {
             if (!(node.services().containsKey(ServiceType.BINARY)
                     || node.sslServices().containsKey(ServiceType.BINARY))) {
@@ -212,7 +214,7 @@ public class Conductor {
                     configProvider.config().numberOfPartitions());
             channels.put(address, channel);
             try {
-                channel.connect();
+                channel.connect(timeout, attempts);
             } catch (Throwable th) {
                 channels.remove(address);
                 throw th;
@@ -241,8 +243,10 @@ public class Conductor {
         CouchbaseBucketConfig config = configProvider.config();
         fixerThread = new Thread(fixer);
         fixerThread.start();
+        fixer.waitTillStarted();
         for (NodeInfo node : config.nodes()) {
-            add(node, config);
+            // 0 timeout and attempts means use configured values
+            add(node, config, 0, 0);
         }
     }
 
@@ -260,7 +264,7 @@ public class Conductor {
         return channels;
     }
 
-    public void reviveDeadConnections() {
+    public void reviveDeadConnections(int timeout, int attempts) {
         synchronized (channels) {
             for (DcpChannel channel : channels.values()) {
                 synchronized (channel) {
@@ -268,7 +272,7 @@ public class Conductor {
                         try {
                             channel.disconnect(true);
                             try {
-                                channel.connect();
+                                channel.connect(timeout, attempts);
                             } catch (Throwable e) {
                                 // Disconnect succeeded but connect failed
                                 LOGGER.log(CouchbaseLogLevel.WARN,

@@ -76,30 +76,32 @@ public class DcpChannel {
         this.deadConnectionDetectionInterval = env.getDeadConnectionDetectionInterval();
     }
 
-    public synchronized void connect() throws Throwable {
+    public synchronized void connect(int timeout, int attempts) throws Throwable {
         if (getState() != State.DISCONNECTED) {
             throw new IllegalArgumentException(
                     "Dcp Channel is already connected or is trying to connect. State = " + getState().name());
         }
+        timeout = timeout > 0 ? timeout : (int) env.socketConnectTimeout();
+        attempts = attempts > 0 ? attempts : env.dcpChannelsReconnectMaxAttempts();
         setState(State.CONNECTING);
-        int attempts = 0;
+        int attempt = 0;
         Throwable failure = null;
-        while (attempts < env.dcpChannelsReconnectMaxAttempts() && getState() == State.CONNECTING) {
-            attempts++;
+        while (attempt < attempts && getState() == State.CONNECTING) {
+            attempt++;
             try {
-                LOGGER.log(CouchbaseLogLevel.WARN, "DcpChannel connect attempt #" + attempts
+                LOGGER.log(CouchbaseLogLevel.WARN, "DcpChannel connect attempt #" + attempt
                         + " with socket connect timeout = " + (int) env.socketConnectTimeout());
                 ByteBufAllocator allocator =
                         env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
                 final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
-                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
+                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout)
                         .remoteAddress(inetAddress.getHostString(), inetAddress.getPort())
                         .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
                         .handler(new DcpPipeline(this, networkAddress.nameOrAddress(), inetAddress.getPort(), env,
                                 controlHandler))
                         .group(env.eventLoopGroup());
                 ChannelFuture connectFuture = bootstrap.connect();
-                connectFuture.await(2 * env.socketConnectTimeout());
+                connectFuture.await(2 * timeout);
                 connectFuture.cancel(true);
                 if (!connectFuture.isSuccess()) {
                     throw connectFuture.cause();
@@ -112,8 +114,8 @@ public class DcpChannel {
                 if (failure == null) {
                     failure = e;
                 }
-                if (attempts == env.dcpChannelsReconnectMaxAttempts()) {
-                    LOGGER.warn("Connection FAILED " + attempts + " times");
+                if (attempt == attempts) {
+                    LOGGER.warn("Connection FAILED " + attempt + " times");
                     channel = null;
                     setState(State.DISCONNECTED);
                     throw failure; // NOSONAR failure is not nullable

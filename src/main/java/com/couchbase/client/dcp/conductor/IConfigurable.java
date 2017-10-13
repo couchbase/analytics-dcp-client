@@ -6,7 +6,7 @@ package com.couchbase.client.dcp.conductor;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 
 public interface IConfigurable {
-    void configure(CouchbaseBucketConfig config);
+    void configure(CouchbaseBucketConfig config) throws Exception;
 
     void fail(Throwable e);
 }

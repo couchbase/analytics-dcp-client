@@ -95,6 +95,21 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     private void handleFailoverLogResponse(ByteBuf buf) {
         short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
+        short status = MessageUtil.getStatus(buf);
+        switch (status) {
+            case 0x00:
+                LOGGER.debug("Failover Log retrieved successfully for vbucket " + vbid);
+                handleFailoverLogResponseSuccess(buf, vbid);
+                break;
+            case 0x07:
+                LOGGER.warn("Failover Log not my vbucket response for vbucket " + vbid);
+                break;
+            default:
+                LOGGER.warn("Failover Log unknown response (" + status + ")for vbucket " + vbid);
+        }
+    }
+
+    private void handleFailoverLogResponseSuccess(ByteBuf buf, short vbid) {
         ByteBuf failoverLog = Unpooled.buffer();
         DcpFailoverLogResponse.init(failoverLog);
         DcpFailoverLogResponse.vbucket(failoverLog, DcpFailoverLogResponse.vbucket(buf));

@@ -16,10 +16,19 @@ public class ChannelDroppedEvent implements DcpEvent {
     private static final Logger LOGGER = Logger.getLogger(ChannelDroppedEvent.class.getName());
     private final DcpChannel channel;
     private final Throwable cause;
+    private int fixAttempts = 0;
 
     public ChannelDroppedEvent(DcpChannel channel, Throwable cause) {
         this.channel = channel;
         this.cause = cause;
+    }
+
+    public void incrementAttempts() {
+        fixAttempts++;
+    }
+
+    public int getAttempts() {
+        return fixAttempts;
     }
 
     @Override

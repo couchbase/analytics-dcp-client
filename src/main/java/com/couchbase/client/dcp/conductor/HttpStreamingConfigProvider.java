@@ -31,6 +31,7 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(HttpStreamingConfigProvider.class);
+    private static final String BAD_CONFIG = "Bad Bucket Configuration";
     private final Map<NetworkAddress, Set<Integer>> sockets;
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
@@ -69,8 +70,8 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     }
 
     @Override
-    public void refresh() throws Throwable {
-        tryConnectHosts();
+    public void refresh(long timeout, int attempts, long waitBetweenAttempts) throws Throwable {
+        tryConnectHosts(timeout, attempts, waitBetweenAttempts);
     }
 
     @Override
@@ -78,10 +79,10 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         return config;
     }
 
-    private void tryConnectHosts() throws Throwable {
+    private void tryConnectHosts(long timeout, int attempts, long waitBetweenAttempts) throws Throwable {
         for (Entry<NetworkAddress, Set<Integer>> addresses : sockets.entrySet()) {
             for (Integer port : addresses.getValue()) {
-                if (tryConnectHost(addresses.getKey(), port)) {
+                if (tryConnectHost(addresses.getKey(), port, (int) timeout, attempts, waitBetweenAttempts)) {
                     return;
                 }
             }
@@ -89,22 +90,24 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         throw this.cause;
     }
 
-    private boolean tryConnectHost(NetworkAddress hostname, Integer port) throws Exception {
+    private boolean tryConnectHost(NetworkAddress hostname, Integer port, int timeout, int attempts,
+            long waitBetweenAttempts) throws Exception {
         int attempt = 0;
+        timeout = timeout > 0 ? (int) timeout : (int) env.socketConnectTimeout();
+        attempts = attempts > 0 ? attempts : env.configProviderReconnectMaxAttempts();
         ByteBufAllocator allocator =
                 env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
-        while (attempt < env.configProviderReconnectMaxAttempts()) {
+        while (attempt < attempts) {
             failure = false;
             refreshed = false;
             LOGGER.log(CouchbaseLogLevel.INFO, "Getting bucket config from " + hostname.nameOrAddress() + ":" + port);
             Bootstrap bootstrap = new Bootstrap().remoteAddress(hostname.address(), port)
-                    .option(ChannelOption.ALLOCATOR, allocator)
-                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) env.socketConnectTimeout())
+                    .option(ChannelOption.ALLOCATOR, allocator).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout)
                     .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
                     .handler(new ConfigPipeline(env, hostname.address(), port, this)).group(env.eventLoopGroup());
             ChannelFuture connectFuture = bootstrap.connect();
             try {
-                connectFuture.await(2 * env.socketConnectTimeout());
+                connectFuture.await(2 * timeout);
                 connectFuture.cancel(true);
                 if (connectFuture.isSuccess()) {
                     waitForConfig(connectFuture);
@@ -119,13 +122,13 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
             if (!failure) {
                 return true;
             }
-            if (cause != null && !(cause instanceof SocketException)) {
+            if (cause != null && !(cause instanceof SocketException || cause.getMessage() == BAD_CONFIG)) {
                 return false;
             }
-            synchronized (this) {
-                wait(100);
-            }
             attempt++;
+            if (attempt < attempts) {
+                Thread.sleep(waitBetweenAttempts);
+            }
         }
         return false;
     }
@@ -138,7 +141,10 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     }
 
     @Override
-    public synchronized void configure(CouchbaseBucketConfig config) {
+    public synchronized void configure(CouchbaseBucketConfig config) throws Exception {
+        if (config.numberOfPartitions() == 0) {
+            throw new Exception(BAD_CONFIG);
+        }
         this.config = config;
         this.cause = null;
         for (NodeInfo node : config.nodes()) {
