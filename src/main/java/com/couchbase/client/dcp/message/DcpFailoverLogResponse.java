@@ -5,11 +5,16 @@ package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_FAILOVER_LOG_OPCODE;
 
+import com.couchbase.client.core.logging.CouchbaseLogLevel;
+import com.couchbase.client.core.logging.CouchbaseLogger;
+import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public enum DcpFailoverLogResponse {
     ;
+
+    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpFailoverLogResponse.class);
 
     public static boolean is(final ByteBuf buffer) {
         return buffer.getByte(0) == MessageUtil.MAGIC_RES && buffer.getByte(1) == DCP_FAILOVER_LOG_OPCODE;
@@ -54,8 +59,12 @@ public enum DcpFailoverLogResponse {
 
     public static void fill(final ByteBuf buffer, PartitionState ps) {
         int numEntries = numLogEntries(buffer);
-        for (int i = 0; i < numEntries; i++) {
-            ps.addToFailoverLog(seqnoEntry(buffer, i), vbuuidEntry(buffer, i));
+        LOGGER.log(CouchbaseLogLevel.INFO,
+                "Failover log response for vbucket " + ps.vbid() + " contains " + numEntries + " entries");
+        for (int i = numEntries - 1; i >= 0; i--) {
+            long seq = seqnoEntry(buffer, i);
+            long uuid = vbuuidEntry(buffer, i);
+            ps.addToFailoverLog(seq, uuid);
         }
     }
 }
