@@ -159,11 +159,16 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                 || DcpMutationMessage.is(message) || DcpDeletionMessage.is(message)
                 || DcpExpirationMessage.is(message))) {
             ackCounter += message.readableBytes();
-            LOGGER.trace("BufferAckCounter is now {}", ackCounter);
+            boolean trace = LOGGER.isTraceEnabled();
+            if (trace) {
+                LOGGER.trace("BufferAckCounter is now {}", ackCounter);
+            }
             if (ackCounter >= ackWatermark) {
                 env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
-                LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.",
-                        channel.remoteAddress());
+                if (trace) {
+                    LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.",
+                            channel.remoteAddress());
+                }
                 ByteBuf buffer = channel.alloc().buffer();
                 DcpBufferAckRequest.init(buffer);
                 DcpBufferAckRequest.ackBytes(buffer, ackCounter);
@@ -171,8 +176,10 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                 future.addListener(ackListener);
                 ackCounter = 0;
             }
-            LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
-                    channel.remoteAddress());
+            if (trace) {
+                LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
+                        channel.remoteAddress());
+            }
         }
     }
 
