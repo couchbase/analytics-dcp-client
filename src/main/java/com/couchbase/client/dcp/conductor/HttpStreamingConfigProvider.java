@@ -3,7 +3,7 @@
  */
 package com.couchbase.client.dcp.conductor;
 
-import java.net.SocketException;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -18,6 +18,7 @@ import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
+import com.couchbase.client.dcp.error.BadBucketConfigException;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.ConfigPipeline;
 import com.couchbase.client.deps.io.netty.bootstrap.Bootstrap;
@@ -31,7 +32,8 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(HttpStreamingConfigProvider.class);
-    private static final String BAD_CONFIG = "Bad Bucket Configuration";
+
+    private static final long BAD_CONFIG_WAIT_TIME = 2000;
     private final Map<NetworkAddress, Set<Integer>> sockets;
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
@@ -122,12 +124,16 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
             if (!failure) {
                 return true;
             }
-            if (cause != null && !(cause instanceof SocketException || cause.getMessage() == BAD_CONFIG)) {
+            if (cause != null && !(cause instanceof IOException)) {
                 return false;
             }
             attempt++;
             if (attempt < attempts) {
-                Thread.sleep(waitBetweenAttempts);
+                if (cause instanceof BadBucketConfigException) {
+                    Thread.sleep(BAD_CONFIG_WAIT_TIME);
+                } else {
+                    Thread.sleep(waitBetweenAttempts);
+                }
             }
         }
         return false;
@@ -143,7 +149,7 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     @Override
     public synchronized void configure(CouchbaseBucketConfig config) throws Exception {
         if (config.numberOfPartitions() == 0) {
-            throw new Exception(BAD_CONFIG);
+            throw new BadBucketConfigException("Bucket configuration doesn't contain a vbucket map");
         }
         this.config = config;
         this.cause = null;
