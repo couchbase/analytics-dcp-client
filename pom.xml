@@ -7,8 +7,9 @@
   <artifactId>cbas-dcp-client</artifactId>
   <parent>
     <groupId>com.couchbase.analytics</groupId>
-    <artifactId>asterix-opt</artifactId>
+    <artifactId>analytics-cbas</artifactId>
     <version>1.0.0-SNAPSHOT</version>
+    <relativePath>../cbas/pom.xml</relativePath>
   </parent>
 
   <properties>
