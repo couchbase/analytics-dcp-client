@@ -10,6 +10,7 @@ import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.message.DcpOpenConnectionRequest;
 import com.couchbase.client.dcp.message.MessageUtil;
+import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.Unpooled;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
@@ -98,8 +99,9 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
                     break;
             }
         } else {
-            originalPromise().setFailure(new IllegalStateException("Could not open DCP Connection: Failed in the "
-                    + toString(step) + " step, response status is " + status));
+            originalPromise().setFailure(
+                    new IllegalStateException("Could not open DCP Connection: Failed in the " + toString(step)
+                            + " step, response status is " + status + ": " + MemcachedStatus.toString(status)));
         }
     }
 
