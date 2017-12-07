@@ -123,7 +123,9 @@ public class PartitionState {
      *            the uuid for the sequence.
      */
     public void addToFailoverLog(long seqno, long vbuuid) {
-        LOGGER.log(Level.INFO, "Adding failover log entry: (" + vbuuid + "-" + seqno + ")");
+        if (LOGGER.isEnabledFor(Level.DEBUG)) {
+            LOGGER.log(Level.DEBUG, "Adding failover log entry: (" + vbuuid + "-" + seqno + ")");
+        }
         synchronized (failoverLog) {
             // if the failover log exists, remove all failover logs after it
             for (int i = failoverLog.size() - 1; i >= 0; i--) {

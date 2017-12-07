@@ -3,8 +3,6 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
-import java.io.IOException;
-
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
@@ -88,7 +86,9 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
         int separatorIndex = currentChunk.indexOf("\n\n\n\n");
         if (separatorIndex > 0) {
             String rawConfig = currentChunk.substring(0, separatorIndex).trim().replace("$HOST", hostname);
-            LOGGER.log(Level.INFO, "Received Config: " + rawConfig);
+            if (LOGGER.isEnabledFor(Level.DEBUG)) {
+                LOGGER.log(Level.DEBUG, "Received Config: " + rawConfig);
+            }
             try {
                 configurable.configure((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment));
             } catch (Exception e) {
@@ -120,13 +120,7 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        if (cause instanceof IOException && cause.getMessage().contains("Connection reset by peer")) {
-            LOGGER.log(Level.WARN, "Connection was closed by the other side", cause);
-            configurable.fail(cause);
-            ctx.close();
-            return;
-        }
-        // forward exception
-        ctx.fireExceptionCaught(cause);
+        configurable.fail(cause);
+        ctx.close();
     }
 }

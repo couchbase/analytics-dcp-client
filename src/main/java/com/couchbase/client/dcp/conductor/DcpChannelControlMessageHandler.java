@@ -3,6 +3,7 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
@@ -70,15 +71,21 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         short status = MessageUtil.getStatus(buf);
         switch (status) {
             case 0x00:
-                LOGGER.debug("stream opened successfully for vbucket " + vbid);
+                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+                    LOGGER.debug("stream opened successfully for vbucket " + vbid);
+                }
                 handleOpenStreamSuccess(buf, vbid);
                 break;
             case 0x23:
-                LOGGER.debug("stream rollback response for vbucket " + vbid);
+                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+                    LOGGER.debug("stream rollback response for vbucket " + vbid);
+                }
                 handleOpenStreamRollback(buf, vbid);
                 break;
             case 0x07:
-                LOGGER.debug("stream not my vbucket response for vbucket " + vbid);
+                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+                    LOGGER.debug("stream not my vbucket response for vbucket " + vbid);
+                }
                 channel.openStreams()[vbid] = false;
                 PartitionState ps = channel.getSessionState().get(vbid);
                 ps.setState(PartitionState.DISCONNECTED);
@@ -89,7 +96,9 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             default:
                 channel.openStreams()[vbid] = false;
                 channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-                LOGGER.warn("stream unknown response for vbucket " + vbid);
+                if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
+                    LOGGER.warn("stream unknown response for vbucket " + vbid);
+                }
         }
     }
 
@@ -98,14 +107,20 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         short status = MessageUtil.getStatus(buf);
         switch (status) {
             case 0x00:
-                LOGGER.debug("Failover Log retrieved successfully for vbucket " + vbid);
+                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+                    LOGGER.debug("Failover Log retrieved successfully for vbucket " + vbid);
+                }
                 handleFailoverLogResponseSuccess(buf, vbid);
                 break;
             case 0x07:
-                LOGGER.warn("Failover Log not my vbucket response for vbucket " + vbid);
+                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+                    LOGGER.debug("Failover Log not my vbucket response for vbucket " + vbid);
+                }
                 break;
             default:
-                LOGGER.warn("Failover Log unknown response (" + status + ")for vbucket " + vbid);
+                if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
+                    LOGGER.warn("Failover Log unknown response (" + status + ")for vbucket " + vbid);
+                }
         }
     }
 
@@ -161,7 +176,9 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         PartitionState state = channel.getSessionState().get(vbid);
         StreamEndEvent endEvent = state.getEndEvent();
         endEvent.setReason(reason);
-        LOGGER.debug("Server closed Stream on vbid {} with reason {}", vbid, reason);
+        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+            LOGGER.debug("Server closed Stream on vbid {} with reason {}", vbid, reason);
+        }
         if (channel.getEnv().eventBus() != null) {
             channel.getEnv().eventBus().publish(endEvent);
         }
@@ -171,6 +188,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         Short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
         channel.openStreams()[vbid] = false;
         channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-        LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getAddress(), vbid);
+        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+            LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getAddress(), vbid);
+        }
     }
 }

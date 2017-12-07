@@ -59,8 +59,10 @@ public enum DcpFailoverLogResponse {
 
     public static void fill(final ByteBuf buffer, PartitionState ps) {
         int numEntries = numLogEntries(buffer);
-        LOGGER.log(CouchbaseLogLevel.INFO,
-                "Failover log response for vbucket " + ps.vbid() + " contains " + numEntries + " entries");
+        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+            LOGGER.log(CouchbaseLogLevel.DEBUG,
+                    "Failover log response for vbucket " + ps.vbid() + " contains " + numEntries + " entries");
+        }
         for (int i = numEntries - 1; i >= 0; i--) {
             long seq = seqnoEntry(buffer, i);
             long uuid = vbuuidEntry(buffer, i);
