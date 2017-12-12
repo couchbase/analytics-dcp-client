@@ -7,6 +7,7 @@ import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
@@ -24,6 +25,7 @@ public class Conductor {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Conductor.class);
     private static final long WAIT_BETWEN_ATTEMPTS = 500L;
+    private static final long TIMEOUT_FOR_PARTITION_REQUESTS = TimeUnit.SECONDS.toMillis(15);
 
     private final ConfigProvider configProvider; // changes
     private final Map<InetSocketAddress, DcpChannel> channels; // changes
@@ -122,7 +124,7 @@ public class Conductor {
             }
         }
         for (int i = 0; i < vbuckets.length; i++) {
-            sessionState.get(vbuckets[i]).waitTillCurrentSeqUpdated(60000);
+            sessionState.get(vbuckets[i]).waitTillCurrentSeqUpdated(TIMEOUT_FOR_PARTITION_REQUESTS);
         }
     }
 
@@ -136,7 +138,7 @@ public class Conductor {
         synchronized (channels) {
             masterChannelByPartition(partition).getFailoverLog(partition);
         }
-        ps.waitTillFailoverUpdated(60000);
+        ps.waitTillFailoverUpdated(TIMEOUT_FOR_PARTITION_REQUESTS);
     }
 
     public void startStreamForPartition(StreamRequest request) {
