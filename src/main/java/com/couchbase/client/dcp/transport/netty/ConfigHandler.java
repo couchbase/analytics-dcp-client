@@ -3,8 +3,9 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.parser.BucketConfigParser;
@@ -27,7 +28,7 @@ import rx.subjects.Subject;
  * @since 1.0.0
  */
 class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
-    public static final Logger LOGGER = Logger.getLogger(ConfigHandler.class.getName());
+    public static final Logger LOGGER = LogManager.getLogger();
 
     /**
      * Hostname used to replace $HOST parts in the config when used against localhost.
@@ -86,7 +87,7 @@ class ConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
         int separatorIndex = currentChunk.indexOf("\n\n\n\n");
         if (separatorIndex > 0) {
             String rawConfig = currentChunk.substring(0, separatorIndex).trim().replace("$HOST", hostname);
-            if (LOGGER.isEnabledFor(Level.DEBUG)) {
+            if (LOGGER.isDebugEnabled()) {
                 LOGGER.log(Level.DEBUG, "Received Config: " + rawConfig);
             }
             try {

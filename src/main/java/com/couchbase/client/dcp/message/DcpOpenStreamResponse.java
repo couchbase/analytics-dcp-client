@@ -22,8 +22,7 @@ public enum DcpOpenStreamResponse {
         if (MessageUtil.getStatus(buffer) == 0x23) {
             return MessageUtil.getContent(buffer).getLong(0);
         } else {
-            throw new IllegalStateException(
-                    "Rollback sequence number accessible only for ROLLBACK (0x23) status code");
+            throw new IllegalStateException("Rollback sequence number accessible only for ROLLBACK (0x23) status code");
         }
     }
 }

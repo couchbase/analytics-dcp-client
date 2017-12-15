@@ -12,8 +12,9 @@ import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeoutException;
 
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.dcp.events.FailoverLogUpdateEvent;
 import com.couchbase.client.dcp.events.NotMyVBucketEvent;
@@ -25,7 +26,7 @@ import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
  * Represents the individual current session state for a given partition.
  */
 public class PartitionState {
-    private static final Logger LOGGER = Logger.getLogger(PartitionState.class.getName());
+    private static final Logger LOGGER = LogManager.getLogger();
     public static final long INVALID = -1L;
     public static final byte DISCONNECTED = 0x00;
     public static final byte CONNECTING = 0x02;
@@ -123,7 +124,7 @@ public class PartitionState {
      *            the uuid for the sequence.
      */
     public void addToFailoverLog(long seqno, long vbuuid) {
-        if (LOGGER.isEnabledFor(Level.DEBUG)) {
+        if (LOGGER.isDebugEnabled()) {
             LOGGER.log(Level.DEBUG, "Adding failover log entry: (" + vbuuid + "-" + seqno + ")");
         }
         synchronized (failoverLog) {

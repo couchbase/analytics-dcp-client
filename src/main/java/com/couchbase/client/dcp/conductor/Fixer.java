@@ -4,8 +4,9 @@ import java.util.LinkedList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
@@ -21,7 +22,7 @@ import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.state.PartitionState;
 
 public class Fixer implements Runnable, SystemEventHandler {
-    private static final Logger LOGGER = Logger.getLogger(Fixer.class.getName());
+    private static final Logger LOGGER = LogManager.getLogger();
     private static final DcpEvent POISON_PILL = () -> DcpEvent.Type.DISCONNECT;
     private static final int CONNECT_TIMEOUT = 500;
     private static final int ATTEMPTS = 1;

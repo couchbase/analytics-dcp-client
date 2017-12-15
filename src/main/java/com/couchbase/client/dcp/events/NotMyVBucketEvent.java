@@ -3,15 +3,16 @@ package com.couchbase.client.dcp.events;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 public class NotMyVBucketEvent implements PartitionDcpEvent {
-    private static final Logger LOGGER = Logger.getLogger(NotMyVBucketEvent.class.getName());
+    private static final Logger LOGGER = LogManager.getLogger();
     private DcpChannel channel;
     private final PartitionState state;
 

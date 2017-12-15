@@ -3,14 +3,14 @@
  */
 package com.couchbase.client.dcp.events;
 
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.dcp.conductor.Conductor;
 
 public class DeadConnectionDetection {
 
-    private static final Logger LOGGER = Logger.getLogger(DeadConnectionDetection.class.getName());
+    private static final Logger LOGGER = LogManager.getLogger();
     private static final int TIMEOUT = 2000;
     private static final int ATTEMPTS = 1;
 
@@ -28,7 +28,7 @@ public class DeadConnectionDetection {
         long now = System.currentTimeMillis();
         if (now - lastRun > interval) {
             lastRun = now;
-            LOGGER.log(Level.WARNING, "Running Dead connection detection");
+            LOGGER.warn("Running Dead connection detection");
             conductor.reviveDeadConnections(TIMEOUT, ATTEMPTS);
         }
     }

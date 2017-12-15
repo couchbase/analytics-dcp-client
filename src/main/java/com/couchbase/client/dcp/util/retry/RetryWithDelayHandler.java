@@ -74,8 +74,8 @@ public class RetryWithDelayHandler implements Func1<Tuple2<Integer, Throwable>, 
      * Protected constructor that also allows to set a {@link Scheduler} for the delay, especially useful for tests.
      */
     protected RetryWithDelayHandler(int maxAttempts, Delay retryDelay,
-            Func1<Throwable, Boolean> errorInterruptingPredicate,
-            Action4<Integer, Throwable, Long, TimeUnit> doOnRetry, Scheduler scheduler) {
+            Func1<Throwable, Boolean> errorInterruptingPredicate, Action4<Integer, Throwable, Long, TimeUnit> doOnRetry,
+            Scheduler scheduler) {
         this.maxAttempts = Math.min(Integer.MAX_VALUE - 1, maxAttempts);
         this.retryDelay = retryDelay;
         this.errorInterruptingPredicate = errorInterruptingPredicate;
