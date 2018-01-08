@@ -3,7 +3,6 @@
  */
 package com.couchbase.client.dcp.conductor;
 
-import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Map;
@@ -122,11 +121,9 @@ public class DcpChannel {
                     setState(State.DISCONNECTED);
                     throw failure; // NOSONAR failure is not nullable
                 }
-                if (e instanceof ConnectException) {
-                    // memcached process down?
-                    // MB-27407
-                    Thread.sleep(waitBetweenAttempts);
-                }
+                // memcached process down?
+                // MB-27407
+                Thread.sleep(waitBetweenAttempts);
                 waitBetweenAttempts = Long.min(waitBetweenAttempts * 2, timeout);
             }
         }

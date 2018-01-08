@@ -31,7 +31,6 @@ public class ClientBuilder {
     private ConfigProvider configProvider = null;
     private int bufferAckWatermark;
     private boolean poolBuffers = true;
-    private long connectTimeout = ClientEnvironment.DEFAULT_SOCKET_CONNECT_TIMEOUT;
     private long bootstrapTimeout = ClientEnvironment.DEFAULT_BOOTSTRAP_TIMEOUT;
     private long socketConnectTimeout = ClientEnvironment.DEFAULT_SOCKET_CONNECT_TIMEOUT;
     private Delay configProviderReconnectDelay = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_RECONNECT_DELAY;
@@ -210,17 +209,6 @@ public class ClientBuilder {
     }
 
     /**
-     * Time to wait configuration provider socket to connect.
-     *
-     * @param connectTimeout
-     *            time in milliseconds.
-     */
-    public ClientBuilder connectTimeout(long connectTimeout) {
-        this.connectTimeout = connectTimeout;
-        return this;
-    }
-
-    /**
      * Delay between retry attempts for configuration provider
      *
      * @param configProviderReconnectDelay
@@ -372,10 +360,6 @@ public class ClientBuilder {
 
     public int bufferAckWatermark() {
         return bufferAckWatermark;
-    }
-
-    public long connectTimeout() {
-        return connectTimeout;
     }
 
     public boolean poolBuffers() {

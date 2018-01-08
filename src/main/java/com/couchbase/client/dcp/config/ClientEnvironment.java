@@ -74,11 +74,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final long bootstrapTimeout;
 
     /**
-     * Time in milliseconds to wait configuration provider socket to connect.
-     */
-    private final long connectTimeout;
-
-    /**
      * DCP control params, optional.
      */
     private final DcpControl dcpControl;
@@ -160,7 +155,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         bucket = builder.bucket;
         credentialsProvider = builder.credentialsProvider;
         bootstrapTimeout = builder.bootstrapTimeout;
-        connectTimeout = builder.connectTimeout;
         dcpControl = builder.dcpControl;
         eventLoopGroup = builder.eventLoopGroup;
         eventLoopGroupIsPrivate = builder.eventLoopGroupIsPrivate;
@@ -261,13 +255,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      */
     public long bootstrapTimeout() {
         return bootstrapTimeout;
-    }
-
-    /**
-     * Time in milliseconds to wait configuration provider socket to connect.
-     */
-    public long connectTimeout() {
-        return connectTimeout;
     }
 
     public short[] vbuckets() {
@@ -374,7 +361,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private String bucket;
         private CredentialsProvider credentialsProvider;
         private long bootstrapTimeout = DEFAULT_BOOTSTRAP_TIMEOUT;
-        private long connectTimeout = DEFAULT_CONNECT_TIMEOUT;
         private DcpControl dcpControl;
         private EventLoopGroup eventLoopGroup;
         private boolean eventLoopGroupIsPrivate;
@@ -432,11 +418,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
         public Builder setBootstrapTimeout(long bootstrapTimeout) {
             this.bootstrapTimeout = bootstrapTimeout;
-            return this;
-        }
-
-        public Builder setConnectTimeout(long connectTimeout) {
-            this.connectTimeout = connectTimeout;
             return this;
         }
 
@@ -600,11 +581,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
                 + connectionNameGenerator.getClass().getSimpleName() + ", bucket='" + bucket + '\'' + ", passwordSet="
                 + (credentialsProvider != null) + ", dcpControl=" + dcpControl + ", eventLoopGroup="
                 + eventLoopGroup.getClass().getSimpleName() + ", eventLoopGroupIsPrivate=" + eventLoopGroupIsPrivate
-                + ", poolBuffers=" + poolBuffers + ", bufferAckWatermark=" + bufferAckWatermark + ", connectTimeout="
-                + connectTimeout + ", bootstrapTimeout=" + bootstrapTimeout + ", sslEnabled=" + sslEnabled
-                + ", sslKeystoreFile='" + sslKeystoreFile + '\'' + ", sslKeystorePassword="
-                + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty()) + ", sslKeystore=" + sslKeystore
-                + '}';
+                + ", poolBuffers=" + poolBuffers + ", bufferAckWatermark=" + bufferAckWatermark
+                + ", socketConnectTimeout=" + socketConnectTimeout + ", bootstrapTimeout=" + bootstrapTimeout
+                + ", sslEnabled=" + sslEnabled + ", sslKeystoreFile='" + sslKeystoreFile + '\''
+                + ", sslKeystorePassword=" + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty())
+                + ", sslKeystore=" + sslKeystore + '}';
     }
 
     public Delay dcpChannelsReconnectDelay() {
