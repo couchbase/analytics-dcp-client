@@ -13,6 +13,7 @@ import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.state.NotConnectedException;
+import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.StreamEndEvent;
@@ -76,33 +77,35 @@ public class DcpChannel {
         this.deadConnectionDetectionInterval = env.getDeadConnectionDetectionInterval();
     }
 
-    public synchronized void connect(int timeout, int attempts) throws Throwable {
+    public void connect() throws Throwable {
+        connect(env.dcpChannelAttemptTimeout(), env.dcpChannelTotalTimeout(), env.dcpChannelsReconnectDelay());
+    }
+
+    public synchronized void connect(long attemptTimeout, long totalTimeout, Delay delay) throws Throwable {
         if (getState() != State.DISCONNECTED) {
             throw new IllegalArgumentException(
                     "Dcp Channel is already connected or is trying to connect. State = " + getState().name());
         }
-        timeout = timeout > 0 ? timeout : (int) env.socketConnectTimeout();
-        attempts = attempts > 0 ? attempts : env.dcpChannelsReconnectMaxAttempts();
-        long waitBetweenAttempts = 100;
         setState(State.CONNECTING);
         int attempt = 0;
         Throwable failure = null;
-        while (attempt < attempts && getState() == State.CONNECTING) {
+        final long startTime = System.currentTimeMillis();
+        while (getState() == State.CONNECTING) {
             attempt++;
             try {
                 LOGGER.log(CouchbaseLogLevel.WARN, "DcpChannel connect attempt #" + attempt
-                        + " with socket connect timeout = " + (int) env.socketConnectTimeout());
+                        + " with socket connect timeout = " + (int) env.dcpChannelAttemptTimeout());
                 ByteBufAllocator allocator =
                         env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
                 final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
-                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout)
+                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) attemptTimeout)
                         .remoteAddress(inetAddress.getHostString(), inetAddress.getPort())
                         .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
                         .handler(new DcpPipeline(this, networkAddress.nameOrAddress(), inetAddress.getPort(), env,
                                 controlHandler))
                         .group(env.eventLoopGroup());
                 ChannelFuture connectFuture = bootstrap.connect();
-                connectFuture.await(2 * timeout);
+                connectFuture.await(attemptTimeout + 100);
                 connectFuture.cancel(true);
                 if (!connectFuture.isSuccess()) {
                     throw connectFuture.cause();
@@ -110,21 +113,19 @@ public class DcpChannel {
                 LOGGER.debug("Connection established");
                 channel = connectFuture.channel();
                 setState(State.CONNECTED);
+                break;
             } catch (Throwable e) {
                 LOGGER.warn("Connection failed", e);
                 if (failure == null) {
                     failure = e;
                 }
-                if (attempt == attempts) {
+                if (System.currentTimeMillis() - startTime > totalTimeout) {
                     LOGGER.warn("Connection FAILED " + attempt + " times");
                     channel = null;
                     setState(State.DISCONNECTED);
                     throw failure; // NOSONAR failure is not nullable
                 }
-                // memcached process down?
-                // MB-27407
-                Thread.sleep(waitBetweenAttempts);
-                waitBetweenAttempts = Long.min(waitBetweenAttempts * 2, timeout);
+                Thread.sleep(delay.calculate(attempt));
             }
         }
         // attempt to restart the dropped streams

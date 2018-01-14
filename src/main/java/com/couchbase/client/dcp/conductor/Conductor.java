@@ -7,7 +7,6 @@ import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
@@ -15,6 +14,7 @@ import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.service.ServiceType;
+import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.state.PartitionState;
@@ -24,8 +24,6 @@ import com.couchbase.client.dcp.state.StreamRequest;
 public class Conductor {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Conductor.class);
-    private static final long WAIT_BETWEN_ATTEMPTS = 500L;
-    private static final long TIMEOUT_FOR_PARTITION_REQUESTS = TimeUnit.SECONDS.toMillis(15);
 
     private final ConfigProvider configProvider; // changes
     private final Map<InetSocketAddress, DcpChannel> channels; // changes
@@ -59,8 +57,7 @@ public class Conductor {
         connected = true;
         try {
             channels.clear();
-            // passing 0 timeout and 0 retries will use the configured timeout
-            configProvider.refresh(0, 0, WAIT_BETWEN_ATTEMPTS);
+            configProvider.refresh();
             createSession(configProvider.config());
         } catch (Exception e) {
             connected = false;
@@ -124,7 +121,7 @@ public class Conductor {
             }
         }
         for (int i = 0; i < vbuckets.length; i++) {
-            sessionState.get(vbuckets[i]).waitTillCurrentSeqUpdated(TIMEOUT_FOR_PARTITION_REQUESTS);
+            sessionState.get(vbuckets[i]).waitTillCurrentSeqUpdated(env.partitionRequestsTimeout());
         }
     }
 
@@ -138,7 +135,7 @@ public class Conductor {
         synchronized (channels) {
             masterChannelByPartition(partition).getFailoverLog(partition);
         }
-        ps.waitTillFailoverUpdated(TIMEOUT_FOR_PARTITION_REQUESTS);
+        ps.waitTillFailoverUpdated(env.partitionRequestsTimeout());
     }
 
     public void startStreamForPartition(StreamRequest request) {
@@ -197,7 +194,8 @@ public class Conductor {
         }
     }
 
-    public void add(NodeInfo node, CouchbaseBucketConfig config, int timeout, int attempts) throws Throwable {
+    public void add(NodeInfo node, CouchbaseBucketConfig config, long attemptTimeout, long totalTimeout, Delay delay)
+            throws Throwable {
         synchronized (channels) {
             if (!(node.services().containsKey(ServiceType.BINARY)
                     || node.sslServices().containsKey(ServiceType.BINARY))) {
@@ -216,7 +214,7 @@ public class Conductor {
                     configProvider.config().numberOfPartitions());
             channels.put(address, channel);
             try {
-                channel.connect(timeout, attempts);
+                channel.connect(attemptTimeout, totalTimeout, delay);
             } catch (Throwable th) {
                 channels.remove(address);
                 throw th;
@@ -247,8 +245,8 @@ public class Conductor {
         fixerThread.start();
         fixer.waitTillStarted();
         for (NodeInfo node : config.nodes()) {
-            // 0 timeout and attempts means use configured values
-            add(node, config, 0, 0);
+            add(node, config, env.dcpChannelAttemptTimeout(), env.dcpChannelTotalTimeout(),
+                    env.dcpChannelsReconnectDelay());
         }
     }
 
@@ -266,7 +264,7 @@ public class Conductor {
         return channels;
     }
 
-    public void reviveDeadConnections(int timeout, int attempts) {
+    public void reviveDeadConnections(long attemptTimeout, long totalTimeout, Delay delay) {
         synchronized (channels) {
             for (DcpChannel channel : channels.values()) {
                 synchronized (channel) {
@@ -274,7 +272,7 @@ public class Conductor {
                         try {
                             channel.disconnect(true);
                             try {
-                                channel.connect(timeout, attempts);
+                                channel.connect(attemptTimeout, totalTimeout, delay);
                             } catch (Throwable e) {
                                 // Disconnect succeeded but connect failed
                                 LOGGER.log(CouchbaseLogLevel.WARN,

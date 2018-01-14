@@ -177,6 +177,9 @@ public enum MessageUtil {
         int bodyLength = keyLength + extrasLength + content.readableBytes();
 
         buffer.setInt(BODY_LENGTH_OFFSET, bodyLength);
+        if (buffer.ensureWritable(content.readableBytes(), false) == 1) {
+            buffer.capacity(buffer.capacity() + content.readableBytes() - buffer.writableBytes());
+        }
         buffer.setBytes(HEADER_SIZE + extrasLength + keyLength, content);
         buffer.writerIndex(HEADER_SIZE + bodyLength);
 

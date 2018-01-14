@@ -37,16 +37,25 @@ import rx.Observable;
  * @since 1.0.0
  */
 public class ClientEnvironment implements SecureEnvironment, ConfigParserEnvironment {
-    public static final long DEFAULT_BOOTSTRAP_TIMEOUT = TimeUnit.SECONDS.toMillis(5);
-    public static final long DEFAULT_CONNECT_TIMEOUT = TimeUnit.SECONDS.toMillis(5);
+    /*
+     * Config provider connection
+     */
+    public static final long DEFAULT_CONFIG_PROVIDER_ATTEMPT_TIMEOUT = TimeUnit.SECONDS.toMillis(5);
+    public static final long DEFAULT_CONFIG_PROVIDER_TOTAL_TIMEOUT = Long.MAX_VALUE;
     public static final Delay DEFAULT_CONFIG_PROVIDER_RECONNECT_DELAY = Delay.linear(TimeUnit.SECONDS, 5, 1);
-    public static final int DEFAULT_CONFIG_PROVIDER_RECONNECT_MAX_ATTEMPTS = Integer.MAX_VALUE;
-    public static final long DEFAULT_SOCKET_CONNECT_TIMEOUT = TimeUnit.SECONDS.toMillis(5);
+    /*
+     * DCP connection
+     */
+    public static final long DEFAULT_DCP_CHANNEL_ATTEMPT_TIMEOUT = TimeUnit.SECONDS.toMillis(5);
+    public static final long DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT = Long.MAX_VALUE;
     public static final Delay DEFAULT_DCP_CHANNELS_RECONNECT_DELAY = Delay.fixed(200, TimeUnit.MILLISECONDS);
-    public static final int DEFAULT_DCP_CHANNELS_RECONNECT_MAX_ATTEMPTS = Integer.MAX_VALUE;
+    /*
+     * Other defaults
+     */
     public static final boolean DEFAULT_SSL_ENABLED = false;
     public static final int BOOTSTRAP_HTTP_DIRECT_PORT = 8091;
     public static final int BOOTSTRAP_HTTP_SSL_PORT = 18091;
+    public static final long DEFAULT_PARTITION_REQUESTS_TIMEOUT = TimeUnit.SECONDS.toMillis(15);
 
     /**
      * Stores the list of bootstrap nodes (where the cluster is).
@@ -67,11 +76,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      * The name of the bucket.
      */
     private final String bucket;
-
-    /**
-     * Time in milliseconds to wait for initial configuration during bootstrap.
-     */
-    private final long bootstrapTimeout;
 
     /**
      * DCP control params, optional.
@@ -99,11 +103,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final int bufferAckWatermark;
 
     /**
-     * Socket connect timeout in milliseconds.
-     */
-    private final long socketConnectTimeout;
-
-    /**
      * User-attached data event handler.
      */
     private volatile DataEventHandler dataEventHandler;
@@ -114,14 +113,29 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private volatile ControlEventHandler controlEventHandler;
 
     /**
+     * Time in milliseconds to wait for initial configuration during bootstrap.
+     */
+    private final long configProviderAttemptTimeout;
+
+    /**
+     * Time in milliseconds for all attempts to get configuration.
+     */
+    private final long configProviderTotalTimeout;
+
+    /**
      * Delay strategy for configuration provider reconnection.
      */
     private final Delay configProviderReconnectDelay;
 
     /**
-     * Maximum number of attempts to reconnect configuration provider before giving up.
+     * DCP socket connect single attempt timeout in milliseconds.
      */
-    private final int configProviderReconnectMaxAttempts;
+    private final long dcpChannelAttemptTimeout;
+
+    /**
+     * DCP socket connect total timeout in milliseconds.
+     */
+    private final long dcpChannelTotalTimeout;
 
     /**
      * Delay strategy for configuration provider reconnection.
@@ -129,9 +143,9 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final Delay dcpChannelsReconnectDelay;
 
     /**
-     * Maximum number of attempts to reconnect configuration provider before giving up.
+     * Timeout for partition information requests
      */
-    private final int dcpChannelsReconnectMaxAttempts;
+    private final long partitionRequestsTimeout;
 
     private final EventBus eventBus;
     private final boolean sslEnabled;
@@ -154,17 +168,12 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         connectionNameGenerator = builder.connectionNameGenerator;
         bucket = builder.bucket;
         credentialsProvider = builder.credentialsProvider;
-        bootstrapTimeout = builder.bootstrapTimeout;
         dcpControl = builder.dcpControl;
         eventLoopGroup = builder.eventLoopGroup;
         eventLoopGroupIsPrivate = builder.eventLoopGroupIsPrivate;
         bufferAckWatermark = builder.bufferAckWatermark;
         poolBuffers = builder.poolBuffers;
-        configProviderReconnectDelay = builder.configProviderReconnectDelay;
-        configProviderReconnectMaxAttempts = builder.configProviderReconnectMaxAttempts;
-        socketConnectTimeout = builder.socketConnectTimeout;
-        dcpChannelsReconnectDelay = builder.dcpChannelsReconnectDelay;
-        dcpChannelsReconnectMaxAttempts = builder.dcpChannelsReconnectMaxAttempts;
+
         if (builder.eventBus != null) {
             eventBus = builder.eventBus;
         } else {
@@ -178,6 +187,14 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         sslKeystore = builder.sslKeystore;
         vbuckets = builder.vbuckets;
         flowControlCallback = builder.flowControlCallback;
+        // Timeouts, retries, and delays
+        configProviderAttemptTimeout = builder.configProviderAttemptTimeout;
+        configProviderTotalTimeout = builder.configProviderTotalTimeout;
+        configProviderReconnectDelay = builder.configProviderReconnectDelay;
+        dcpChannelAttemptTimeout = builder.dcpChannelAttemptTimeout;
+        dcpChannelTotalTimeout = builder.dcpChannelTotalTimeout;
+        dcpChannelsReconnectDelay = builder.dcpChannelsReconnectDelay;
+        partitionRequestsTimeout = builder.partitionRequestsTimeout;
     }
 
     /**
@@ -253,8 +270,15 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     /**
      * Time in milliseconds to wait for first configuration during bootstrap.
      */
-    public long bootstrapTimeout() {
-        return bootstrapTimeout;
+    public long configProviderAttemptTimeout() {
+        return configProviderAttemptTimeout;
+    }
+
+    /**
+     * Total time in milliseconds to get bucket configuration
+     */
+    public long configProviderTotalTimeout() {
+        return configProviderTotalTimeout;
     }
 
     public short[] vbuckets() {
@@ -301,17 +325,18 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     }
 
     /**
-     * Maximum number of attempts to reconnect configuration provider before giving up.
-     */
-    public int configProviderReconnectMaxAttempts() {
-        return configProviderReconnectMaxAttempts;
-    }
-
-    /**
      * Socket connect timeout in milliseconds.
      */
-    public long socketConnectTimeout() {
-        return socketConnectTimeout;
+    public long dcpChannelAttemptTimeout() {
+        return dcpChannelAttemptTimeout;
+    }
+
+    public long dcpChannelTotalTimeout() {
+        return dcpChannelTotalTimeout;
+    }
+
+    public long partitionRequestsTimeout() {
+        return partitionRequestsTimeout;
     }
 
     /**
@@ -360,16 +385,10 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private ConnectionNameGenerator connectionNameGenerator = DefaultConnectionNameGenerator.INSTANCE;
         private String bucket;
         private CredentialsProvider credentialsProvider;
-        private long bootstrapTimeout = DEFAULT_BOOTSTRAP_TIMEOUT;
         private DcpControl dcpControl;
         private EventLoopGroup eventLoopGroup;
         private boolean eventLoopGroupIsPrivate;
         private boolean poolBuffers;
-        private Delay configProviderReconnectDelay = DEFAULT_CONFIG_PROVIDER_RECONNECT_DELAY;
-        private int configProviderReconnectMaxAttempts = DEFAULT_CONFIG_PROVIDER_RECONNECT_MAX_ATTEMPTS;
-        private long socketConnectTimeout = DEFAULT_SOCKET_CONNECT_TIMEOUT;
-        private Delay dcpChannelsReconnectDelay = DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
-        private int dcpChannelsReconnectMaxAttempts = DEFAULT_DCP_CHANNELS_RECONNECT_MAX_ATTEMPTS;
         private int bootstrapHttpDirectPort = BOOTSTRAP_HTTP_DIRECT_PORT;
         private int bootstrapHttpSslPort = BOOTSTRAP_HTTP_SSL_PORT;
         private int bufferAckWatermark;
@@ -380,6 +399,19 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private KeyStore sslKeystore;
         private short[] vbuckets;
         private FlowControlCallback flowControlCallback;
+        /*
+         * Config Provider
+         */
+        private long configProviderAttemptTimeout = DEFAULT_CONFIG_PROVIDER_ATTEMPT_TIMEOUT;
+        private long configProviderTotalTimeout = DEFAULT_CONFIG_PROVIDER_ATTEMPT_TIMEOUT;
+        private Delay configProviderReconnectDelay = DEFAULT_CONFIG_PROVIDER_RECONNECT_DELAY;
+        /*
+         * DCP Connection
+         */
+        private long dcpChannelAttemptTimeout = DEFAULT_DCP_CHANNEL_ATTEMPT_TIMEOUT;
+        private long dcpChannelTotalTimeout = DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT;
+        private Delay dcpChannelsReconnectDelay = DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
+        private long partitionRequestsTimeout = DEFAULT_PARTITION_REQUESTS_TIMEOUT;
 
         public Builder setClusterAt(List<String> hostnames, String connectionString) {
             if (connectionString != null) {
@@ -416,8 +448,13 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
             return this;
         }
 
-        public Builder setBootstrapTimeout(long bootstrapTimeout) {
-            this.bootstrapTimeout = bootstrapTimeout;
+        public Builder setConfigProviderAttemptTimeout(long configProviderAttemptTimeout) {
+            this.configProviderAttemptTimeout = configProviderAttemptTimeout;
+            return this;
+        }
+
+        public Builder setConfigProviderTotalTimeout(long configProviderTotalTimeout) {
+            this.configProviderTotalTimeout = configProviderTotalTimeout;
             return this;
         }
 
@@ -426,29 +463,23 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
             return this;
         }
 
-        public Builder setConfigProviderReconnectMaxAttempts(int configProviderReconnectMaxAttempts) {
-            this.configProviderReconnectMaxAttempts = configProviderReconnectMaxAttempts;
-            return this;
-        }
-
         public Builder setDcpChannelsReconnectDelay(Delay dcpChannelsReconnectDelay) {
             this.dcpChannelsReconnectDelay = dcpChannelsReconnectDelay;
             return this;
         }
 
-        public Builder setDcpChannelsReconnectMaxAttempts(int dcpChannelsReconnectMaxAttempts) {
-            this.dcpChannelsReconnectMaxAttempts = dcpChannelsReconnectMaxAttempts;
+        public Builder setDcpChannelAttemptTimeout(long dcpChannelAttemptTimeout) {
+            this.dcpChannelAttemptTimeout = dcpChannelAttemptTimeout;
             return this;
         }
 
-        /**
-         * Sets a custom socket connect timeout.
-         *
-         * @param socketConnectTimeout
-         *            the socket connect timeout in milliseconds.
-         */
-        public Builder setSocketConnectTimeout(long socketConnectTimeout) {
-            this.socketConnectTimeout = socketConnectTimeout;
+        public Builder setDcpChannelTotalTimeout(long dcpChannelTotalTimeout) {
+            this.dcpChannelTotalTimeout = dcpChannelTotalTimeout;
+            return this;
+        }
+
+        public Builder setPartitionRequestsTimeout(long partitionRequestsTimeout) {
+            this.partitionRequestsTimeout = partitionRequestsTimeout;
             return this;
         }
 
@@ -577,12 +608,15 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
     @Override
     public String toString() {
-        return "ClientEnvironment{" + "clusterAt=" + hostnames + ", connectionNameGenerator="
+        return "ClientEnvironment{" + "hostnames=" + hostnames + ", connectionNameGenerator="
                 + connectionNameGenerator.getClass().getSimpleName() + ", bucket='" + bucket + '\'' + ", passwordSet="
                 + (credentialsProvider != null) + ", dcpControl=" + dcpControl + ", eventLoopGroup="
                 + eventLoopGroup.getClass().getSimpleName() + ", eventLoopGroupIsPrivate=" + eventLoopGroupIsPrivate
                 + ", poolBuffers=" + poolBuffers + ", bufferAckWatermark=" + bufferAckWatermark
-                + ", socketConnectTimeout=" + socketConnectTimeout + ", bootstrapTimeout=" + bootstrapTimeout
+                + ", dcpChannelAttemptTimeout=" + dcpChannelAttemptTimeout + ", dcpChannelTotalTimeout="
+                + dcpChannelTotalTimeout + ", dcpChannelsReconnectDelay=" + dcpChannelsReconnectDelay
+                + ", configProviderAttemptTimeout=" + configProviderAttemptTimeout + ", configProviderTotalTimeout="
+                + configProviderTotalTimeout + ", configProviderReconnectDelay=" + configProviderReconnectDelay
                 + ", sslEnabled=" + sslEnabled + ", sslKeystoreFile='" + sslKeystoreFile + '\''
                 + ", sslKeystorePassword=" + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty())
                 + ", sslKeystore=" + sslKeystore + '}';
@@ -590,10 +624,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
     public Delay dcpChannelsReconnectDelay() {
         return dcpChannelsReconnectDelay;
-    }
-
-    public int dcpChannelsReconnectMaxAttempts() {
-        return dcpChannelsReconnectMaxAttempts;
     }
 
     public CredentialsProvider credentialsProvider() {

@@ -31,12 +31,6 @@ public class ClientBuilder {
     private ConfigProvider configProvider = null;
     private int bufferAckWatermark;
     private boolean poolBuffers = true;
-    private long bootstrapTimeout = ClientEnvironment.DEFAULT_BOOTSTRAP_TIMEOUT;
-    private long socketConnectTimeout = ClientEnvironment.DEFAULT_SOCKET_CONNECT_TIMEOUT;
-    private Delay configProviderReconnectDelay = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_RECONNECT_DELAY;
-    private int configProviderReconnectMaxAttempts = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_RECONNECT_MAX_ATTEMPTS;
-    private int dcpChannelsReconnectMaxAttempts = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_MAX_ATTEMPTS;
-    private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
     private EventBus eventBus;
     private boolean sslEnabled = ClientEnvironment.DEFAULT_SSL_ENABLED;
     private String sslKeystoreFile;
@@ -46,6 +40,13 @@ public class ClientBuilder {
     private int sslConfigPort = ClientEnvironment.BOOTSTRAP_HTTP_SSL_PORT;
     private short[] vbuckets;
     private FlowControlCallback flowControlCallback = FlowControlCallback.NOOP;
+    // Total timeouts, attempt timeouts, and delays
+    private long configProviderAttemptTimeout = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_ATTEMPT_TIMEOUT;
+    private long configProviderTotalTimeout = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_TOTAL_TIMEOUT;
+    private Delay configProviderReconnectDelay = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_RECONNECT_DELAY;
+    private long dcpChannelAttemptTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_ATTEMPT_TIMEOUT;
+    private long dcpChannelTotalTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT;
+    private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
 
     /**
      * The buffer acknowledge watermark in percent.
@@ -187,24 +188,46 @@ public class ClientBuilder {
     }
 
     /**
-     * Sets a custom socket connect timeout.
+     * Sets a custom DCP channel attempt timeout
      *
-     * @param socketConnectTimeout
-     *            the socket connect timeout in milliseconds.
+     * @param dcpChannelAttemptTimeout
+     *            the dcp channel socket connect timeout in milliseconds.
      */
-    public ClientBuilder socketConnectTimeout(long socketConnectTimeout) {
-        this.socketConnectTimeout = socketConnectTimeout;
+    public ClientBuilder dcpChannelAttemptTimeout(long dcpChannelAttemptTimeout) {
+        this.dcpChannelAttemptTimeout = dcpChannelAttemptTimeout;
         return this;
     }
 
     /**
-     * Time to wait for first configuration during bootstrap.
+     * Sets a custom DCP channel total attempts timeout
      *
-     * @param bootstrapTimeout
+     * @param dcpChannelTotalTimeout
+     *            the timeout for the total dcp channel socket connect attempts in milliseconds.
+     */
+    public ClientBuilder dcpChannelTotalTimeout(long dcpChannelTotalTimeout) {
+        this.dcpChannelTotalTimeout = dcpChannelTotalTimeout;
+        return this;
+    }
+
+    /**
+     * Time to wait for first configuration during a fetch attempt
+     *
+     * @param configProviderAttemptTimeout
      *            time in milliseconds.
      */
-    public ClientBuilder bootstrapTimeout(long bootstrapTimeout) {
-        this.bootstrapTimeout = bootstrapTimeout;
+    public ClientBuilder configProviderAttemptTimeout(long configProviderAttemptTimeout) {
+        this.configProviderAttemptTimeout = configProviderAttemptTimeout;
+        return this;
+    }
+
+    /**
+     * Time to wait for total configuration fetch attempts
+     *
+     * @param configProviderTotalTimeout
+     *            time in milliseconds.
+     */
+    public ClientBuilder configProviderTotalTimeout(long configProviderTotalTimeout) {
+        this.configProviderTotalTimeout = configProviderTotalTimeout;
         return this;
     }
 
@@ -215,26 +238,6 @@ public class ClientBuilder {
      */
     public ClientBuilder configProviderReconnectDelay(Delay configProviderReconnectDelay) {
         this.configProviderReconnectDelay = configProviderReconnectDelay;
-        return this;
-    }
-
-    /**
-     * The maximum number of reconnect attempts for configuration provider
-     *
-     * @param configProviderReconnectMaxAttempts
-     */
-    public ClientBuilder configProviderReconnectMaxAttempts(int configProviderReconnectMaxAttempts) {
-        this.configProviderReconnectMaxAttempts = configProviderReconnectMaxAttempts;
-        return this;
-    }
-
-    /**
-     * The maximum number of reconnect attempts for DCP channels
-     *
-     * @param dcpChannelsReconnectMaxAttempts
-     */
-    public ClientBuilder dcpChannelsReconnectMaxAttempts(int dcpChannelsReconnectMaxAttempts) {
-        this.dcpChannelsReconnectMaxAttempts = dcpChannelsReconnectMaxAttempts;
         return this;
     }
 
@@ -366,28 +369,28 @@ public class ClientBuilder {
         return poolBuffers;
     }
 
-    public long bootstrapTimeout() {
-        return bootstrapTimeout;
+    public long configProviderAttemptTimeout() {
+        return configProviderAttemptTimeout;
     }
 
-    public long socketConnectTimeout() {
-        return socketConnectTimeout;
+    public long configProviderTotalTimeout() {
+        return configProviderTotalTimeout;
     }
 
     public Delay configProviderReconnectDelay() {
         return configProviderReconnectDelay;
     }
 
-    public int configProviderReconnectMaxAttempts() {
-        return configProviderReconnectMaxAttempts;
-    }
-
     public Delay dcpChannelsReconnectDelay() {
         return dcpChannelsReconnectDelay;
     }
 
-    public int dcpChannelsReconnectMaxAttempts() {
-        return dcpChannelsReconnectMaxAttempts;
+    public long dcpChannelAttemptTimeout() {
+        return dcpChannelAttemptTimeout;
+    }
+
+    public long dcpChannelTotalTimeout() {
+        return dcpChannelTotalTimeout;
     }
 
     public EventBus eventBus() {

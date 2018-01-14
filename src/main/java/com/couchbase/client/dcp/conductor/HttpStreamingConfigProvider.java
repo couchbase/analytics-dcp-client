@@ -16,6 +16,7 @@ import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.service.ServiceType;
+import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.error.BadBucketConfigException;
@@ -72,8 +73,19 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
     }
 
     @Override
-    public void refresh(long timeout, int attempts, long waitBetweenAttempts) throws Throwable {
-        tryConnectHosts(timeout, attempts, waitBetweenAttempts);
+    public void refresh() throws Throwable {
+        refresh(env.configProviderAttemptTimeout(), env.configProviderTotalTimeout(),
+                env.configProviderReconnectDelay());
+    }
+
+    @Override
+    public void refresh(long attemptTimeout, long totalTimeout) throws Throwable {
+        refresh(attemptTimeout, totalTimeout, env.configProviderReconnectDelay());
+    }
+
+    @Override
+    public void refresh(long attemptTimeout, long totalTimeout, Delay delay) throws Throwable {
+        tryConnectHosts(attemptTimeout, totalTimeout, delay);
     }
 
     @Override
@@ -81,10 +93,10 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         return config;
     }
 
-    private void tryConnectHosts(long timeout, int attempts, long waitBetweenAttempts) throws Throwable {
+    private void tryConnectHosts(long attemptTimeout, long totalTimeout, Delay delay) throws Throwable {
         for (Entry<NetworkAddress, Set<Integer>> addresses : sockets.entrySet()) {
             for (Integer port : addresses.getValue()) {
-                if (tryConnectHost(addresses.getKey(), port, (int) timeout, attempts, waitBetweenAttempts)) {
+                if (tryConnectHost(addresses.getKey(), port, attemptTimeout, totalTimeout, delay)) {
                     return;
                 }
             }
@@ -92,24 +104,25 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         throw this.cause;
     }
 
-    private boolean tryConnectHost(NetworkAddress hostname, Integer port, int timeout, int attempts,
-            long waitBetweenAttempts) throws Exception {
+    private boolean tryConnectHost(NetworkAddress hostname, Integer port, long attemptTimeout, long totalTimeout,
+            Delay delay) throws Exception {
         int attempt = 0;
-        timeout = timeout > 0 ? (int) timeout : (int) env.socketConnectTimeout();
-        attempts = attempts > 0 ? attempts : env.configProviderReconnectMaxAttempts();
         ByteBufAllocator allocator =
                 env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
-        while (attempt < attempts) {
+        final long startTime = System.currentTimeMillis();
+        while (true) {
+            attempt++;
             failure = false;
             refreshed = false;
             LOGGER.log(CouchbaseLogLevel.INFO, "Getting bucket config from " + hostname.nameOrAddress() + ":" + port);
             Bootstrap bootstrap = new Bootstrap().remoteAddress(hostname.address(), port)
-                    .option(ChannelOption.ALLOCATOR, allocator).option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout)
+                    .option(ChannelOption.ALLOCATOR, allocator)
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) attemptTimeout)
                     .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
                     .handler(new ConfigPipeline(env, hostname.address(), port, this)).group(env.eventLoopGroup());
             ChannelFuture connectFuture = bootstrap.connect();
             try {
-                connectFuture.await(2 * timeout);
+                connectFuture.await(attemptTimeout + 100);
                 connectFuture.cancel(true);
                 if (connectFuture.isSuccess()) {
                     waitForConfig(connectFuture);
@@ -128,15 +141,11 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
                 return false;
             }
             attempt++;
-            if (attempt < attempts) {
-                if (cause instanceof BadBucketConfigException) {
-                    Thread.sleep(BAD_CONFIG_WAIT_TIME);
-                } else {
-                    Thread.sleep(waitBetweenAttempts);
-                }
+            if (System.currentTimeMillis() - startTime >= totalTimeout) {
+                return false;
             }
+            Thread.sleep(delay.calculate(attempt));
         }
-        return false;
     }
 
     private synchronized void waitForConfig(ChannelFuture connectFuture) throws InterruptedException {
@@ -177,5 +186,4 @@ public class HttpStreamingConfigProvider implements ConfigProvider, IConfigurabl
         refreshed = true;
         notifyAll();
     }
-
 }

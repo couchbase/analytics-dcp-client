@@ -11,6 +11,7 @@ import org.apache.logging.log4j.Logger;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.state.NotConnectedException;
+import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.events.DcpEvent;
@@ -24,8 +25,11 @@ import com.couchbase.client.dcp.state.PartitionState;
 public class Fixer implements Runnable, SystemEventHandler {
     private static final Logger LOGGER = LogManager.getLogger();
     private static final DcpEvent POISON_PILL = () -> DcpEvent.Type.DISCONNECT;
-    private static final int CONNECT_TIMEOUT = 500;
-    private static final int ATTEMPTS = 1;
+    private static final Delay DELAY = Delay.fixed(0, TimeUnit.MILLISECONDS);
+    private static final long CONFIG_PROVIDER_ATTEMPT_TIMEOUT = 500;
+    private static final long DCP_CHANNEL_ATTEMPT_TIMEOUT = 500;
+    // Total timeout only control re-attempts. 0 -> a single attempt
+    private static final long TOTAL_TIMEOUT = 0;
     private static final int MAX_REATTEMPTS = 100;
     private final Conductor conductor;
     private final UnexpectedFailureEvent failure = new UnexpectedFailureEvent();
@@ -132,7 +136,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                             CouchbaseBucketConfig config = conductor.config();
                             int index = config.nodeIndexForMaster(notMyVbucketEvent.getVbid(), false);
                             NodeInfo node = config.nodeAtIndex(index);
-                            conductor.add(node, config, CONNECT_TIMEOUT, ATTEMPTS);
+                            conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
                             PartitionState state = notMyVbucketEvent.getPartitionState();
                             state.prepareNextStreamRequest();
                             conductor.startStreamForPartition(state.getStreamRequest());
@@ -201,7 +205,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                     NodeInfo node = config.nodeAtIndex(index);
                     LOGGER.log(Level.INFO, this + " was able to find a new master for the vbucket " + node.hostname());
                     try {
-                        conductor.add(node, config, CONNECT_TIMEOUT, ATTEMPTS);
+                        conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
                     } catch (InterruptedException e) {
                         LOGGER.log(Level.WARN, this + " interrupted while adding node " + node.hostname(), e);
                         giveUp(streamEndEvent, e);
@@ -242,7 +246,7 @@ public class Fixer implements Runnable, SystemEventHandler {
     private void refreshConfig() throws InterruptedException {
         LOGGER.log(Level.INFO, this + " refreshing configurations");
         try {
-            conductor.configProvider().refresh(CONNECT_TIMEOUT, ATTEMPTS, 0);
+            conductor.configProvider().refresh(CONFIG_PROVIDER_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
         } catch (InterruptedException e) {
             LOGGER.log(Level.ERROR, this + " interrupted while refreshing configurations", e);
             giveUp(e);
@@ -333,7 +337,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                     if (config.hasPrimaryPartitionsOnNode(channel.getNetworkAddress())) {
                         try {
                             LOGGER.debug(this + " trying to reconnect " + channel);
-                            channel.connect(CONNECT_TIMEOUT, ATTEMPTS);
+                            channel.connect(DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
                             channel.setChannelDroppedReported(false);
                         } catch (InterruptedException e) {
                             LOGGER.log(Level.ERROR,
