@@ -281,6 +281,9 @@ public class Client {
                 }
             }
         }
+        if (nonInitialized.isEmpty()) {
+            return;
+        }
         failoverLogs(nonInitialized);
         for (short sh : nonInitialized) {
             PartitionState ps = state.get(sh);

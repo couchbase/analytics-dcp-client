@@ -92,6 +92,7 @@ public class DcpChannel {
         final long startTime = System.currentTimeMillis();
         while (getState() == State.CONNECTING) {
             attempt++;
+            ChannelFuture connectFuture = null;
             try {
                 LOGGER.log(CouchbaseLogLevel.WARN, "DcpChannel connect attempt #" + attempt
                         + " with socket connect timeout = " + (int) env.dcpChannelAttemptTimeout());
@@ -104,7 +105,7 @@ public class DcpChannel {
                         .handler(new DcpPipeline(this, networkAddress.nameOrAddress(), inetAddress.getPort(), env,
                                 controlHandler))
                         .group(env.eventLoopGroup());
-                ChannelFuture connectFuture = bootstrap.connect();
+                connectFuture = bootstrap.connect();
                 connectFuture.await(attemptTimeout + 100);
                 connectFuture.cancel(true);
                 if (!connectFuture.isSuccess()) {
@@ -118,6 +119,21 @@ public class DcpChannel {
                 LOGGER.warn("Connection failed", e);
                 if (failure == null) {
                     failure = e;
+                }
+                if (e instanceof InterruptedException) {
+                    LOGGER.warn("Connection was interrupted while attempting to establish DCP connection");
+                    if (connectFuture != null) {
+                        final ChannelFuture cf = connectFuture;
+                        connectFuture.addListener(f -> {
+                            if (f.isSuccess()) {
+                                cf.channel().disconnect();
+                            }
+                        });
+                        connectFuture.cancel(true);
+                    }
+                    channel = null;
+                    setState(State.DISCONNECTED);
+                    throw e;
                 }
                 if (System.currentTimeMillis() - startTime > totalTimeout) {
                     LOGGER.warn("Connection FAILED " + attempt + " times");
