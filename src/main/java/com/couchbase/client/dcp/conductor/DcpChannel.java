@@ -115,25 +115,24 @@ public class DcpChannel {
                 channel = connectFuture.channel();
                 setState(State.CONNECTED);
                 break;
+            } catch (InterruptedException e) {
+                LOGGER.warn("Connection was interrupted while attempting to establish DCP connection", e);
+                if (connectFuture != null) {
+                    final ChannelFuture cf = connectFuture;
+                    connectFuture.addListener(f -> {
+                        if (f.isSuccess()) {
+                            cf.channel().disconnect();
+                        }
+                    });
+                    connectFuture.cancel(true);
+                }
+                channel = null;
+                setState(State.DISCONNECTED);
+                throw e;
             } catch (Throwable e) {
                 LOGGER.warn("Connection failed", e);
                 if (failure == null) {
                     failure = e;
-                }
-                if (e instanceof InterruptedException) {
-                    LOGGER.warn("Connection was interrupted while attempting to establish DCP connection");
-                    if (connectFuture != null) {
-                        final ChannelFuture cf = connectFuture;
-                        connectFuture.addListener(f -> {
-                            if (f.isSuccess()) {
-                                cf.channel().disconnect();
-                            }
-                        });
-                        connectFuture.cancel(true);
-                    }
-                    channel = null;
-                    setState(State.DISCONNECTED);
-                    throw e;
                 }
                 if (System.currentTimeMillis() - startTime > totalTimeout) {
                     LOGGER.warn("Connection FAILED " + attempt + " times");
