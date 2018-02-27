@@ -67,7 +67,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleOpenStreamResponse(ByteBuf buf) {
-        short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
+        short vbid = (short) MessageUtil.getOpaque(buf);
         short status = MessageUtil.getStatus(buf);
         switch (status) {
             case 0x00:
@@ -103,7 +103,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleFailoverLogResponse(ByteBuf buf) {
-        short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
+        short vbid = (short) MessageUtil.getOpaque(buf);
         short status = MessageUtil.getStatus(buf);
         switch (status) {
             case 0x00:
@@ -185,7 +185,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleDcpCloseStreamResponse(ByteBuf buf) {
-        Short vbid = channel.getVbuckets().remove(MessageUtil.getOpaque(buf));
+        Short vbid = (short) MessageUtil.getOpaque(buf);
         channel.openStreams()[vbid] = false;
         channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
         if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {

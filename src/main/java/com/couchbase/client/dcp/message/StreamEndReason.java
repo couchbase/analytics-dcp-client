@@ -37,9 +37,23 @@ public enum StreamEndReason {
      */
     TOO_SLOW(0x04),
     /**
+     * The stream closed early due to backfill failure.
+     */
+    END_STREAM_BACKFILL_FAIL(0x05),
+    /**
+     * The stream closed early because the vbucket is rolling back and
+     * downstream needs to reopen the stream and rollback too.
+     */
+    END_STREAM_ROLLBACK(0x06),
+
+    /**
+     * All filtered collections have been removed so no more data can be sent.
+     */
+    END_STREAM_FILTER_EMPTY(0x07),
+    /**
      * the stream ended because its channel was dropped abruptly
      */
-    CHANNEL_DROPPED(0x05);
+    CHANNEL_DROPPED(0x08);
 
     private final int value;
 
@@ -63,6 +77,12 @@ public enum StreamEndReason {
                 return DISCONNECTED;
             case 0x04:
                 return TOO_SLOW;
+            case 0x05:
+                return END_STREAM_BACKFILL_FAIL;
+            case 0x06:
+                return END_STREAM_ROLLBACK;
+            case 0x07:
+                return END_STREAM_FILTER_EMPTY;
             default:
                 throw new IllegalArgumentException("Unknown stream end reason: " + value);
         }
