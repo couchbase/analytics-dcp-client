@@ -36,7 +36,7 @@ public class Conductor {
 
     public Conductor(final ClientEnvironment env, ConfigProvider cp) {
         this.env = env;
-        configProvider = cp == null ? new HttpStreamingConfigProvider(env) : cp;
+        configProvider = cp == null ? new NonStreamingConfigProvider(env) : cp;
         channels = new ConcurrentHashMap<>();
         fixer = new Fixer(this);
         env.setSystemEventHandler(fixer);

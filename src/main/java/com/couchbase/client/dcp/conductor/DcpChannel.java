@@ -6,9 +6,10 @@ package com.couchbase.client.dcp.conductor;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
-import com.couchbase.client.core.logging.CouchbaseLogLevel;
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.core.utils.NetworkAddress;
@@ -41,7 +42,7 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
  * The equals and hashcode are based on the {@link InetAddress}.
  */
 public class DcpChannel {
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpChannel.class);
+    private static final Logger LOGGER = LogManager.getLogger();
     private volatile State state;
     private final ClientEnvironment env;
     private final NetworkAddress networkAddress;
@@ -88,8 +89,8 @@ public class DcpChannel {
             attempt++;
             ChannelFuture connectFuture = null;
             try {
-                LOGGER.log(CouchbaseLogLevel.WARN, "DcpChannel connect attempt #" + attempt
-                        + " with socket connect timeout = " + (int) env.dcpChannelAttemptTimeout());
+                LOGGER.log(Level.WARN, "DcpChannel connect attempt #" + attempt + " with socket connect timeout = "
+                        + (int) env.dcpChannelAttemptTimeout());
                 ByteBufAllocator allocator =
                         env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
                 final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
@@ -371,10 +372,10 @@ public class DcpChannel {
         }
         long now = System.currentTimeMillis();
         if (now - lastConnectionTime > deadConnectionDetectionInterval) {
-            LOGGER.log(CouchbaseLogLevel.INFO, "Detected dead connection on " + this);
+            LOGGER.log(Level.INFO, "Detected dead connection on {}", this);
             return true;
         } else {
-            LOGGER.log(CouchbaseLogLevel.INFO, "Connection " + this + " is not dead");
+            LOGGER.log(Level.INFO, "Connection {} is not dead", this);
             return false;
         }
     }
