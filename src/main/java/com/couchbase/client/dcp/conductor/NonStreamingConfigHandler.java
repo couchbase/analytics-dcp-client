@@ -72,12 +72,14 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
         String rawConfig = responseContent.toString(CharsetUtil.UTF_8).replace("$HOST", hostname);
         LOGGER.log(Level.DEBUG, "Received Config: {}", rawConfig);
         synchronized (config) {
-            try {
-                config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment));
-            } catch (Exception e) {
-                failure.setValue(e);
+            if (failure.getValue() == null) {
+                try {
+                    config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment));
+                } catch (Exception e) {
+                    failure.setValue(e);
+                }
+                config.notifyAll();
             }
-            config.notifyAll();
         }
         ctx.fireChannelInactive();
     }
@@ -104,8 +106,10 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         synchronized (config) {
-            failure.setValue(cause);
-            config.notifyAll();
+            if (failure.getValue() == null) {
+                failure.setValue(cause);
+                config.notifyAll();
+            }
         }
         ctx.close();
     }

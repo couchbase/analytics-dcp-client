@@ -105,7 +105,8 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
             pipeline.addLast(new LoggingHandler(LogLevel.TRACE));
         }
 
-        pipeline.addLast(new HttpClientCodec()).addLast(new RequestConfigHandler(bucket, username, password))
+        pipeline.addLast(new HttpClientCodec())
+                .addLast(new RequestConfigHandler(bucket, username, password, config, failure))
                 .addLast(new NonStreamingConfigHandler(hostname, environment, config, failure));
     }
 

@@ -5,11 +5,13 @@ package com.couchbase.client.dcp.conductor;
 
 import java.net.SocketAddress;
 
+import org.apache.commons.lang3.mutable.MutableObject;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
 import com.couchbase.client.deps.io.netty.channel.ChannelOutboundHandler;
@@ -32,16 +34,21 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
     private final String bucket;
     private final String username;
     private final String password;
+    private final MutableObject<CouchbaseBucketConfig> config;
+    private final MutableObject<Throwable> failure;
     /**
      * The original connect promise which is intercepted and then completed/failed after the
      * authentication procedure.
      */
     private ChannelPromise originalPromise;
 
-    RequestConfigHandler(final String bucket, final String username, final String password) {
+    RequestConfigHandler(final String bucket, final String username, final String password,
+            MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
         this.bucket = bucket;
         this.username = username;
         this.password = password;
+        this.config = config;
+        this.failure = failure;
     }
 
     /**
@@ -85,6 +92,12 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
                 default:
                     exception = new CouchbaseException("Unknown error code during connect: " + msg.getStatus());
 
+            }
+            synchronized (config) {
+                if (failure.getValue() == null) {
+                    failure.setValue(exception);
+                    config.notifyAll();
+                }
             }
             originalPromise().setFailure(exception);
         }
