@@ -109,6 +109,8 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
             if (failure.getValue() == null) {
                 failure.setValue(cause);
                 config.notifyAll();
+            } else if (failure.getValue() != cause) {
+                LOGGER.log(Level.WARN, "Subsequent failure trying to get bucket configuration", cause);
             }
         }
         ctx.close();

@@ -97,6 +97,8 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
                 if (failure.getValue() == null) {
                     failure.setValue(exception);
                     config.notifyAll();
+                } else {
+                    LOGGER.log(Level.WARN, "Subsequent failure trying to get bucket configuration", exception);
                 }
             }
             originalPromise().setFailure(exception);
