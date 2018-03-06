@@ -8,6 +8,8 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.apache.hyracks.api.util.InvokeUtil;
+
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
@@ -243,7 +245,7 @@ public class Conductor {
         CouchbaseBucketConfig config = configProvider.config();
         fixerThread = new Thread(fixer);
         fixerThread.start();
-        fixer.waitTillStarted();
+        InvokeUtil.doUninterruptibly(fixer::waitTillStarted);
         for (NodeInfo node : config.nodes()) {
             add(node, config, env.dcpChannelAttemptTimeout(), env.dcpChannelTotalTimeout(),
                     env.dcpChannelsReconnectDelay());
