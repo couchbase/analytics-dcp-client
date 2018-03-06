@@ -12,8 +12,8 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <core.version>1.5.5</core.version>
-    <client.version>2.5.5</client.version>
+    <core.version>1.5.6</core.version>
+    <client.version>2.5.6</client.version>
   </properties>
   <name>Couchbase Java DCP Client</name>
   <description>The official, lightweight DCP Client for the JVM.</description>
