@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.hyracks.api.util.InvokeUtil;
 
+import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
@@ -176,6 +177,10 @@ public class Conductor {
         synchronized (channels) {
             CouchbaseBucketConfig config = configProvider.config();
             int index = config.nodeIndexForMaster(partition, false);
+            if (index < 0) {
+                throw new CouchbaseException(
+                        "partition " + partition + " does not have a master node. Configuration: " + config);
+            }
             NodeInfo node = config.nodeAtIndex(index);
             InetSocketAddress address = new InetSocketAddress(node.hostname().nameOrAddress(),
                     (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
