@@ -113,16 +113,15 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
                 ctx.channel().remoteAddress());
     }
 
-    private void helo(ChannelHandlerContext ctx, ByteBuf msg) throws Exception {
+    private void helo(ChannelHandlerContext ctx, ByteBuf msg) {
         String response = MessageUtil.getContent(msg).toString(StandardCharsets.UTF_8);
-        int majorVersion;
+        int majorVersion = 5;
         try {
-            majorVersion = Integer.parseInt(response.substring(0, 1));
+            majorVersion = Integer.parseInt(response.substring(0, response.indexOf('.')));
         } catch (NumberFormatException e) {
-            LOGGER.warn("Version returned by the server couldn't be parsed: " + response);
-            throw new Exception("Version returned by the server couldn't be parsed: " + response, e);
+            LOGGER.warn("Version returned by the server couldn't be parsed: {}", response, e);
         }
-        if (majorVersion < 5) {
+        if (majorVersion == 4) {
             step = OPEN;
             openConnection(ctx);
         } else {
