@@ -16,7 +16,6 @@ public class Hello {
     public static final short XATTR = 0x06;
     public static final short XERROR = 0x07;
     public static final short SELECT = 0x08;
-    private static final ByteBuf VALUES = Unpooled.copyShort(XERROR, SELECT);
 
     private Hello() {
     }
@@ -24,6 +23,6 @@ public class Hello {
     public static void init(ByteBuf buffer, ByteBuf connectionName) {
         MessageUtil.initRequest(MessageUtil.HELO_OPCODE, buffer);
         MessageUtil.setKey(connectionName, buffer);
-        MessageUtil.setContent(VALUES, buffer);
+        MessageUtil.setContent(Unpooled.copyShort(XERROR, SELECT), buffer);
     }
 }
