@@ -50,7 +50,9 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
                     : defaultPort;
             String host = hostname.indexOf(':') > -1 ? hostname.substring(0, hostname.indexOf(':')) : hostname;
             NetworkAddress address = NetworkAddress.create(host);
-            LOGGER.error("Adding a config node " + hostname + ":" + port);
+            if (LOGGER.isInfoEnabled()) {
+                LOGGER.info("Adding a config node " + hostname + ":" + port);
+            }
             Set<Integer> ports = sockets.computeIfAbsent(address, arg -> new HashSet<>());
             ports.add(port);
         }
@@ -99,7 +101,7 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
             MutableObject<Throwable> failure = new MutableObject<>();
             MutableObject<CouchbaseBucketConfig> config = new MutableObject<>();
             if (LOGGER.isInfoEnabled()) {
-                LOGGER.log(Level.INFO, "Getting bucket config from {}:{}", hostname.nameOrAddress(), port);
+                LOGGER.info("Getting bucket config from " + hostname.nameOrAddress() + ":" + port);
             }
             Bootstrap bootstrap =
                     new Bootstrap().remoteAddress(hostname.address(), port).option(ChannelOption.ALLOCATOR, allocator)
@@ -165,7 +167,7 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
         this.cause = null;
         for (NodeInfo node : config.nodes()) {
             Integer port = (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.CONFIG);
-            LOGGER.error("Adding a config node " + node.hostname() + ":" + port);
+            LOGGER.info("Adding a config node " + node.hostname() + ":" + port);
             NetworkAddress address = node.hostname();
             Set<Integer> ports = sockets.computeIfAbsent(address, args -> new HashSet<>());
             ports.add(port);

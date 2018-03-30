@@ -4,7 +4,6 @@ import java.util.LinkedList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -49,13 +48,13 @@ public class Fixer implements Runnable, SystemEventHandler {
             inbox.clear();
             inbox.offer(POISON_PILL);
             if (!running) {
-                LOGGER.log(Level.WARN,
+                LOGGER.warn(
                         "Poisoning the fixer and finding that it was running but it is not running anymore."
                                 + " Cleaning the inbox");
                 inbox.clear();
             }
         } else {
-            LOGGER.log(Level.WARN, "Poisoning the fixer and finding that it is not running. Do nothing.");
+            LOGGER.warn("Poisoning the fixer and finding that it is not running. Do nothing.");
         }
         return true;
     }
@@ -74,14 +73,12 @@ public class Fixer implements Runnable, SystemEventHandler {
                     attemptFixingBroken();
                     detection.run();
                 }
-                next = failed.isEmpty() ? inbox.poll(detection.timeToCheck(), TimeUnit.MILLISECONDS)
+                next = failed.isEmpty() ? inbox.poll(detection.nanosTilNextCheck(), TimeUnit.NANOSECONDS)
                         : inbox.poll(MAX_REATTEMPTS, TimeUnit.MILLISECONDS);
             }
-            if (next == POISON_PILL) {
-                LOGGER.log(Level.INFO, this + " has been poisoned");
-            }
+            LOGGER.info("{} has been poisoned", this);
         } catch (InterruptedException ie) {
-            LOGGER.log(Level.WARN, this + " has been interrupted");
+            LOGGER.warn("{} has been interrupted", this);
             Thread.currentThread().interrupt();
         }
         running = false;
@@ -121,14 +118,14 @@ public class Fixer implements Runnable, SystemEventHandler {
                     // 2. the partition is now owned by an existing connected kv node channel, add a stream there.
                     // 3. the partition is owned by a new kv node.
                     //    add a new channel and establish the stream for the partition
-                    LOGGER.log(Level.WARN, "Handling " + event);
+                    LOGGER.info("Handling {}", event);
                     fixDroppedChannel((ChannelDroppedEvent) event);
                     break;
                 case NOT_MY_VBUCKET:
                     // Refresh the config, find the new assigned kv node
                     // (could still be the same one), and re-attempt connection
                     // this should never cause a permanent failure
-                    LOGGER.log(Level.WARN, "Handling " + event);
+                    LOGGER.info("Handling {}", event);
                     NotMyVBucketEvent notMyVbucketEvent = (NotMyVBucketEvent) event;
                     refreshConfig();
                     try {
@@ -142,21 +139,21 @@ public class Fixer implements Runnable, SystemEventHandler {
                             conductor.startStreamForPartition(state.getStreamRequest());
                         }
                     } catch (InterruptedException e) {
-                        LOGGER.log(Level.WARN, "Interrupted while handling not my vbucket event", e);
+                        LOGGER.warn("Interrupted while handling not my vbucket event", e);
                         giveUp(notMyVbucketEvent, e);
                         throw e;
                     } catch (Throwable th) {
-                        LOGGER.log(Level.ERROR, "Failure during attempt to handle not my vbucket event", th);
+                        LOGGER.error("Failure during attempt to handle not my vbucket event", th);
                         failed.add(notMyVbucketEvent);
                     }
                     break;
                 case ROLLBACK:
-                    LOGGER.log(Level.WARN, "Handling " + event);
+                    LOGGER.info("Handling {}", event);
                     // abort all, close the channels
                     conductor.disconnect(true);
                     break;
                 case STREAM_END:
-                    LOGGER.log(Level.WARN, "Handling " + event);
+                    LOGGER.info("Handling {}", event);
                     // A stream end can have many reasons.
                     StreamEndEvent streamEndEvent = (StreamEndEvent) event;
                     fixStreamEnd(streamEndEvent);
@@ -168,7 +165,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             throw e;
         } catch (Throwable th) {
             // there should be a way to pass non-recoverable failures
-            LOGGER.log(Level.WARN, "Unexpected error in fixer thread while trying to fix a failure", th);
+            LOGGER.warn("Unexpected error in fixer thread while trying to fix a failure", th);
             conductor.disconnect(true);
             failure.setCause(th);
             conductor.getEnv().eventBus().publish(failure);
@@ -179,19 +176,19 @@ public class Fixer implements Runnable, SystemEventHandler {
         switch (streamEndEvent.reason()) {
             case CLOSED:
                 // Normal op, user requested close of stream
-                LOGGER.log(Level.INFO, this + " stream stopped as per your request");
+                LOGGER.info(this + " stream stopped as per your request");
                 break;
             case DISCONNECTED:
                 // The server is preparing to disconnect. wait for a channel drop which will come soon
-                LOGGER.log(Level.WARN, this + " the channel is going to drop. not sure when this could happen."
+                LOGGER.warn(this + " the channel is going to drop. not sure when this could happen."
                         + "Should wait for the drop event before attempting a fix");
                 break;
             case INVALID:
-                LOGGER.log(Level.ERROR, this + " this should never happen. must abort");
+                LOGGER.error(this + " this should never happen. must abort");
                 break;
             case OK:
                 // Normal op, reached the end of the requested DCP stream
-                LOGGER.log(Level.INFO, this + " stream reached the end of your request");
+                LOGGER.info(this + " stream reached the end of your request");
                 break;
             case STATE_CHANGED:
             case CHANNEL_DROPPED:
@@ -203,15 +200,15 @@ public class Fixer implements Runnable, SystemEventHandler {
                 short index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
                 if (index >= 0) {
                     NodeInfo node = config.nodeAtIndex(index);
-                    LOGGER.log(Level.INFO, this + " was able to find a new master for the vbucket " + node.hostname());
+                    LOGGER.info(this + " was able to find a new master for the vbucket " + node.hostname());
                     try {
                         conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
                     } catch (InterruptedException e) {
-                        LOGGER.log(Level.WARN, this + " interrupted while adding node " + node.hostname(), e);
+                        LOGGER.warn(this + " interrupted while adding node " + node.hostname(), e);
                         giveUp(streamEndEvent, e);
                         throw e;
                     } catch (Throwable th) {
-                        LOGGER.log(Level.WARN, this + " failed to add node " + node.hostname(), th);
+                        LOGGER.warn(this + " failed to add node " + node.hostname(), th);
                         retry(streamEndEvent, th);
                         break;
                     }
@@ -227,45 +224,45 @@ public class Fixer implements Runnable, SystemEventHandler {
                     state.prepareNextStreamRequest();
                     conductor.startStreamForPartition(state.getStreamRequest());
                 } else {
-                    LOGGER.log(Level.INFO,
+                    LOGGER.info(
                             this + " vbucket " + streamEndEvent.partition() + " has no master at the moment");
                     retry(streamEndEvent);
                 }
                 break;
             case TOO_SLOW:
                 // Log, requesting upgrade to analytics resources and re-open the stream
-                LOGGER.log(Level.WARN,
+                LOGGER.warn(
                         this + " need more analytics ingestion nodes. we are slow for the producer node");
                 break;
             default:
-                LOGGER.log(Level.ERROR, this + " unexpected event type " + streamEndEvent);
+                LOGGER.error(this + " unexpected event type " + streamEndEvent);
                 break;
         }
     }
 
     private void refreshConfig() throws InterruptedException {
-        LOGGER.log(Level.INFO, this + " refreshing configurations");
+        LOGGER.info(this + " refreshing configurations");
         try {
             conductor.configProvider().refresh(CONFIG_PROVIDER_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
         } catch (InterruptedException e) {
-            LOGGER.log(Level.ERROR, this + " interrupted while refreshing configurations", e);
+            LOGGER.error(this + " interrupted while refreshing configurations", e);
             giveUp(e);
             throw e;
         } catch (Throwable th) {
-            LOGGER.log(Level.ERROR, this + " failed to refresh configurations", th);
+            LOGGER.error(this + " failed to refresh configurations", th);
         }
-        LOGGER.log(Level.INFO, this + " configurations refreshed");
+        LOGGER.info(this + " configurations refreshed");
     }
 
     private void retry(ChannelDroppedEvent event, Throwable th) throws InterruptedException {
-        LOGGER.log(Level.WARN, this + " failed to fix a dropped dcp connection", th);
+        LOGGER.warn(this + " failed to fix a dropped dcp connection", th);
         event.incrementAttempts();
         if (event.getAttempts() > MAX_REATTEMPTS) {
-            LOGGER.log(Level.WARN, this + " failed to fix a dropped dcp connection for the " + event.getAttempts()
+            LOGGER.warn(this + " failed to fix a dropped dcp connection for the " + event.getAttempts()
                     + "th time. Giving up");
             giveUp(event, th);
         } else {
-            LOGGER.log(Level.WARN, this + " retrying for the " + event.getAttempts() + " time");
+            LOGGER.warn(this + " retrying for the " + event.getAttempts() + " time");
             failed.add(event);
         }
     }
@@ -273,11 +270,11 @@ public class Fixer implements Runnable, SystemEventHandler {
     private void retry(StreamEndEvent streamEndEvent, Throwable th) throws InterruptedException {
         streamEndEvent.incrementAttempts();
         if (streamEndEvent.getAttempts() > MAX_REATTEMPTS) {
-            LOGGER.log(Level.WARN,
+            LOGGER.warn(
                     this + " failed to fix a vbucket stream " + streamEndEvent.getAttempts() + " times. Giving up", th);
             giveUp(streamEndEvent, th);
         } else {
-            LOGGER.log(Level.WARN, this + " retrying for the " + streamEndEvent.getAttempts() + " time");
+            LOGGER.warn(this + " retrying for the " + streamEndEvent.getAttempts() + " time");
             failed.add(streamEndEvent);
         }
     }
@@ -285,7 +282,7 @@ public class Fixer implements Runnable, SystemEventHandler {
     private void retry(StreamEndEvent streamEndEvent) throws InterruptedException {
         streamEndEvent.incrementAttempts();
         if (streamEndEvent.getAttempts() > MAX_REATTEMPTS) {
-            LOGGER.log(Level.WARN,
+            LOGGER.warn(
                     this + " failed to fix a vbucket stream " + streamEndEvent.getAttempts() + " times. Giving up");
             giveUp(streamEndEvent, new NotConnectedException());
         } else {
@@ -316,14 +313,14 @@ public class Fixer implements Runnable, SystemEventHandler {
     }
 
     private void fixDroppedChannel(ChannelDroppedEvent event) throws InterruptedException {
-        LOGGER.log(Level.WARN, this + " fixing channel dropped... Requesting new configurations");
+        LOGGER.warn(this + " fixing channel dropped... Requesting new configurations");
         try {
             refreshConfig();
         } catch (Throwable th) {
             retry(event, th);
             return;
         }
-        LOGGER.log(Level.WARN, this + " completed refreshing configurations configurations");
+        LOGGER.warn(this + " completed refreshing configurations configurations");
         fixChannel(event.getChannel());
     }
 
@@ -340,7 +337,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                             channel.connect(DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
                             channel.setChannelDroppedReported(false);
                         } catch (InterruptedException e) {
-                            LOGGER.log(Level.ERROR,
+                            LOGGER.error(
                                     this + " interrupted while attempting to connect channel:" + channel, e);
                             giveUp(e);
                             throw e;
