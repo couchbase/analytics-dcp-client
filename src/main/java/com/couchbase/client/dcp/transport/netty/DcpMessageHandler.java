@@ -91,7 +91,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             int bufferAckPercent = env.ackWaterMark();
             int bufferSize = Integer.parseInt(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
             this.ackWatermark = (int) Math.round(bufferSize / 100.0 * bufferAckPercent);
-            LOGGER.warn("BufferAckWatermark absolute is {}", ackWatermark);
+            LOGGER.debug("BufferAckWatermark absolute is {}", ackWatermark);
             ackListener = future -> {
                 if (!future.isSuccess()) {
                     LOGGER.log(CouchbaseLogLevel.WARN, "Failed to send the ack to the dcp producer", future.cause());

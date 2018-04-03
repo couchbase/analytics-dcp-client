@@ -20,6 +20,7 @@ import com.couchbase.client.dcp.message.DcpStreamEndMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.Unpooled;
 
@@ -69,23 +70,18 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleOpenStreamResponse(ByteBuf buf) {
         short vbid = (short) MessageUtil.getOpaque(buf);
         short status = MessageUtil.getStatus(buf);
+        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+            LOGGER.debug("OpenStream {} (0x{}) for vbucket ", MemcachedStatus.toString(status),
+                    Integer.toHexString(status), vbid);
+        }
         switch (status) {
             case 0x00:
-                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
-                    LOGGER.debug("stream opened successfully for vbucket " + vbid);
-                }
                 handleOpenStreamSuccess(buf, vbid);
                 break;
             case 0x23:
-                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
-                    LOGGER.debug("stream rollback response for vbucket " + vbid);
-                }
                 handleOpenStreamRollback(buf, vbid);
                 break;
             case 0x07:
-                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
-                    LOGGER.debug("stream not my vbucket response for vbucket " + vbid);
-                }
                 channel.openStreams()[vbid] = false;
                 PartitionState ps = channel.getSessionState().get(vbid);
                 ps.setState(PartitionState.DISCONNECTED);
@@ -97,7 +93,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 channel.openStreams()[vbid] = false;
                 channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
                 if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
-                    LOGGER.warn("stream unknown response for vbucket " + vbid);
+                    LOGGER.warn("OpenStream unexpected response: {} (0x{}) for vbucket ",
+                            MemcachedStatus.toString(status), Integer.toHexString(status), vbid);
                 }
         }
     }
@@ -105,21 +102,20 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleFailoverLogResponse(ByteBuf buf) {
         short vbid = (short) MessageUtil.getOpaque(buf);
         short status = MessageUtil.getStatus(buf);
+        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+            LOGGER.debug("FailoverLog {} (0x{}) for vbucket ", MemcachedStatus.toString(status),
+                    Integer.toHexString(status), vbid);
+        }
         switch (status) {
             case 0x00:
-                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
-                    LOGGER.debug("Failover Log retrieved successfully for vbucket " + vbid);
-                }
                 handleFailoverLogResponseSuccess(buf, vbid);
                 break;
             case 0x07:
-                if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
-                    LOGGER.debug("Failover Log not my vbucket response for vbucket " + vbid);
-                }
                 break;
             default:
                 if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
-                    LOGGER.warn("Failover Log unknown response (" + status + ")for vbucket " + vbid);
+                    LOGGER.warn("FailoverLog unexpected response: {} (0x{}) for vbucket ",
+                            MemcachedStatus.toString(status), Integer.toHexString(status), vbid);
                 }
         }
     }

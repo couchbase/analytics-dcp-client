@@ -54,7 +54,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                 inbox.clear();
             }
         } else {
-            LOGGER.warn("Poisoning the fixer and finding that it is not running. Do nothing.");
+            LOGGER.info("Poisoning the fixer and finding that it is not running. Do nothing.");
         }
         return true;
     }
@@ -320,7 +320,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             retry(event, th);
             return;
         }
-        LOGGER.warn(this + " completed refreshing configurations configurations");
+        LOGGER.info(this + " completed refreshing configurations configurations");
         fixChannel(event.getChannel());
     }
 
