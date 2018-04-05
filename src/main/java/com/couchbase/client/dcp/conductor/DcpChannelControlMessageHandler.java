@@ -121,6 +121,11 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleFailoverLogResponseSuccess(ByteBuf buf, short vbid) {
+        channel.getFailoverLogRequests()[vbid] = false;
+        updateFailoverLog(buf, vbid);
+    }
+
+    private void updateFailoverLog(ByteBuf buf, short vbid) {
         ByteBuf failoverLog = Unpooled.buffer();
         DcpFailoverLogResponse.init(failoverLog);
         DcpFailoverLogResponse.vbucket(failoverLog, DcpFailoverLogResponse.vbucket(buf));
@@ -145,12 +150,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleOpenStreamSuccess(ByteBuf buf, short vbid) {
         channel.openStreams()[vbid] = true;
         channel.getSessionState().get(vbid).setState(PartitionState.CONNECTED);
-        ByteBuf flog = Unpooled.buffer();
-        DcpFailoverLogResponse.init(flog);
-        DcpFailoverLogResponse.vbucket(flog, DcpOpenStreamResponse.vbucket(buf));
-        ByteBuf content = MessageUtil.getContent(buf).copy().writeShort(vbid);
-        MessageUtil.setContent(content, flog);
-        content.release();
+        updateFailoverLog(buf, vbid);
     }
 
     private void handleDcpGetPartitionSeqnosResponse(ByteBuf buf) {
