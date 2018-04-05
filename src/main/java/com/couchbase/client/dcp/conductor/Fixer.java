@@ -54,7 +54,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                 inbox.clear();
             }
         } else {
-            LOGGER.warn("Poisoning the fixer and finding that it is not running. Do nothing.");
+            LOGGER.info("Poisoning the fixer and finding that it is not running. Do nothing.");
         }
         return true;
     }
@@ -320,7 +320,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             retry(event, th);
             return;
         }
-        LOGGER.warn(this + " completed refreshing configurations configurations");
+        LOGGER.info(this + " completed refreshing configurations configurations");
         fixChannel(event.getChannel());
     }
 
@@ -342,11 +342,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                             giveUp(e);
                             throw e;
                         } catch (Throwable th) {
-                            for (short vb = 0; vb < numPartitions; vb++) {
-                                if (channel.streamIsOpen(vb)) {
-                                    putPartitionInQueue(channel, vb);
-                                }
-                            }
+                            queueOpenStreams(channel, numPartitions);
                             conductor.removeChannel(channel);
                             LOGGER.warn(
                                     this + " failed to re-establish a failed dcp connection. Must notify the client",
@@ -354,15 +350,43 @@ public class Fixer implements Runnable, SystemEventHandler {
                         }
                     } else {
                         LOGGER.debug(this + " the dropped channel " + channel + " has no vbuckets");
-                        for (short vb = 0; vb < numPartitions; vb++) {
-                            if (channel.streamIsOpen(vb)) {
-                                putPartitionInQueue(channel, vb);
-                            }
-                        }
+                        queueOpenStreams(channel, numPartitions);
                         conductor.removeChannel(channel);
                     }
                 }
             }
+        }
+    }
+
+    private void queueOpenStreams(DcpChannel channel, int numPartitions) {
+        boolean infoEnabled = LOGGER.isInfoEnabled();
+        int run = 0;
+        StringBuilder affectedVBuckets = null;
+        if (infoEnabled) {
+            affectedVBuckets = new StringBuilder();
+        }
+        for (short vb = 0; vb < numPartitions; vb++) {
+            if (channel.streamIsOpen(vb)) {
+                if (infoEnabled && run++ == 0) {
+                    affectedVBuckets.append(vb);
+                }
+                putPartitionInQueue(channel, vb);
+            } else if (infoEnabled && run > 0) {
+                if (run > 1) {
+                    affectedVBuckets.append('-').append(vb - 1);
+                }
+                affectedVBuckets.append(',');
+                run = 0;
+            }
+        }
+        if (infoEnabled && affectedVBuckets.length() > 1) {
+            if (run > 1) {
+                affectedVBuckets.append('-').append(numPartitions - 1);
+            } else {
+                affectedVBuckets.deleteCharAt(affectedVBuckets.length() - 1);
+            }
+            LOGGER.info(this + " server closed stream on vbuckets [" + affectedVBuckets + "] with reason "
+                    + StreamEndReason.CHANNEL_DROPPED);
         }
     }
 
@@ -373,7 +397,6 @@ public class Fixer implements Runnable, SystemEventHandler {
         endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
         endEvent.setFailoverLogsRequested(channel.getFailoverLogRequests()[vb]);
         endEvent.setSeqRequested(!channel.isStateFetched());
-        LOGGER.info(this + " server closed Stream on vbid " + vb + " with reason " + StreamEndReason.CHANNEL_DROPPED);
         conductor.getEnv().eventBus().publish(endEvent);
     }
 

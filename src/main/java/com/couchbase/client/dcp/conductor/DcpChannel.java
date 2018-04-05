@@ -85,12 +85,15 @@ public class DcpChannel {
         int attempt = 0;
         Throwable failure = null;
         final long startTime = System.currentTimeMillis();
+        boolean infoEnabled = LOGGER.isInfoEnabled();
         while (getState() == State.CONNECTING) {
             attempt++;
             ChannelFuture connectFuture = null;
             try {
-                LOGGER.log(Level.WARN, "DcpChannel connect attempt #" + attempt + " with socket connect timeout = "
-                        + (int) env.dcpChannelAttemptTimeout());
+                if (infoEnabled) {
+                    LOGGER.info("DcpChannel connect attempt #" + attempt + " with socket connect timeout = "
+                            + (int) env.dcpChannelAttemptTimeout());
+                }
                 ByteBufAllocator allocator =
                         env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
                 final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
