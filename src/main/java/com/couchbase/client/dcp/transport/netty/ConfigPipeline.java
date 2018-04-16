@@ -3,6 +3,8 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import java.net.InetSocketAddress;
+
 import org.apache.commons.lang3.tuple.Pair;
 
 import com.couchbase.client.core.logging.CouchbaseLogger;
@@ -77,7 +79,7 @@ public class ConfigPipeline extends ChannelInitializer<Channel> {
             final IConfigurable configurable) throws Exception {
         this.hostname = hostname;
         this.bucket = environment.bucket();
-        Pair<String, String> creds = environment.credentialsProvider().get(hostname + ':' + port);
+        Pair<String, String> creds = environment.credentialsProvider().get(InetSocketAddress.createUnresolved(hostname, port));
         this.username = creds.getLeft();
         this.password = creds.getRight();
         this.configurable = configurable;

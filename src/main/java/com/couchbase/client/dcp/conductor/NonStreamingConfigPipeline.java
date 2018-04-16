@@ -3,6 +3,10 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import static org.apache.hyracks.util.NetworkUtil.toHostPort;
+
+import java.net.InetSocketAddress;
+
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.LogManager;
@@ -34,7 +38,7 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
     /**
      * Hostname used to replace $HOST parts in the config when used against localhost.
      */
-    private final String hostname;
+    private final InetSocketAddress address;
 
     /**
      * The name of the bucket
@@ -70,11 +74,11 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
      * @param configStream
      *            config stream where to send the configs.
      */
-    public NonStreamingConfigPipeline(final ClientEnvironment environment, final String hostname, int port,
+    public NonStreamingConfigPipeline(final ClientEnvironment environment, final InetSocketAddress address,
             MutableObject<Throwable> failure, MutableObject<CouchbaseBucketConfig> config) throws Exception {
-        this.hostname = hostname;
+        this.address = address;
         this.bucket = environment.bucket();
-        Pair<String, String> creds = environment.credentialsProvider().get(hostname + ':' + port);
+        Pair<String, String> creds = environment.credentialsProvider().get(address);
         this.username = creds.getLeft();
         this.password = creds.getRight();
         this.failure = failure;
@@ -107,7 +111,7 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
 
         pipeline.addLast(new HttpClientCodec())
                 .addLast(new RequestConfigHandler(bucket, username, password, config, failure))
-                .addLast(new NonStreamingConfigHandler(hostname, environment, config, failure));
+                .addLast(new NonStreamingConfigHandler(address, environment, config, failure));
     }
 
 }

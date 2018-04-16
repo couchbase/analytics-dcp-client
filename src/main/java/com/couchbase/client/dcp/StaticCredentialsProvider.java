@@ -4,6 +4,7 @@
 package com.couchbase.client.dcp;
 
 import java.io.Serializable;
+import java.net.InetSocketAddress;
 
 import org.apache.commons.lang3.tuple.Pair;
 
@@ -20,7 +21,7 @@ public class StaticCredentialsProvider implements CredentialsProvider, Serializa
     }
 
     @Override
-    public Pair<String, String> get(String address) {
+    public Pair<String, String> get(InetSocketAddress address) {
         return credentials;
     }
 

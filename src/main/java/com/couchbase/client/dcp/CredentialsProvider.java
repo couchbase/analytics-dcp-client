@@ -3,6 +3,8 @@
  */
 package com.couchbase.client.dcp;
 
+import java.net.InetSocketAddress;
+
 import org.apache.commons.lang3.tuple.Pair;
 
 @FunctionalInterface
@@ -13,5 +15,5 @@ public interface CredentialsProvider {
      * @param address
      * @return
      */
-    Pair<String, String> get(String address) throws Exception;
+    Pair<String, String> get(InetSocketAddress address) throws Exception;
 }

@@ -3,16 +3,23 @@
  */
 package com.couchbase.client.dcp;
 
+import java.net.InetSocketAddress;
+import java.security.KeyStore;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.conductor.Conductor;
+import com.couchbase.client.dcp.conductor.ConfigProvider;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
+import com.couchbase.client.dcp.config.DcpControl;
+import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.dcp.message.DcpDeletionMessage;
 import com.couchbase.client.dcp.message.DcpExpirationMessage;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
@@ -22,6 +29,7 @@ import com.couchbase.client.dcp.message.RollbackMessage;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamRequest;
+import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
@@ -64,7 +72,7 @@ public class Client {
      * @param builder
      *            the client config builder.
      */
-    public Client(ClientBuilder builder) {
+    public Client(Builder builder) {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
         env = ClientEnvironment.builder().setConnectionNameGenerator(builder.connectionNameGenerator())
@@ -80,7 +88,7 @@ public class Client {
                 .setSslEnabled(builder.sslEnabled()).setSslKeystoreFile(builder.sslKeystoreFile())
                 .setSslKeystorePassword(builder.sslKeystorePassword()).setSslKeystore(builder.sslKeystore())
                 .setBootstrapHttpDirectPort(builder.configPort()).setBootstrapHttpSslPort(builder.sslConfigPort())
-                .setVbuckets(builder.vbuckets()).setClusterAt(builder.hostnames(), builder.connectionString())
+                .setVbuckets(builder.vbuckets()).setClusterAt(builder.clusterAt())
                 .setFlowControlCallback(builder.flowControlCallback()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
@@ -94,12 +102,12 @@ public class Client {
     }
 
     /**
-     * Allows to configure the {@link Client} before bootstrap through a {@link ClientBuilder}.
+     * Allows to configure the {@link Client} before bootstrap through a {@link Builder}.
      *
      * @return the builder to configure the client.
      */
-    public static ClientBuilder builder() {
-        return new ClientBuilder();
+    public static Builder builder() {
+        return new Builder();
     }
 
     /**
@@ -432,5 +440,427 @@ public class Client {
 
     public boolean isConnected() {
         return !conductor.disconnected();
+    }
+
+    /**
+     * Builder object to customize the {@link Client} creation.
+     */
+    public static class Builder {
+        private List<InetSocketAddress> clusterAt = Collections.singletonList(InetSocketAddress.createUnresolved("127.0.0.1", 0));;
+        private CredentialsProvider credentialsProvider;
+        private String connectionString;
+        private EventLoopGroup eventLoopGroup;
+        private String bucket = "default";
+        private ConnectionNameGenerator connectionNameGenerator = DefaultConnectionNameGenerator.INSTANCE;
+        private DcpControl dcpControl = new DcpControl();
+        private ConfigProvider configProvider = null;
+        private int bufferAckWatermark;
+        private boolean poolBuffers = true;
+        private EventBus eventBus;
+        private boolean sslEnabled = ClientEnvironment.DEFAULT_SSL_ENABLED;
+        private String sslKeystoreFile;
+        private String sslKeystorePassword;
+        private KeyStore sslKeystore;
+        private int configPort = ClientEnvironment.BOOTSTRAP_HTTP_DIRECT_PORT;
+        private int sslConfigPort = ClientEnvironment.BOOTSTRAP_HTTP_SSL_PORT;
+        private short[] vbuckets;
+        private FlowControlCallback flowControlCallback = FlowControlCallback.NOOP;
+        // Total timeouts, attempt timeouts, and delays
+        private long configProviderAttemptTimeout = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_ATTEMPT_TIMEOUT;
+        private long configProviderTotalTimeout = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_TOTAL_TIMEOUT;
+        private Delay configProviderReconnectDelay = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_RECONNECT_DELAY;
+        private long dcpChannelAttemptTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_ATTEMPT_TIMEOUT;
+        private long dcpChannelTotalTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT;
+        private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
+
+        /**
+         * The buffer acknowledge watermark in percent.
+         *
+         * @param watermark
+         *            between 0 and 100, needs to be > 0 if flow control is enabled.
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder bufferAckWatermark(int watermark) {
+            if (watermark > 100 || watermark < 0) {
+                throw new IllegalArgumentException(
+                        "The bufferAckWatermark is percents, so it needs to be between" + " 0 and 100");
+            }
+            this.bufferAckWatermark = watermark;
+            return this;
+        }
+
+        /**
+         * The clusterAt to bootstrap against.
+         *
+         * @param clusterAt
+         *            seed nodes.
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder clusterAt(final List<InetSocketAddress> clusterAt) {
+            this.clusterAt = new ArrayList<>(clusterAt);
+            return this;
+        }
+
+        /**
+         * The clusterAt to bootstrap against.
+         *
+         * @param clusterAt
+         *            seed nodes.
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder clusterAt(InetSocketAddress... clusterAt) {
+            return clusterAt(Arrays.asList(clusterAt));
+        }
+
+        /**
+         * Sets a custom event loop group, this is needed if more than one client is initialized and
+         * runs at the same time to keep the IO threads efficient and in bounds.
+         *
+         * @param eventLoopGroup
+         *            the group that should be used.
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder eventLoopGroup(final EventLoopGroup eventLoopGroup) {
+            this.eventLoopGroup = eventLoopGroup;
+            return this;
+        }
+
+        public EventLoopGroup eventLoopGroup() {
+            return eventLoopGroup;
+        }
+
+        /**
+         * The name of the bucket to use.
+         *
+         * @param bucket
+         *            name of the bucket
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder bucket(final String bucket) {
+            this.bucket = bucket;
+            return this;
+        }
+
+        public Builder flowControlCallback(final FlowControlCallback callback) {
+            this.flowControlCallback = callback;
+            return this;
+        }
+
+        public FlowControlCallback flowControlCallback() {
+            return flowControlCallback;
+        }
+
+        /**
+         * The credentials provider of the bucket to use.
+         *
+         * @param credentialsProvider
+         *            the credentials provider.
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder credentialsProvider(final CredentialsProvider credentialsProvider) {
+            this.credentialsProvider = credentialsProvider;
+            return this;
+        }
+
+        /**
+         * If specific names for DCP connections should be generated, a custom one can be provided.
+         *
+         * @param connectionNameGenerator
+         *            custom generator.
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder connectionNameGenerator(final ConnectionNameGenerator connectionNameGenerator) {
+            this.connectionNameGenerator = connectionNameGenerator;
+            return this;
+        }
+
+        /**
+         * Set all kinds of DCP control params - check their description for more information.
+         *
+         * @param name
+         *            the name of the param
+         * @param value
+         *            the value of the param
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder controlParam(final DcpControl.Names name, Object value) {
+            this.dcpControl.put(name, value.toString());
+            return this;
+        }
+
+        /**
+         * A custom configuration provider can be shared and passed in across clients. use with care!
+         *
+         * @param configProvider
+         *            the custom config provider.
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder configProvider(final ConfigProvider configProvider) {
+            this.configProvider = configProvider;
+            return this;
+        }
+
+        /**
+         * If buffer pooling should be enabled (yes by default).
+         *
+         * @param pool
+         *            enable or disable buffer pooling.
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder poolBuffers(final boolean pool) {
+            this.poolBuffers = pool;
+            return this;
+        }
+
+        /**
+         * Sets a custom DCP channel attempt timeout
+         *
+         * @param dcpChannelAttemptTimeout
+         *            the dcp channel socket connect timeout in milliseconds.
+         */
+        public Builder dcpChannelAttemptTimeout(long dcpChannelAttemptTimeout) {
+            this.dcpChannelAttemptTimeout = dcpChannelAttemptTimeout;
+            return this;
+        }
+
+        /**
+         * Sets a custom DCP channel total attempts timeout
+         *
+         * @param dcpChannelTotalTimeout
+         *            the timeout for the total dcp channel socket connect attempts in milliseconds.
+         */
+        public Builder dcpChannelTotalTimeout(long dcpChannelTotalTimeout) {
+            this.dcpChannelTotalTimeout = dcpChannelTotalTimeout;
+            return this;
+        }
+
+        /**
+         * Time to wait for first configuration during a fetch attempt
+         *
+         * @param configProviderAttemptTimeout
+         *            time in milliseconds.
+         */
+        public Builder configProviderAttemptTimeout(long configProviderAttemptTimeout) {
+            this.configProviderAttemptTimeout = configProviderAttemptTimeout;
+            return this;
+        }
+
+        /**
+         * Time to wait for total configuration fetch attempts
+         *
+         * @param configProviderTotalTimeout
+         *            time in milliseconds.
+         */
+        public Builder configProviderTotalTimeout(long configProviderTotalTimeout) {
+            this.configProviderTotalTimeout = configProviderTotalTimeout;
+            return this;
+        }
+
+        /**
+         * Delay between retry attempts for configuration provider
+         *
+         * @param configProviderReconnectDelay
+         */
+        public Builder configProviderReconnectDelay(Delay configProviderReconnectDelay) {
+            this.configProviderReconnectDelay = configProviderReconnectDelay;
+            return this;
+        }
+
+        /**
+         * Delay between retry attempts for DCP channels
+         *
+         * @param dcpChannelsReconnectDelay
+         */
+        public Builder dcpChannelsReconnectDelay(Delay dcpChannelsReconnectDelay) {
+            this.dcpChannelsReconnectDelay = dcpChannelsReconnectDelay;
+            return this;
+        }
+
+        /**
+         * Sets the event bus to an alternative implementation.
+         *
+         * This setting should only be tweaked in advanced cases.
+         */
+        public Builder eventBus(final EventBus eventBus) {
+            this.eventBus = eventBus;
+            return this;
+        }
+
+        /**
+         * Set if SSL should be enabled (default value {@value ClientEnvironment#DEFAULT_SSL_ENABLED}).
+         * If true, also set {@link #sslKeystoreFile(String)} and {@link #sslKeystorePassword(String)}.
+         */
+        public Builder sslEnabled(final boolean sslEnabled) {
+            this.sslEnabled = sslEnabled;
+            return this;
+        }
+
+        /**
+         * Defines the location of the SSL Keystore file (default value null, none).
+         *
+         * You can either specify a file or the keystore directly via {@link #sslKeystore(KeyStore)}. If the explicit
+         * keystore is used it takes precedence over the file approach.
+         */
+        public Builder sslKeystoreFile(final String sslKeystoreFile) {
+            this.sslKeystoreFile = sslKeystoreFile;
+            return this;
+        }
+
+        /**
+         * Sets the SSL Keystore password to be used with the Keystore file (default value null, none).
+         *
+         * @see #sslKeystoreFile(String)
+         */
+        public Builder sslKeystorePassword(final String sslKeystorePassword) {
+            this.sslKeystorePassword = sslKeystorePassword;
+            return this;
+        }
+
+        /**
+         * Sets the SSL Keystore directly and not indirectly via filepath.
+         *
+         * You can either specify a file or the keystore directly via {@link #sslKeystore(KeyStore)}. If the explicit
+         * keystore is used it takes precedence over the file approach.
+         *
+         * @param sslKeystore
+         *            the keystore to use.
+         */
+        public Builder sslKeystore(final KeyStore sslKeystore) {
+            this.sslKeystore = sslKeystore;
+            return this;
+        }
+
+        /**
+         * Sets the Port that will be used to get bucket configurations.
+         *
+         * @param configPort
+         *            the port to use
+         */
+        public Builder configPort(final int configPort) {
+            this.configPort = configPort;
+            return this;
+        }
+
+        /**
+         * Sets the Port that will be used to get bucket configurations for encrypted connections
+         *
+         * @param sslConfigPort
+         *            the port to use
+         */
+        public Builder sslConfigPort(final int sslConfigPort) {
+            this.sslConfigPort = sslConfigPort;
+            return this;
+        }
+
+        /**
+         * Create the client instance ready to use.
+         *
+         * @return the built client instance.
+         */
+        public Client build() {
+            return new Client(this);
+        }
+
+        public List<InetSocketAddress> clusterAt() {
+            return clusterAt;
+        }
+
+        public Builder connectionString(String connectionString) {
+            this.connectionString = connectionString;
+            return this;
+        }
+
+        public ConnectionNameGenerator connectionNameGenerator() {
+            return connectionNameGenerator;
+        }
+
+        public String bucket() {
+            return bucket;
+        }
+
+        public CredentialsProvider credentialsProvider() {
+            return credentialsProvider;
+        }
+
+        public DcpControl dcpControl() {
+            return dcpControl;
+        }
+
+        public int bufferAckWatermark() {
+            return bufferAckWatermark;
+        }
+
+        public boolean poolBuffers() {
+            return poolBuffers;
+        }
+
+        public long configProviderAttemptTimeout() {
+            return configProviderAttemptTimeout;
+        }
+
+        public long configProviderTotalTimeout() {
+            return configProviderTotalTimeout;
+        }
+
+        public Delay configProviderReconnectDelay() {
+            return configProviderReconnectDelay;
+        }
+
+        public Delay dcpChannelsReconnectDelay() {
+            return dcpChannelsReconnectDelay;
+        }
+
+        public long dcpChannelAttemptTimeout() {
+            return dcpChannelAttemptTimeout;
+        }
+
+        public long dcpChannelTotalTimeout() {
+            return dcpChannelTotalTimeout;
+        }
+
+        public EventBus eventBus() {
+            return eventBus;
+        }
+
+        public boolean sslEnabled() {
+            return sslEnabled;
+        }
+
+        public String sslKeystoreFile() {
+            return sslKeystoreFile;
+        }
+
+        public String sslKeystorePassword() {
+            return sslKeystorePassword;
+        }
+
+        public KeyStore sslKeystore() {
+            return sslKeystore;
+        }
+
+        public int configPort() {
+            return configPort;
+        }
+
+        public int sslConfigPort() {
+            return sslConfigPort;
+        }
+
+        public ConfigProvider configProvider() {
+            return configProvider;
+        }
+
+        public Builder vbuckets(final short[] vbuckets) {
+            this.vbuckets = vbuckets;
+            return this;
+        }
+
+        public short[] vbuckets() {
+            return vbuckets;
+        }
+
+        public String connectionString() {
+            return connectionString;
+        }
     }
 }

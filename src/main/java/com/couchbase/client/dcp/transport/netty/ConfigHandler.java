@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.parser.BucketConfigParser;
+import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.conductor.IConfigurable;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;

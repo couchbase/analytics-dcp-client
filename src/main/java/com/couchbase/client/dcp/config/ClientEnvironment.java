@@ -5,7 +5,6 @@ package com.couchbase.client.dcp.config;
 
 import java.net.InetSocketAddress;
 import java.security.KeyStore;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -13,7 +12,6 @@ import com.couchbase.client.core.env.ConfigParserEnvironment;
 import com.couchbase.client.core.node.DefaultMemcachedHashingStrategy;
 import com.couchbase.client.core.node.MemcachedHashingStrategy;
 import com.couchbase.client.core.time.Delay;
-import com.couchbase.client.core.utils.ConnectionString;
 import com.couchbase.client.dcp.ConnectionNameGenerator;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.CredentialsProvider;
@@ -25,7 +23,6 @@ import com.couchbase.client.dcp.events.DefaultEventBus;
 import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
-
 import rx.Completable;
 import rx.Observable;
 
@@ -60,7 +57,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     /**
      * Stores the list of bootstrap nodes (where the cluster is).
      */
-    private final List<String> hostnames;
+    private final List<InetSocketAddress> clusterAt;
 
     /**
      * Stores the generator for each DCP connection name.
@@ -164,7 +161,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      *            the builder to build the environment.
      */
     private ClientEnvironment(final Builder builder) {
-        hostnames = builder.clusterAt;
         connectionNameGenerator = builder.connectionNameGenerator;
         bucket = builder.bucket;
         credentialsProvider = builder.credentialsProvider;
@@ -185,6 +181,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         sslKeystoreFile = builder.sslKeystoreFile;
         sslKeystorePassword = builder.sslKeystorePassword;
         sslKeystore = builder.sslKeystore;
+        clusterAt = builder.clusterAt;
         vbuckets = builder.vbuckets;
         flowControlCallback = builder.flowControlCallback;
         // Timeouts, retries, and delays
@@ -207,8 +204,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     /**
      * Lists the bootstrap nodes.
      */
-    public List<String> hostnames() {
-        return hostnames;
+    public List<InetSocketAddress> clusterAt() {
+        return clusterAt;
     }
 
     /**
@@ -381,7 +378,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     }
 
     public static class Builder {
-        private List<String> clusterAt;
+        private List<InetSocketAddress> clusterAt;
         private ConnectionNameGenerator connectionNameGenerator = DefaultConnectionNameGenerator.INSTANCE;
         private String bucket;
         private CredentialsProvider credentialsProvider;
@@ -413,18 +410,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private Delay dcpChannelsReconnectDelay = DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
         private long partitionRequestsTimeout = DEFAULT_PARTITION_REQUESTS_TIMEOUT;
 
-        public Builder setClusterAt(List<String> hostnames, String connectionString) {
-            if (connectionString != null) {
-                this.clusterAt = new ArrayList<>();
-                List<InetSocketAddress> addresses = ConnectionString.create(connectionString).hosts();
-                for (InetSocketAddress address : addresses) {
-                    String host = address.getAddress().getHostAddress();
-                    host = address.getPort() != 0 ? host + ":" + address.getPort() : host;
-                    clusterAt.add(host);
-                }
-            } else {
-                this.clusterAt = hostnames;
-            }
+        public Builder setClusterAt(List<InetSocketAddress> clusterAt) {
+            this.clusterAt = clusterAt;
             return this;
         }
 
@@ -577,6 +564,15 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         }
 
         public ClientEnvironment build() {
+            int defaultConfigPort = sslEnabled ? bootstrapHttpSslPort : bootstrapHttpDirectPort;
+            for (int i = 0; i < clusterAt.size(); i++) {
+                InetSocketAddress node = clusterAt.get(i);
+                if (node.getPort() == 0) {
+                    clusterAt.set(i, new InetSocketAddress(node.getHostString(), defaultConfigPort));
+                } else if (node.getAddress() == null) {
+                    clusterAt.set(i, new InetSocketAddress(node.getHostString(), node.getPort()));
+                }
+            }
             return new ClientEnvironment(this);
         }
     }
@@ -608,7 +604,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
     @Override
     public String toString() {
-        return "ClientEnvironment{" + "hostnames=" + hostnames + ", connectionNameGenerator="
+        return "ClientEnvironment{" + "clusterAt=" + clusterAt + ", connectionNameGenerator="
                 + connectionNameGenerator.getClass().getSimpleName() + ", bucket='" + bucket + '\'' + ", passwordSet="
                 + (credentialsProvider != null) + ", dcpControl=" + dcpControl + ", eventLoopGroup="
                 + eventLoopGroup.getClass().getSimpleName() + ", eventLoopGroupIsPrivate=" + eventLoopGroupIsPrivate

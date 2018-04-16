@@ -3,13 +3,21 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import static org.apache.hyracks.util.NetworkUtil.encodeIPv6LiteralHost;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.Iterator;
+
 import org.apache.commons.lang3.mutable.MutableObject;
+import org.apache.hyracks.util.JSONUtil;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.parser.BucketConfigParser;
+import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
@@ -17,6 +25,10 @@ import com.couchbase.client.deps.io.netty.channel.SimpleChannelInboundHandler;
 import com.couchbase.client.deps.io.netty.handler.codec.http.HttpContent;
 import com.couchbase.client.deps.io.netty.handler.codec.http.HttpObject;
 import com.couchbase.client.deps.io.netty.util.CharsetUtil;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
     public static final Logger LOGGER = LogManager.getLogger();
@@ -40,17 +52,15 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
 
     /**
      * Creates a new config handler.
-     *
-     * @param hostname
-     *            hostname of the remote server.
-     * @param configStream
+     *  @param configStream
      *            config stream where to send the configs.
+     * @param address
+     *            address of the remote server.
      * @param environment
-     *            the environment.
      */
-    NonStreamingConfigHandler(final String hostname, ClientEnvironment environment,
-            MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
-        this.hostname = hostname;
+    NonStreamingConfigHandler(final InetSocketAddress address, ClientEnvironment environment,
+                              MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
+        this.hostname = address.getHostString();
         this.config = config;
         this.failure = failure;
         this.environment = environment;
@@ -69,7 +79,8 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        String rawConfig = responseContent.toString(CharsetUtil.UTF_8).replace("$HOST", hostname);
+        String rawConfig = fixupJVMCBC521(responseContent.toString(CharsetUtil.UTF_8)).replace("$HOST", encodeIPv6LiteralHost(hostname));
+
         LOGGER.log(Level.DEBUG, "Received Config: {}", rawConfig);
         synchronized (config) {
             if (failure.getValue() == null) {
@@ -82,6 +93,23 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
             }
         }
         ctx.fireChannelInactive();
+    }
+
+    private String fixupJVMCBC521(String orig) throws IOException {
+        try {
+            JsonNode config = new ObjectMapper().readTree(orig);
+            ArrayNode nodesExt = (ArrayNode) config.get("nodesExt");
+            for (Iterator<JsonNode> iter = nodesExt.elements(); iter.hasNext(); ) {
+                ObjectNode node = (ObjectNode) iter.next();
+                if (!node.has("hostname")) {
+                    node.put("hostname", "$HOST");
+                }
+            }
+            return JSONUtil.convertNode(config);
+        } catch (Exception e) {
+            LOGGER.warn("ignoring exception trying to fixup JVMCBC-521", e);
+            return orig;
+        }
     }
 
     /**
