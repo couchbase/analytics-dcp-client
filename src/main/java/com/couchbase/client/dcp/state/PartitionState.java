@@ -5,20 +5,20 @@ package com.couchbase.client.dcp.state;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.dcp.events.FailoverLogUpdateEvent;
-import com.couchbase.client.dcp.events.NotMyVBucketEvent;
-import com.couchbase.client.dcp.events.RollbackEvent;
+import com.couchbase.client.dcp.events.OpenStreamResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -61,16 +61,15 @@ public class PartitionState {
 
     private volatile boolean clientDisconnected;
 
-    private volatile boolean failed;
+    private volatile Throwable failoverLogRequestFailure;
 
-    private volatile Throwable failure;
+    private volatile Throwable seqsRequestFailure;
 
     private StreamRequest streamRequest;
 
     private final StreamEndEvent endEvent;
     private final FailoverLogUpdateEvent failoverLogUpdateEvent;
-    private final RollbackEvent rollbackEvent;
-    private final NotMyVBucketEvent notMyVBucketEvent;
+    private final OpenStreamResponse openStreamResponse;
 
     /**
      * Initialize a new partition state.
@@ -83,8 +82,7 @@ public class PartitionState {
         currentSeqUpdated = false;
         endEvent = new StreamEndEvent(this);
         failoverLogUpdateEvent = new FailoverLogUpdateEvent(this);
-        rollbackEvent = new RollbackEvent(this);
-        notMyVBucketEvent = new NotMyVBucketEvent(this);
+        openStreamResponse = new OpenStreamResponse(this);
     }
 
     public long getSnapshotStartSeqno() {
@@ -108,7 +106,7 @@ public class PartitionState {
      * index of more recent history entry > index of less recent history entry
      */
     public List<FailoverLogEntry> getFailoverLog() {
-        return Collections.unmodifiableList(failoverLog);
+        return failoverLog;
     }
 
     public boolean hasFailoverLogs() {
@@ -127,18 +125,8 @@ public class PartitionState {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.log(Level.DEBUG, "Adding failover log entry: (" + vbuuid + "-" + seqno + ")");
         }
-        synchronized (failoverLog) {
-            // if the failover log exists, remove all failover logs after it
-            for (int i = failoverLog.size() - 1; i >= 0; i--) {
-                if (failoverLog.get(i).getSeqno() >= seqno) {
-                    failoverLog.remove(i);
-                } else {
-                    break;
-                }
-            }
-            failoverLog.add(new FailoverLogEntry(seqno, vbuuid));
-            this.uuid = vbuuid;
-        }
+        failoverLog.add(new FailoverLogEntry(seqno, vbuuid));
+        this.uuid = vbuuid;
     }
 
     /**
@@ -239,24 +227,26 @@ public class PartitionState {
     public void failoverRequest() {
         LOGGER.debug("Failover log requested");
         failoverUpdated = false;
+        failoverLogRequestFailure = null;
     }
 
     public void currentSeqRequest() {
         LOGGER.debug("Current Seq requested");
         currentSeqUpdated = false;
+        seqsRequestFailure = null;
     }
 
     public synchronized void waitTillFailoverUpdated(long timeout) throws Throwable {
-        long startTime = System.currentTimeMillis();
+        Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
         LOGGER.debug("Waiting until failover log updated");
-        while (!clientDisconnected && !failed && !failoverUpdated && System.currentTimeMillis() - startTime < timeout) {
-            wait(timeout);
+        while (!clientDisconnected && failoverLogRequestFailure == null && !failoverUpdated && !span.elapsed()) {
+            TimeUnit.NANOSECONDS.timedWait(this, span.remaining(TimeUnit.NANOSECONDS));
         }
         if (clientDisconnected) {
             throw new CancellationException("Client disconnected while waiting for reply");
         }
-        if (failed) {
-            throw failure;
+        if (failoverLogRequestFailure != null) {
+            throw failoverLogRequestFailure;
         }
         if (!failoverUpdated) {
             throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining failover logs for this partition");
@@ -264,17 +254,16 @@ public class PartitionState {
     }
 
     public synchronized void waitTillCurrentSeqUpdated(long timeout) throws Throwable {
-        long startTime = System.currentTimeMillis();
+        Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
         LOGGER.debug("Waiting until failover log updated");
-        while (!clientDisconnected && !failed && !currentSeqUpdated
-                && System.currentTimeMillis() - startTime < timeout) {
-            wait(timeout);
+        while (!clientDisconnected && seqsRequestFailure == null && !currentSeqUpdated && !span.elapsed()) {
+            TimeUnit.NANOSECONDS.timedWait(this, span.remaining(TimeUnit.NANOSECONDS));
         }
         if (clientDisconnected) {
             throw new CancellationException("Client disconnected while waiting for reply");
         }
-        if (failed) {
-            throw failure;
+        if (seqsRequestFailure != null) {
+            throw failoverLogRequestFailure;
         }
         if (!currentSeqUpdated) {
             throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining failover logs for this partition");
@@ -289,8 +278,8 @@ public class PartitionState {
         return failoverLogUpdateEvent;
     }
 
-    public RollbackEvent getRollbackEvent() {
-        return rollbackEvent;
+    public OpenStreamResponse getOpenStreamResponse() {
+        return openStreamResponse;
     }
 
     public long getUuid() {
@@ -305,13 +294,13 @@ public class PartitionState {
         return failoverLog.get(i);
     }
 
-    public NotMyVBucketEvent getNotMyVBucketEvent() {
-        return notMyVBucketEvent;
+    public synchronized void failoverRequestFailed(Throwable th) {
+        failoverLogRequestFailure = th;
+        notifyAll();
     }
 
-    public synchronized void fail(Throwable th) {
-        failed = true;
-        failure = th;
+    public synchronized void seqsRequestFailed(Throwable th) {
+        seqsRequestFailure = th;
         notifyAll();
     }
 
@@ -327,5 +316,9 @@ public class PartitionState {
 
     public boolean isClientDisconnected() {
         return clientDisconnected;
+    }
+
+    public void clearFailoverLog() {
+        failoverLog.clear();
     }
 }

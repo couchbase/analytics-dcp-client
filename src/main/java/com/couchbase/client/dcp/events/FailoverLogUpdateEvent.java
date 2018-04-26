@@ -20,7 +20,7 @@ public class FailoverLogUpdateEvent implements DcpEvent {
 
     @Override
     public Type getType() {
-        return Type.FAILOVER_UPDATE;
+        return Type.FAILOVER_LOG_RESPONSE;
     }
 
     public PartitionState getPartitionState() {

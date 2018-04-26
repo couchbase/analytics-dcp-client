@@ -1,85 +1,122 @@
 /*
- * Copyright (c) 2017 Couchbase, Inc.
+ * Copyright (c) 2017-2018 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.util;
 
 public class MemcachedStatus {
+    public static final short SUCCESS = 0x00;
+    public static final short NOT_FOUND = 0x01;
+    public static final short KEY_EXISTS = 0x02;
+    public static final short VALUE_TOO_LARGE = 0x03;
+    public static final short INVALID_ARGUMENTS = 0x04;
+    public static final short ITEM_NOT_STORED = 0x05;
+    public static final short INC_DEC_NON_NUMERIC = 0x06;
+    public static final short NOT_MY_VBUCKET = 0x07;
+    public static final short NOT_CONNECTED_TO_BUCKET = 0x08;
+    public static final short STALE_AUTHENTICATION = 0x1f;
+    public static final short AUTHENTICATION_ERROR = 0x20;
+    public static final short AUTHENTICATION_CONTINUE = 0x21;
+    public static final short OUT_OF_RANGE = 0x22;
+    public static final short ROLLBACK = 0x23;
+    public static final short NO_ACCESS = 0x24;
+    public static final short NODE_BEING_INITIALIZED = 0x25;
+    public static final short UNKNOWN_COMMAND = 0x81;
+    public static final short OUT_OF_MEMORY = 0x82;
+    public static final short NOT_SUPPORTED = 0x83;
+    public static final short INTERNAL_ERROR = 0x84;
+    public static final short BUSY = 0x85;
+    public static final short TEMP_FAILURE = 0x86;
+    public static final short SUBDOC_NOT_FOUND = 0xc0;
+    public static final short SUBDOC_NOT_COLLECTION = 0xc1;
+    public static final short SUBDOC_INCORRECT_SYNTAX = 0xc2;
+    public static final short SUBDOC_TOO_LONG_PATH = 0xc3;
+    public static final short SUBDOC_TOO_MANY_LEVELS = 0xc4;
+    public static final short SUBDOC_INVALID_JSON_MODIFICATION = 0xc5;
+    public static final short SUBDOC_INVALID_JSON = 0xc6;
+    public static final short SUBDOC_OUT_OF_SUPPORTED_NUMERIC_RANGE = 0xc7;
+    public static final short SUBDOC_OPERATION_RESULT_OUT_OF_SUPPORTED_RANGE = 0xc8;
+    public static final short SUBDOC_PATH_ALREADY_EXISTS = 0xc9;
+    public static final short SUBDOC_OPERATION_RESULT_TOO_DEEP = 0xca;
+    public static final short SUBDOC_INVALID_COMMAND_COMBINATION = 0xcb;
+    public static final short SUBDOC_PARTIAL_OPERATION_FAILURE = 0xcc;
+    public static final short SUBDOC_SUCCESS_ON_DELETED_DOC = 0xcd;
+
     private MemcachedStatus() {
     }
 
     public static String toString(short response) {
         switch (response) {
-            case 0x0000:
+            case SUCCESS:
                 return "No error";
-            case 0x0001:
+            case NOT_FOUND:
                 return "Key not found";
-            case 0x0002:
+            case KEY_EXISTS:
                 return "Key exists";
-            case 0x0003:
+            case VALUE_TOO_LARGE:
                 return "Value too large";
-            case 0x0004:
+            case INVALID_ARGUMENTS:
                 return "Invalid arguments";
-            case 0x0005:
+            case ITEM_NOT_STORED:
                 return "Item not stored";
-            case 0x0006:
+            case INC_DEC_NON_NUMERIC:
                 return "Incr/Decr on a non-numeric value";
-            case 0x0007:
+            case NOT_MY_VBUCKET:
                 return "The vbucket belongs to another server";
-            case 0x0008:
+            case NOT_CONNECTED_TO_BUCKET:
                 return "The connection is not connected to a bucket";
-            case 0x001f:
+            case STALE_AUTHENTICATION:
                 return "The authentication context is stale, please re-authenticate";
-            case 0x0020:
+            case AUTHENTICATION_ERROR:
                 return "Authentication error";
-            case 0x0021:
+            case AUTHENTICATION_CONTINUE:
                 return "Authentication continue";
-            case 0x0022:
+            case OUT_OF_RANGE:
                 return "The requested value is outside the legal ranges";
-            case 0x0023:
+            case ROLLBACK:
                 return "Rollback required";
-            case 0x0024:
+            case NO_ACCESS:
                 return "No access";
-            case 0x0025:
+            case NODE_BEING_INITIALIZED:
                 return "The node is being initialized";
-            case 0x0081:
+            case UNKNOWN_COMMAND:
                 return "Unknown command";
-            case 0x0082:
+            case OUT_OF_MEMORY:
                 return "Out of memory";
-            case 0x0083:
+            case NOT_SUPPORTED:
                 return "Not supported";
-            case 0x0084:
+            case INTERNAL_ERROR:
                 return "Internal error";
-            case 0x0085:
+            case BUSY:
                 return "Busy";
-            case 0x0086:
+            case TEMP_FAILURE:
                 return "Temporary failure";
-            case 0x00c0:
+            case SUBDOC_NOT_FOUND:
                 return "(Subdoc) The provided path does not exist in the document";
-            case 0x00c1:
+            case SUBDOC_NOT_COLLECTION:
                 return "(Subdoc) One of path components treats a non-dictionary as a dictionary, or a non-array as an array";
-            case 0x00c2:
+            case SUBDOC_INCORRECT_SYNTAX:
                 return "(Subdoc) The path’s syntax was incorrect";
-            case 0x00c3:
+            case SUBDOC_TOO_LONG_PATH:
                 return "(Subdoc) The path provided is too large; either the string is too long, or it contains too many components";
-            case 0x00c4:
+            case SUBDOC_TOO_MANY_LEVELS:
                 return "(Subdoc) The document has too many levels to parse";
-            case 0x00c5:
+            case SUBDOC_INVALID_JSON_MODIFICATION:
                 return "(Subdoc) The value provided will invalidate the JSON if inserted";
-            case 0x00c6:
+            case SUBDOC_INVALID_JSON:
                 return "(Subdoc) The existing document is not valid JSON";
-            case 0x00c7:
+            case SUBDOC_OUT_OF_SUPPORTED_NUMERIC_RANGE:
                 return "(Subdoc) The existing number is out of the valid range for arithmetic ops";
-            case 0x00c8:
+            case SUBDOC_OPERATION_RESULT_OUT_OF_SUPPORTED_RANGE:
                 return "(Subdoc) The operation would result in a number outside the valid range";
-            case 0x00c9:
+            case SUBDOC_PATH_ALREADY_EXISTS:
                 return "(Subdoc) The requested operation requires the path to not already exist, but it exists";
-            case 0x00ca:
+            case SUBDOC_OPERATION_RESULT_TOO_DEEP:
                 return "(Subdoc) Inserting the value would cause the document to be too deep";
-            case 0x00cb:
+            case SUBDOC_INVALID_COMMAND_COMBINATION:
                 return "(Subdoc) An invalid combination of commands was specified";
-            case 0x00cc:
+            case SUBDOC_PARTIAL_OPERATION_FAILURE:
                 return "(Subdoc) Specified key was successfully found, but one or more path operations failed. Examine the individual lookup_result (MULTI_LOOKUP) / mutation_result (MULTI_MUTATION) structures for details";
-            case 0x00cd:
+            case SUBDOC_SUCCESS_ON_DELETED_DOC:
                 return "(Subdoc) Operation completed successfully on a deleted document";
             default:
                 return "Unknown response status";

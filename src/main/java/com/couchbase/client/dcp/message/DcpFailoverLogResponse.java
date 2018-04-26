@@ -58,6 +58,7 @@ public enum DcpFailoverLogResponse {
     }
 
     public static void fill(final ByteBuf buffer, PartitionState ps) {
+        ps.clearFailoverLog();
         int numEntries = numLogEntries(buffer);
         if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
             LOGGER.log(CouchbaseLogLevel.DEBUG,
