@@ -8,7 +8,7 @@ import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DcpAckHandle;
-import com.couchbase.client.dcp.events.NotMyVBucketEvent;
+import com.couchbase.client.dcp.events.OpenStreamResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpCloseStreamResponse;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
@@ -69,34 +69,30 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     private void handleOpenStreamResponse(ByteBuf buf) {
         short vbid = (short) MessageUtil.getOpaque(buf);
+        PartitionState partitionState = channel.getSessionState().get(vbid);
+        OpenStreamResponse response = partitionState.getOpenStreamResponse();
         short status = MessageUtil.getStatus(buf);
         if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
             LOGGER.debug("OpenStream {} (0x{}) for vbucket ", MemcachedStatus.toString(status),
                     Integer.toHexString(status), vbid);
         }
-        switch (status) {
-            case 0x00:
-                handleOpenStreamSuccess(buf, vbid);
-                break;
-            case 0x23:
-                handleOpenStreamRollback(buf, vbid);
-                break;
-            case 0x07:
-                channel.openStreams()[vbid] = false;
-                PartitionState ps = channel.getSessionState().get(vbid);
-                ps.setState(PartitionState.DISCONNECTED);
-                NotMyVBucketEvent nmvbe = ps.getNotMyVBucketEvent();
-                nmvbe.setChannel(channel);
-                channel.getEnv().eventBus().publish(nmvbe);
-                break;
-            default:
-                channel.openStreams()[vbid] = false;
-                channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
-                if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
-                    LOGGER.warn("OpenStream unexpected response: {} (0x{}) for vbucket ",
-                            MemcachedStatus.toString(status), Integer.toHexString(status), vbid);
-                }
+        if (status == MemcachedStatus.SUCCESS) {
+            if (!channel.openStreams()[vbid]) {
+                throw new IllegalStateException("OpenStreamResponse and a request couldn't be found");
+            }
+            partitionState.setState(PartitionState.CONNECTED);
+            updateFailoverLog(buf, vbid);
+        } else {
+            // Failure
+            if (status == MemcachedStatus.ROLLBACK) {
+                response.setRollbackSeq(DcpOpenStreamResponse.rollbackSeqno(buf));
+            }
+            channel.openStreams()[vbid] = false;
+            partitionState.setState(PartitionState.DISCONNECTED);
         }
+        response.setChannel(channel);
+        response.setStatus(status);
+        channel.getEnv().eventBus().publish(response);
     }
 
     private void handleFailoverLogResponse(ByteBuf buf) {
@@ -106,17 +102,16 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             LOGGER.debug("FailoverLog {} (0x{}) for vbucket ", MemcachedStatus.toString(status),
                     Integer.toHexString(status), vbid);
         }
-        switch (status) {
-            case 0x00:
-                handleFailoverLogResponseSuccess(buf, vbid);
-                break;
-            case 0x07:
-                break;
-            default:
-                if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
-                    LOGGER.warn("FailoverLog unexpected response: {} (0x{}) for vbucket ",
-                            MemcachedStatus.toString(status), Integer.toHexString(status), vbid);
-                }
+        if (status == MemcachedStatus.SUCCESS) {
+            handleFailoverLogResponseSuccess(buf, vbid);
+        } else {
+            if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
+                LOGGER.warn("FailoverLog unexpected response: {} (0x{}) for vbucket ", MemcachedStatus.toString(status),
+                        Integer.toHexString(status), vbid);
+            }
+            PartitionState ps = channel.getSessionState().get(vbid);
+            ps.failoverRequestFailed(new Exception("Failover response " + MemcachedStatus.toString(status) + "(0x"
+                    + Integer.toHexString(status) + ")"));
         }
     }
 
@@ -134,33 +129,25 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         copiedBuf.release();
         PartitionState ps = channel.getSessionState().get(vbid);
         DcpFailoverLogResponse.fill(failoverLog, ps);
-        channel.getFailoverLogRequests()[vbid] = false;
         ps.failoverUpdated();
         channel.getEnv().eventBus().publish(ps.getFailoverLogUpdateEvent());
     }
 
-    private void handleOpenStreamRollback(ByteBuf buf, short vbid) {
-        channel.openStreams()[vbid] = false;
-        PartitionState partitionState = channel.getSessionState().get(vbid);
-        partitionState.setState(PartitionState.DISCONNECTED);
-        partitionState.getRollbackEvent().setSeq(DcpOpenStreamResponse.rollbackSeqno(buf));
-        channel.getEnv().eventBus().publish(partitionState.getRollbackEvent());
-    }
-
-    private void handleOpenStreamSuccess(ByteBuf buf, short vbid) {
-        channel.openStreams()[vbid] = true;
-        channel.getSessionState().get(vbid).setState(PartitionState.CONNECTED);
-        updateFailoverLog(buf, vbid);
-    }
-
     private void handleDcpGetPartitionSeqnosResponse(ByteBuf buf) {
-        ByteBuf content = MessageUtil.getContent(buf);
-        int size = content.readableBytes() / 10;
-        for (int i = 0; i < size; i++) {
-            int offset = i * 10;
-            short vbid = content.getShort(offset);
-            long seq = content.getLong(offset + Short.BYTES);
-            channel.getSessionState().get(vbid).setCurrentVBucketSeqnoInMaster(seq);
+        // get status
+        short status = MessageUtil.getStatus(buf);
+        if (status == MemcachedStatus.SUCCESS) {
+            ByteBuf content = MessageUtil.getContent(buf);
+            int size = content.readableBytes() / 10;
+            for (int i = 0; i < size; i++) {
+                int offset = i * 10;
+                short vbid = content.getShort(offset);
+                long seq = content.getLong(offset + Short.BYTES);
+                channel.getSessionState().get(vbid).setCurrentVBucketSeqnoInMaster(seq);
+            }
+        } else {
+            // TODO: find a way to get partitions associated with this node and report failure.
+            // Currently, we rely on timeout
         }
         channel.stateFetched();
     }

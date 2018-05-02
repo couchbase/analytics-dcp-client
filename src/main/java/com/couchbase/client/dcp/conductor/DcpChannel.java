@@ -266,7 +266,7 @@ public class DcpChannel {
             for (int i = 0; i < openStreams.length; i++) {
                 PartitionState ps = sessionState.get(i);
                 if (!ps.isClientDisconnected()) {
-                    ps.fail(new NotConnectedException());
+                    ps.seqsRequestFailed(new NotConnectedException());
                 }
             }
             return;
@@ -283,7 +283,7 @@ public class DcpChannel {
         if (getState() != State.CONNECTED) {
             PartitionState ps = sessionState.get(vbid);
             if (!ps.isClientDisconnected()) {
-                ps.fail(new NotConnectedException());
+                ps.failoverRequestFailed(new NotConnectedException());
             }
             return;
         }

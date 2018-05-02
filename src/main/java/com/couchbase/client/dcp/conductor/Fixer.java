@@ -15,11 +15,11 @@ import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.events.DcpEvent;
 import com.couchbase.client.dcp.events.DeadConnectionDetection;
-import com.couchbase.client.dcp.events.NotMyVBucketEvent;
-import com.couchbase.client.dcp.events.PartitionDcpEvent;
+import com.couchbase.client.dcp.events.OpenStreamResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.util.MemcachedStatus;
 
 public class Fixer implements Runnable, SystemEventHandler {
     private static final Logger LOGGER = LogManager.getLogger();
@@ -48,9 +48,8 @@ public class Fixer implements Runnable, SystemEventHandler {
             inbox.clear();
             inbox.offer(POISON_PILL);
             if (!running) {
-                LOGGER.warn(
-                        "Poisoning the fixer and finding that it was running but it is not running anymore."
-                                + " Cleaning the inbox");
+                LOGGER.warn("Poisoning the fixer and finding that it was running but it is not running anymore."
+                        + " Cleaning the inbox");
                 inbox.clear();
             }
         } else {
@@ -121,36 +120,36 @@ public class Fixer implements Runnable, SystemEventHandler {
                     LOGGER.info("Handling {}", event);
                     fixDroppedChannel((ChannelDroppedEvent) event);
                     break;
-                case NOT_MY_VBUCKET:
-                    // Refresh the config, find the new assigned kv node
-                    // (could still be the same one), and re-attempt connection
-                    // this should never cause a permanent failure
+                case OPEN_STREAM_RESPONSE:
                     LOGGER.info("Handling {}", event);
-                    NotMyVBucketEvent notMyVbucketEvent = (NotMyVBucketEvent) event;
-                    refreshConfig();
-                    try {
-                        synchronized (conductor.getChannels()) {
-                            CouchbaseBucketConfig config = conductor.config();
-                            int index = config.nodeIndexForMaster(notMyVbucketEvent.getVbid(), false);
-                            NodeInfo node = config.nodeAtIndex(index);
-                            conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
-                            PartitionState state = notMyVbucketEvent.getPartitionState();
-                            state.prepareNextStreamRequest();
-                            conductor.startStreamForPartition(state.getStreamRequest());
+                    OpenStreamResponse response = (OpenStreamResponse) event;
+                    if (response.getStatus() == MemcachedStatus.ROLLBACK) {
+                        // abort all, close the channels
+                        conductor.disconnect(true);
+                    } else {
+                        // Refresh the config, find the assigned kv node
+                        // (could still be the same one), and re-attempt connection
+                        // this should never cause a permanent failure
+                        refreshConfig();
+                        try {
+                            synchronized (conductor.getChannels()) {
+                                CouchbaseBucketConfig config = conductor.config();
+                                int index = config.nodeIndexForMaster(response.getPartitionState().vbid(), false);
+                                NodeInfo node = config.nodeAtIndex(index);
+                                conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
+                                PartitionState state = response.getPartitionState();
+                                state.prepareNextStreamRequest();
+                                conductor.startStreamForPartition(state.getStreamRequest());
+                            }
+                        } catch (InterruptedException e) {
+                            LOGGER.warn("Interrupted while handling not my vbucket event", e);
+                            giveUp(e);
+                            throw e;
+                        } catch (Throwable th) {
+                            LOGGER.warn("Failure during attempt to handle not my vbucket event", th);
+                            failed.add(response);
                         }
-                    } catch (InterruptedException e) {
-                        LOGGER.warn("Interrupted while handling not my vbucket event", e);
-                        giveUp(notMyVbucketEvent, e);
-                        throw e;
-                    } catch (Throwable th) {
-                        LOGGER.error("Failure during attempt to handle not my vbucket event", th);
-                        failed.add(notMyVbucketEvent);
                     }
-                    break;
-                case ROLLBACK:
-                    LOGGER.info("Handling {}", event);
-                    // abort all, close the channels
-                    conductor.disconnect(true);
                     break;
                 case STREAM_END:
                     LOGGER.info("Handling {}", event);
@@ -205,7 +204,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                         conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
                     } catch (InterruptedException e) {
                         LOGGER.warn(this + " interrupted while adding node " + node.hostname(), e);
-                        giveUp(streamEndEvent, e);
+                        giveUp(e);
                         throw e;
                     } catch (Throwable th) {
                         LOGGER.warn(this + " failed to add node " + node.hostname(), th);
@@ -224,15 +223,13 @@ public class Fixer implements Runnable, SystemEventHandler {
                     state.prepareNextStreamRequest();
                     conductor.startStreamForPartition(state.getStreamRequest());
                 } else {
-                    LOGGER.info(
-                            this + " vbucket " + streamEndEvent.partition() + " has no master at the moment");
+                    LOGGER.info(this + " vbucket " + streamEndEvent.partition() + " has no master at the moment");
                     retry(streamEndEvent);
                 }
                 break;
             case TOO_SLOW:
                 // Log, requesting upgrade to analytics resources and re-open the stream
-                LOGGER.warn(
-                        this + " need more analytics ingestion nodes. we are slow for the producer node");
+                LOGGER.warn(this + " need more analytics ingestion nodes. we are slow for the producer node");
                 break;
             default:
                 LOGGER.error(this + " unexpected event type " + streamEndEvent);
@@ -260,7 +257,7 @@ public class Fixer implements Runnable, SystemEventHandler {
         if (event.getAttempts() > MAX_REATTEMPTS) {
             LOGGER.warn(this + " failed to fix a dropped dcp connection for the " + event.getAttempts()
                     + "th time. Giving up");
-            giveUp(event, th);
+            giveUp(th);
         } else {
             LOGGER.warn(this + " retrying for the " + event.getAttempts() + " time");
             failed.add(event);
@@ -270,9 +267,9 @@ public class Fixer implements Runnable, SystemEventHandler {
     private void retry(StreamEndEvent streamEndEvent, Throwable th) throws InterruptedException {
         streamEndEvent.incrementAttempts();
         if (streamEndEvent.getAttempts() > MAX_REATTEMPTS) {
-            LOGGER.warn(
-                    this + " failed to fix a vbucket stream " + streamEndEvent.getAttempts() + " times. Giving up", th);
-            giveUp(streamEndEvent, th);
+            LOGGER.warn(this + " failed to fix a vbucket stream " + streamEndEvent.getAttempts() + " times. Giving up",
+                    th);
+            giveUp(th);
         } else {
             LOGGER.warn(this + " retrying for the " + streamEndEvent.getAttempts() + " time");
             failed.add(streamEndEvent);
@@ -282,28 +279,11 @@ public class Fixer implements Runnable, SystemEventHandler {
     private void retry(StreamEndEvent streamEndEvent) throws InterruptedException {
         streamEndEvent.incrementAttempts();
         if (streamEndEvent.getAttempts() > MAX_REATTEMPTS) {
-            LOGGER.warn(
-                    this + " failed to fix a vbucket stream " + streamEndEvent.getAttempts() + " times. Giving up");
-            giveUp(streamEndEvent, new NotConnectedException());
+            LOGGER.warn(this + " failed to fix a vbucket stream " + streamEndEvent.getAttempts() + " times. Giving up");
+            giveUp(new NotConnectedException());
         } else {
             failed.add(streamEndEvent);
         }
-    }
-
-    private void giveUp(ChannelDroppedEvent event, Throwable e) throws InterruptedException {
-        DcpChannel channel = event.getChannel();
-        boolean[] streams = channel.openStreams();
-        for (int i = 0; i < streams.length; i++) {
-            if (streams[i]) {
-                conductor.getSessionState().get(i).fail(e);
-            }
-        }
-        giveUp(e);
-    }
-
-    private void giveUp(PartitionDcpEvent event, Throwable e) throws InterruptedException {
-        event.getPartitionState().fail(e);
-        giveUp(e);
     }
 
     private void giveUp(Throwable e) throws InterruptedException {
@@ -337,8 +317,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                             channel.connect(DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
                             channel.setChannelDroppedReported(false);
                         } catch (InterruptedException e) {
-                            LOGGER.error(
-                                    this + " interrupted while attempting to connect channel:" + channel, e);
+                            LOGGER.error(this + " interrupted while attempting to connect channel:" + channel, e);
                             giveUp(e);
                             throw e;
                         } catch (Throwable th) {
@@ -403,8 +382,13 @@ public class Fixer implements Runnable, SystemEventHandler {
     @Override
     public void onEvent(DcpEvent event) {
         if (running) {
-            if (event.getType() == DcpEvent.Type.ROLLBACK) {
-                inbox.clear();
+            if (event.getType() == DcpEvent.Type.OPEN_STREAM_RESPONSE) {
+                OpenStreamResponse response = (OpenStreamResponse) event;
+                if (response.getStatus() == MemcachedStatus.ROLLBACK) {
+                    inbox.clear();
+                } else if (response.getStatus() == MemcachedStatus.SUCCESS) {
+                    return;
+                }
             }
             inbox.offer(event); // NOSONAR: This will always succeed as the inbox is unbounded
             if (!running) {
