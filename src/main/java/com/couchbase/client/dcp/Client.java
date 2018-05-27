@@ -188,22 +188,20 @@ public class Client {
      * @param dataEventHandler
      *            the event handler to use.
      */
-    public void dataEventHandler(final DataEventHandler dataEventHandler) {
+    public void dataEventHandler(final ClientDataEventHandler dataEventHandler) {
         env.setDataEventHandler((ackHandle, event) -> {
+            boolean uuidChanged = false;
+            PartitionState ps = null;
             if (DcpMutationMessage.is(event)) {
                 short partition = DcpMutationMessage.partition(event);
-                PartitionState ps = sessionState().get(partition);
-                ps.setSeqno(DcpMutationMessage.bySeqno(event));
+                ps = sessionState().get(partition);
+                uuidChanged = ps.hasBucketUuidChanged(DcpMutationMessage.bySeqno(event));
             } else if (DcpDeletionMessage.is(event)) {
                 short partition = DcpDeletionMessage.partition(event);
-                PartitionState ps = sessionState().get(partition);
-                ps.setSeqno(DcpDeletionMessage.bySeqno(event));
-            } else if (DcpExpirationMessage.is(event)) {
-                short partition = DcpExpirationMessage.partition(event);
-                PartitionState ps = sessionState().get(partition);
-                ps.setSeqno(DcpExpirationMessage.bySeqno(event));
+                ps = sessionState().get(partition);
+                uuidChanged = ps.hasBucketUuidChanged(DcpDeletionMessage.bySeqno(event));
             }
-            dataEventHandler.onEvent(ackHandle, event);
+            dataEventHandler.onEvent(ackHandle, event, uuidChanged ? ps.getUuidChangeEvent() : null);
         });
     }
 
@@ -446,7 +444,8 @@ public class Client {
      * Builder object to customize the {@link Client} creation.
      */
     public static class Builder {
-        private List<InetSocketAddress> clusterAt = Collections.singletonList(InetSocketAddress.createUnresolved("127.0.0.1", 0));;
+        private List<InetSocketAddress> clusterAt =
+                Collections.singletonList(InetSocketAddress.createUnresolved("127.0.0.1", 0));;
         private CredentialsProvider credentialsProvider;
         private String connectionString;
         private EventLoopGroup eventLoopGroup;

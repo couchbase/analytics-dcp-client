@@ -19,6 +19,7 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.dcp.events.FailoverLogUpdateEvent;
 import com.couchbase.client.dcp.events.OpenStreamResponse;
+import com.couchbase.client.dcp.events.PartitionUUIDChangeEvent;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -65,10 +66,14 @@ public class PartitionState {
 
     private volatile Throwable seqsRequestFailure;
 
+    private long nextUuidChangeSeq;
+
     private StreamRequest streamRequest;
 
     private final StreamEndEvent endEvent;
     private final FailoverLogUpdateEvent failoverLogUpdateEvent;
+    private final PartitionUUIDChangeEvent uuidChangeEvent;
+
     private final OpenStreamResponse openStreamResponse;
 
     /**
@@ -82,6 +87,7 @@ public class PartitionState {
         currentSeqUpdated = false;
         endEvent = new StreamEndEvent(this);
         failoverLogUpdateEvent = new FailoverLogUpdateEvent(this);
+        uuidChangeEvent = new PartitionUUIDChangeEvent(this);
         openStreamResponse = new OpenStreamResponse(this);
     }
 
@@ -126,7 +132,35 @@ public class PartitionState {
             LOGGER.log(Level.DEBUG, "Adding failover log entry: (" + vbuuid + "-" + seqno + ")");
         }
         failoverLog.add(new FailoverLogEntry(seqno, vbuuid));
-        this.uuid = vbuuid;
+        resetCurrentUUid();
+    }
+
+    private void resetCurrentUUid() {
+        long theUuid = 0L;
+        for (int i = 0; i < failoverLog.size(); i++) {
+            FailoverLogEntry next = failoverLog.get(i);
+            if (next.getSeqno() >= seqno) {
+                break;
+            }
+            theUuid = next.getUuid();
+        }
+        uuid = theUuid;
+        nextUuidChangeSeq = getNextUuidChangeSeq();
+    }
+
+    private long getNextUuidChangeSeq() {
+        if (uuid == 0) {
+            return 0L;
+        }
+        int i = 0;
+        for (; i < failoverLog.size(); i++) {
+            FailoverLogEntry next = failoverLog.get(i);
+            if (next.getUuid() == uuid) {
+                break;
+            }
+        }
+        i++;
+        return i < failoverLog.size() ? failoverLog.get(i).getSeqno() : Long.MAX_VALUE;
     }
 
     /**
@@ -139,12 +173,18 @@ public class PartitionState {
     /**
      * Allows to set the current sequence number.
      */
-    public void setSeqno(long seqno) {
+    public boolean hasBucketUuidChanged(long seqno) {
         if (seqno <= this.seqno) {
             LOGGER.warn("A bug. sequence number received(" + seqno + ") <= the previous sequence number(" + this.seqno
                     + ")");
         }
         this.seqno = seqno;
+        if (seqno > nextUuidChangeSeq) {
+            resetCurrentUUid();
+            return true;
+        }
+        return false;
+
     }
 
     public byte getState() {
@@ -169,6 +209,8 @@ public class PartitionState {
 
     public void setStreamRequest(StreamRequest streamRequest) {
         this.streamRequest = streamRequest;
+        seqno = streamRequest.getStartSeqno();
+        uuid = streamRequest.getVbucketUuid();
     }
 
     public void prepareNextStreamRequest() {
@@ -320,5 +362,9 @@ public class PartitionState {
 
     public void clearFailoverLog() {
         failoverLog.clear();
+    }
+
+    public PartitionUUIDChangeEvent getUuidChangeEvent() {
+        return uuidChangeEvent;
     }
 }

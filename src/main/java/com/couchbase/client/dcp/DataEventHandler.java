@@ -29,6 +29,8 @@ public interface DataEventHandler {
      *
      * Make sure to release the buffers!!
      *
+     * @param ackHandle
+     *            a handle to use when ack-ing
      * @param event
      *            the data event happening right now.
      */
