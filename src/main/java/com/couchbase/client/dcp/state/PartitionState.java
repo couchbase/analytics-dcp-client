@@ -105,6 +105,7 @@ public class PartitionState {
 
     public void setSnapshotEndSeqno(long snapshotEndSeqno) {
         this.snapshotEndSeqno = snapshotEndSeqno;
+        currentVBucketSeqnoInMaster = Long.max(currentVBucketSeqnoInMaster, snapshotEndSeqno);
     }
 
     /**

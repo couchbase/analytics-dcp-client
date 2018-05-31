@@ -862,4 +862,18 @@ public class Client {
             return connectionString;
         }
     }
+
+    public long[] getStreamedSequenceNumbers() {
+        CouchbaseBucketConfig lastConfig = conductor.config();
+        if (lastConfig == null) {
+            return null;
+        }
+        long[] currentSequences = new long[numPartitions()];
+        short[] vbuckets = vbuckets();
+        for (int i = 0; i < vbuckets.length; i++) {
+            short next = vbuckets[i];
+            currentSequences[next] = Long.max(0L, getState(next).getSeqno());
+        }
+        return currentSequences;
+    }
 }

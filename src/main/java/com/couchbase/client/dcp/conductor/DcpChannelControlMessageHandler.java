@@ -77,11 +77,19 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                     Integer.toHexString(status), vbid);
         }
         if (status == MemcachedStatus.SUCCESS) {
-            if (!channel.openStreams()[vbid]) {
-                throw new IllegalStateException("OpenStreamResponse and a request couldn't be found");
+            synchronized (channel) {
+                if (!channel.openStreams()[vbid]) {
+                    if (channel.getSessionState().get(vbid).getState() == PartitionState.DISCONNECTED
+                            || channel.getSessionState().get(vbid).getState() == PartitionState.DISCONNECTING) {
+                        LOGGER.info("Stream stop was requested before the stream open response is received");
+                    } else {
+                        throw new IllegalStateException("OpenStreamResponse and a request couldn't be found");
+                    }
+                } else {
+                    partitionState.setState(PartitionState.CONNECTED);
+                    updateFailoverLog(buf, vbid);
+                }
             }
-            partitionState.setState(PartitionState.CONNECTED);
-            updateFailoverLog(buf, vbid);
         } else {
             // Failure
             if (status == MemcachedStatus.ROLLBACK) {
