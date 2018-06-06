@@ -12,6 +12,7 @@ import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.SystemEventHandler;
+import com.couchbase.client.dcp.error.BucketNotFoundException;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.events.DcpEvent;
 import com.couchbase.client.dcp.events.DeadConnectionDetection;
@@ -22,6 +23,7 @@ import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 
 public class Fixer implements Runnable, SystemEventHandler {
+
     private static final Logger LOGGER = LogManager.getLogger();
     private static final DcpEvent POISON_PILL = () -> DcpEvent.Type.DISCONNECT;
     private static final Delay DELAY = Delay.fixed(0, TimeUnit.MILLISECONDS);
@@ -245,6 +247,9 @@ public class Fixer implements Runnable, SystemEventHandler {
             LOGGER.error(this + " interrupted while refreshing configurations", e);
             giveUp(e);
             throw e;
+        } catch (BucketNotFoundException bde) {
+            // abort all, close the channels
+            throw bde;
         } catch (Throwable th) {
             LOGGER.error(this + " failed to refresh configurations", th);
         }
@@ -296,6 +301,8 @@ public class Fixer implements Runnable, SystemEventHandler {
         LOGGER.warn(this + " fixing channel dropped... Requesting new configurations");
         try {
             refreshConfig();
+        } catch (BucketNotFoundException bde) {
+            throw bde;
         } catch (Throwable th) {
             retry(event, th);
             return;

@@ -12,6 +12,7 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
+import com.couchbase.client.dcp.error.BucketNotFoundException;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
 import com.couchbase.client.deps.io.netty.channel.ChannelOutboundHandler;
@@ -32,6 +33,7 @@ import com.couchbase.client.deps.io.netty.util.concurrent.GenericFutureListener;
 public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpResponse> implements ChannelOutboundHandler {
     private static final Logger LOGGER = LogManager.getLogger();
     private final String bucket;
+    private final String uuid;
     private final String username;
     private final String password;
     private final MutableObject<CouchbaseBucketConfig> config;
@@ -42,9 +44,10 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
      */
     private ChannelPromise originalPromise;
 
-    RequestConfigHandler(final String bucket, final String username, final String password,
+    RequestConfigHandler(final String bucket, final String username, final String password, final String uuid,
             MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
         this.bucket = bucket;
+        this.uuid = uuid;
         this.username = username;
         this.password = password;
         this.config = config;
@@ -63,7 +66,8 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
      */
     @Override
     public void channelActive(final ChannelHandlerContext ctx) throws Exception {
-        String terseUri = "/pools/default/b/" + bucket;
+        String terseUri =
+                "/pools/default/b/" + bucket + (uuid.isEmpty() ? uuid : ('?' + Conductor.KEY_BUCKET_UUID + uuid));
         FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, terseUri);
         request.headers().add(HttpHeaders.Names.ACCEPT, "application/json");
         request.headers().add(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.CLOSE);
@@ -87,7 +91,7 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
                             "Unauthorized - Incorrect credentials or bucket " + bucket + " does not exist");
                     break;
                 case 404:
-                    exception = new CouchbaseException("Bucket " + bucket + " does not exist");
+                    exception = new BucketNotFoundException("Bucket " + bucket + " does not exist");
                     break;
                 default:
                     exception = new CouchbaseException("Unknown error code during connect: " + msg.getStatus());
@@ -101,7 +105,9 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
                     LOGGER.log(Level.WARN, "Subsequent failure trying to get bucket configuration", exception);
                 }
             }
-            originalPromise().setFailure(exception);
+            if (!originalPromise().isDone()) {
+                originalPromise().setFailure(exception);
+            }
         }
     }
 

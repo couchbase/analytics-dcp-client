@@ -89,7 +89,8 @@ public class Client {
                 .setSslKeystorePassword(builder.sslKeystorePassword()).setSslKeystore(builder.sslKeystore())
                 .setBootstrapHttpDirectPort(builder.configPort()).setBootstrapHttpSslPort(builder.sslConfigPort())
                 .setVbuckets(builder.vbuckets()).setClusterAt(builder.clusterAt())
-                .setFlowControlCallback(builder.flowControlCallback()).build();
+                .setFlowControlCallback(builder.flowControlCallback()).setUuid(builder.uuid())
+                .setDynamicConfigurationNodes(builder.dynamicConfigurationNodes()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
         if (ackEnabled && env.ackWaterMark() == 0) {
@@ -450,6 +451,8 @@ public class Client {
         private String connectionString;
         private EventLoopGroup eventLoopGroup;
         private String bucket = "default";
+        private String uuid = "";
+        private boolean dynamicConfigurationNodes = true;
         private ConnectionNameGenerator connectionNameGenerator = DefaultConnectionNameGenerator.INSTANCE;
         private DcpControl dcpControl = new DcpControl();
         private ConfigProvider configProvider = null;
@@ -509,6 +512,37 @@ public class Client {
          */
         public Builder clusterAt(InetSocketAddress... clusterAt) {
             return clusterAt(Arrays.asList(clusterAt));
+        }
+
+        /**
+         * The uuid of the bucket
+         *
+         * @param uuid
+         *            the bucket uuid
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder uuid(String uuid) {
+            this.uuid = uuid;
+            return this;
+        }
+
+        public String uuid() {
+            return this.uuid;
+        }
+
+        /**
+         * Whether the addresses of configuration providers should be dynamic
+         *
+         * @param dynamicConfigurationNodes
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder dynamicConfigurationNodes(boolean dynamicConfigurationNodes) {
+            this.dynamicConfigurationNodes = dynamicConfigurationNodes;
+            return this;
+        }
+
+        public boolean dynamicConfigurationNodes() {
+            return this.dynamicConfigurationNodes;
         }
 
         /**

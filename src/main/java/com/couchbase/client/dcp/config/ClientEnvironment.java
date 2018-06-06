@@ -23,6 +23,7 @@ import com.couchbase.client.dcp.events.DefaultEventBus;
 import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
+
 import rx.Completable;
 import rx.Observable;
 
@@ -153,6 +154,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final int bootstrapHttpSslPort;
     private final FlowControlCallback flowControlCallback;
     private short[] vbuckets;
+    private final String uuid;
+    private final boolean dynamicConfigurationNodes;
 
     /**
      * Creates a new environment based on the builder.
@@ -192,6 +195,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         dcpChannelTotalTimeout = builder.dcpChannelTotalTimeout;
         dcpChannelsReconnectDelay = builder.dcpChannelsReconnectDelay;
         partitionRequestsTimeout = builder.partitionRequestsTimeout;
+        uuid = builder.uuid;
+        dynamicConfigurationNodes = builder.dynamicConfigurationNodes;
     }
 
     /**
@@ -241,6 +246,14 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      */
     public String bucket() {
         return bucket;
+    }
+
+    public String uuid() {
+        return uuid;
+    }
+
+    public boolean dynamicConfigurationNodes() {
+        return dynamicConfigurationNodes;
     }
 
     /**
@@ -396,6 +409,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private KeyStore sslKeystore;
         private short[] vbuckets;
         private FlowControlCallback flowControlCallback;
+        private String uuid;
+        private boolean dynamicConfigurationNodes = true;
         /*
          * Config Provider
          */
@@ -560,6 +575,16 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
         public Builder setFlowControlCallback(final FlowControlCallback flowControlCallback) {
             this.flowControlCallback = flowControlCallback;
+            return this;
+        }
+
+        public Builder setUuid(final String uuid) {
+            this.uuid = uuid;
+            return this;
+        }
+
+        public Builder setDynamicConfigurationNodes(final boolean dynamicConfigurationNodes) {
+            this.dynamicConfigurationNodes = dynamicConfigurationNodes;
             return this;
         }
 

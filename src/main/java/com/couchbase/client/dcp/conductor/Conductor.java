@@ -27,7 +27,7 @@ import com.couchbase.client.dcp.state.StreamRequest;
 public class Conductor {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Conductor.class);
-
+    public static final String KEY_BUCKET_UUID = "bucket_uuid=";
     private final ConfigProvider configProvider; // changes
     private final Map<InetSocketAddress, DcpChannel> channels; // changes
     private final ClientEnvironment env; // constant
@@ -195,9 +195,9 @@ public class Conductor {
 
     private synchronized void createSession(CouchbaseBucketConfig config) {
         if (sessionState == null) {
-            sessionState = new SessionState(config.numberOfPartitions());
+            sessionState = new SessionState(config.numberOfPartitions(), getUuid(config.uri()));
         } else {
-            sessionState.setConnected();
+            sessionState.setConnected(getUuid(config.uri()));
         }
     }
 
@@ -296,5 +296,15 @@ public class Conductor {
                 }
             }
         }
+    }
+
+    public static String getUuid(String uri) {
+        int start = uri.indexOf(KEY_BUCKET_UUID);
+        if (start < 0) {
+            throw new IllegalArgumentException("uuid was not found in " + uri);
+        }
+        start += KEY_BUCKET_UUID.length();
+        int end = uri.indexOf('&', start);
+        return end > 0 ? uri.substring(start, end) : uri.substring(start);
     }
 }

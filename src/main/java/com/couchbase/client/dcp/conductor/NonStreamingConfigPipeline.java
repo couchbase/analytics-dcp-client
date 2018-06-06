@@ -3,8 +3,6 @@
  */
 package com.couchbase.client.dcp.conductor;
 
-import static org.apache.hyracks.util.NetworkUtil.toHostPort;
-
 import java.net.InetSocketAddress;
 
 import org.apache.commons.lang3.mutable.MutableObject;
@@ -46,6 +44,11 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
     private final String bucket;
 
     /**
+     * The uuid of the bucket
+     */
+    private final String uuid;
+
+    /**
      * The username (used for http auth).
      */
     private final String username;
@@ -75,9 +78,11 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
      *            config stream where to send the configs.
      */
     public NonStreamingConfigPipeline(final ClientEnvironment environment, final InetSocketAddress address,
-            MutableObject<Throwable> failure, MutableObject<CouchbaseBucketConfig> config) throws Exception {
+            MutableObject<Throwable> failure, MutableObject<CouchbaseBucketConfig> config, String uuid)
+            throws Exception {
         this.address = address;
         this.bucket = environment.bucket();
+        this.uuid = uuid;
         Pair<String, String> creds = environment.credentialsProvider().get(address);
         this.username = creds.getLeft();
         this.password = creds.getRight();
@@ -110,7 +115,7 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
         }
 
         pipeline.addLast(new HttpClientCodec())
-                .addLast(new RequestConfigHandler(bucket, username, password, config, failure))
+                .addLast(new RequestConfigHandler(bucket, username, password, uuid, config, failure))
                 .addLast(new NonStreamingConfigHandler(address, environment, config, failure));
     }
 

@@ -15,9 +15,9 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.parser.BucketConfigParser;
-import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
@@ -52,14 +52,15 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
 
     /**
      * Creates a new config handler.
-     *  @param configStream
+     *
+     * @param configStream
      *            config stream where to send the configs.
      * @param address
      *            address of the remote server.
      * @param environment
      */
     NonStreamingConfigHandler(final InetSocketAddress address, ClientEnvironment environment,
-                              MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
+            MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
         this.hostname = address.getHostString();
         this.config = config;
         this.failure = failure;
@@ -72,22 +73,36 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
     @Override
     protected void channelRead0(final ChannelHandlerContext ctx, final HttpObject msg) throws Exception {
         if (msg instanceof HttpContent) {
-            HttpContent content = (HttpContent) msg;
-            responseContent.writeBytes(content.content());
+            synchronized (config) {
+                if (failure.getValue() == null) {
+                    HttpContent content = (HttpContent) msg;
+                    responseContent.writeBytes(content.content());
+                } else {
+                    LOGGER.log(Level.DEBUG, "Already failed getting configurations");
+                }
+            }
         }
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        String rawConfig = fixupJVMCBC521(responseContent.toString(CharsetUtil.UTF_8)).replace("$HOST", encodeIPv6LiteralHost(hostname));
 
-        LOGGER.log(Level.DEBUG, "Received Config: {}", rawConfig);
         synchronized (config) {
             if (failure.getValue() == null) {
-                try {
-                    config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment));
-                } catch (Exception e) {
-                    failure.setValue(e);
+                String rawConfig = null;
+                if (responseContent != null) {
+                    rawConfig = fixupJVMCBC521(responseContent.toString(CharsetUtil.UTF_8)).replace("$HOST",
+                            encodeIPv6LiteralHost(hostname));
+                    LOGGER.log(Level.DEBUG, "Received Config: {}", rawConfig);
+                }
+                if (rawConfig != null && !rawConfig.isEmpty()) {
+                    try {
+                        config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment));
+                    } catch (Exception e) {
+                        failure.setValue(e);
+                    }
+                } else {
+                    failure.setValue(new CouchbaseException("Received raw config is " + rawConfig));
                 }
                 config.notifyAll();
             }
@@ -99,7 +114,7 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
         try {
             JsonNode config = new ObjectMapper().readTree(orig);
             ArrayNode nodesExt = (ArrayNode) config.get("nodesExt");
-            for (Iterator<JsonNode> iter = nodesExt.elements(); iter.hasNext(); ) {
+            for (Iterator<JsonNode> iter = nodesExt.elements(); iter.hasNext();) {
                 ObjectNode node = (ObjectNode) iter.next();
                 if (!node.has("hostname")) {
                     node.put("hostname", "$HOST");

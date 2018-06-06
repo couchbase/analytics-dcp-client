@@ -33,11 +33,14 @@ public class SessionState {
      */
     private final List<PartitionState> partitionStates;
 
+    private final String uuid;
+
     /**
      * Initializes with an empty partition state for 1024 partitions.
      */
-    public SessionState(int numPartitions) {
+    public SessionState(int numPartitions, String uuid) {
         this.partitionStates = new ArrayList<>(MAX_PARTITIONS);
+        this.uuid = uuid;
         if (numPartitions > MAX_PARTITIONS) {
             throw new IllegalArgumentException(
                     "Can only hold " + MAX_PARTITIONS + " partitions, " + numPartitions + "supplied as initializer.");
@@ -111,7 +114,10 @@ public class SessionState {
 
     }
 
-    public void setConnected() {
+    public void setConnected(String uuid) {
+        if (!uuid.equals(this.uuid)) {
+            throw new IllegalStateException("UUID changed from " + this.uuid + " to " + uuid);
+        }
         for (PartitionState ps : partitionStates) {
             ps.clientConnected();
         }
@@ -121,5 +127,9 @@ public class SessionState {
         for (PartitionState ps : partitionStates) {
             ps.clientDisconnected();
         }
+    }
+
+    public String getUuid() {
+        return uuid;
     }
 }

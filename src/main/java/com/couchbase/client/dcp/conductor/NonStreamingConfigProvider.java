@@ -6,7 +6,9 @@ package com.couchbase.client.dcp.conductor;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -32,14 +34,16 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
     private static final Logger LOGGER = LogManager.getLogger();
-    private final List<InetSocketAddress> sockets = new ArrayList<>();
+    private final Set<InetSocketAddress> sockets = new HashSet<>();
 
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
+    private volatile String uuid;
     private volatile Throwable cause;
 
     NonStreamingConfigProvider(ClientEnvironment env) {
         this.env = env;
+        this.uuid = env.uuid();
         sockets.addAll(env.clusterAt());
         LOGGER.info("Adding config nodes: " + sockets);
     }
@@ -68,16 +72,14 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
     private void tryConnectHosts(long attemptTimeout, long totalTimeout, Delay delay) throws Throwable {
         for (InetSocketAddress socket : sockets) {
             if (tryConnectHost(socket, attemptTimeout, totalTimeout, delay)) {
-                sockets.remove(socket);
-                sockets.add(0, socket);
                 return;
             }
         }
         throw cause;
     }
 
-    private boolean tryConnectHost(InetSocketAddress address, long attemptTimeout, long totalTimeout,
-            Delay delay) throws Exception {
+    private boolean tryConnectHost(InetSocketAddress address, long attemptTimeout, long totalTimeout, Delay delay)
+            throws Exception {
         int attempt = 0;
         ByteBufAllocator allocator =
                 env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
@@ -87,12 +89,11 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
             MutableObject<Throwable> failure = new MutableObject<>();
             MutableObject<CouchbaseBucketConfig> config = new MutableObject<>();
             LOGGER.info("Getting bucket config from {}", address);
-            Bootstrap bootstrap =
-                    new Bootstrap().remoteAddress(address).option(ChannelOption.ALLOCATOR, allocator)
-                            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) attemptTimeout)
-                            .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
-                            .handler(new NonStreamingConfigPipeline(env, address, failure, config))
-                            .group(env.eventLoopGroup());
+            Bootstrap bootstrap = new Bootstrap().remoteAddress(address).option(ChannelOption.ALLOCATOR, allocator)
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) attemptTimeout)
+                    .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
+                    .handler(new NonStreamingConfigPipeline(env, address, failure, config, uuid))
+                    .group(env.eventLoopGroup());
             ChannelFuture connectFuture = bootstrap.connect();
             try {
                 connectFuture.await(attemptTimeout + 100);
@@ -147,15 +148,29 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
         if (config.numberOfPartitions() == 0) {
             throw new BadBucketConfigException("Bucket configuration doesn't contain a vbucket map");
         }
+        if (uuid.isEmpty()) {
+            uuid = Conductor.getUuid(config.uri());
+        }
+
+        if (env.dynamicConfigurationNodes()) {
+            List<InetSocketAddress> configNodes = new ArrayList<>(config.nodes().size());
+            for (NodeInfo node : config.nodes()) {
+                int port = (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.CONFIG);
+                InetSocketAddress address = new InetSocketAddress(node.rawHostname(), port);
+                LOGGER.info("Adding a config node {}", address);
+                configNodes.add(address);
+            }
+            if (!configNodes.isEmpty()) {
+                sockets.clear();
+                sockets.addAll(configNodes);
+            } else {
+                LOGGER.warn("New Configuration doesn't contain any config nodes {}.", config);
+                throw new BadBucketConfigException("New Configuration doesn't contain any config nodes");
+            }
+            LOGGER.debug("Updated config stream node list to {}.", sockets);
+        }
         this.config = config;
         this.cause = null;
-        for (NodeInfo node : config.nodes()) {
-            int port = (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.CONFIG);
-            InetSocketAddress address = InetSocketAddress.createUnresolved(node.rawHostname(), port);
-            LOGGER.info("Adding a config node {}", address);
-            sockets.add(0, address); // TODO: need jira issue to track removing stale addresses
-        }
-        LOGGER.debug("Updated config stream node list to {}.", sockets);
         notifyAll();
     }
 
