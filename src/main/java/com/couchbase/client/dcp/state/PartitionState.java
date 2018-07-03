@@ -212,10 +212,15 @@ public class PartitionState {
         this.streamRequest = streamRequest;
         seqno = streamRequest.getStartSeqno();
         uuid = streamRequest.getVbucketUuid();
+        snapshotStartSeqno = streamRequest.getSnapshotStartSeqno();
+        snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
     }
 
     public void prepareNextStreamRequest() {
         if (streamRequest == null) {
+            if (snapshotStartSeqno > seqno) {
+                snapshotStartSeqno = seqno;
+            }
             this.streamRequest = new StreamRequest(vbid, seqno, SessionState.NO_END_SEQNO, uuid, snapshotStartSeqno,
                     snapshotEndSeqno);
         }

@@ -23,6 +23,7 @@ import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.message.VbucketState;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
+import com.couchbase.client.dcp.state.StreamRequest;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.DcpPipeline;
 import com.couchbase.client.deps.io.netty.bootstrap.Bootstrap;
@@ -147,8 +148,9 @@ public class DcpChannel {
                 LOGGER.debug("Opening a stream that was dropped for vbucket " + i);
                 PartitionState ps = sessionState.get(i);
                 ps.prepareNextStreamRequest();
-                openStream((short) i, ps.getUuid(), ps.getSeqno(), SessionState.NO_END_SEQNO,
-                        ps.getSnapshotStartSeqno(), ps.getSnapshotEndSeqno());
+                StreamRequest req = ps.getStreamRequest();
+                openStream((short) i, req.getVbucketUuid(), req.getStartSeqno(), req.getEndSeqno(),
+                        req.getSnapshotStartSeqno(), req.getSnapshotEndSeqno());
             }
         }
         for (int i = 0; i < failoverLogRequests.length; i++) {
