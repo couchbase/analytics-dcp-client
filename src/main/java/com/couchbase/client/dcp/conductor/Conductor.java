@@ -31,7 +31,7 @@ public class Conductor {
     private final ConfigProvider configProvider; // changes
     private final Map<InetSocketAddress, DcpChannel> channels; // changes
     private final ClientEnvironment env; // constant
-    private SessionState sessionState; // final
+    private SessionState sessionState;
     private final Fixer fixer; // final
     private Thread fixerThread; // once per connect
     private volatile boolean connected = false;

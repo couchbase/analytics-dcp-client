@@ -434,7 +434,8 @@ public class Client {
     }
 
     public PartitionState getState(short vbid) {
-        return conductor.getSessionState().get(vbid);
+        SessionState ss = conductor.getSessionState();
+        return (ss == null) ? null : ss.get(vbid);
     }
 
     public boolean isConnected() {
@@ -906,7 +907,8 @@ public class Client {
         short[] vbuckets = vbuckets();
         for (int i = 0; i < vbuckets.length; i++) {
             short next = vbuckets[i];
-            currentSequences[next] = Long.max(0L, getState(next).getSeqno());
+            PartitionState ps = getState(next);
+            currentSequences[next] = ps == null ? 0 : Long.max(0L, ps.getSeqno());
         }
         return currentSequences;
     }
