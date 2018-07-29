@@ -48,6 +48,8 @@ public class PartitionState {
      */
     private volatile long seqno = 0;
 
+    private volatile long streamEndSeq = 0;
+
     private volatile long uuid = 0;
 
     private volatile long snapshotStartSeqno = 0;
@@ -204,6 +206,10 @@ public class PartitionState {
         }
     }
 
+    public void setStreamEndSeq(long seq) {
+        this.streamEndSeq = seq;
+    }
+
     public StreamRequest getStreamRequest() {
         return streamRequest;
     }
@@ -211,6 +217,7 @@ public class PartitionState {
     public void setStreamRequest(StreamRequest streamRequest) {
         this.streamRequest = streamRequest;
         seqno = streamRequest.getStartSeqno();
+        streamEndSeq = streamRequest.getEndSeqno();
         uuid = streamRequest.getVbucketUuid();
         snapshotStartSeqno = streamRequest.getSnapshotStartSeqno();
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
@@ -221,8 +228,8 @@ public class PartitionState {
             if (snapshotStartSeqno > seqno) {
                 snapshotStartSeqno = seqno;
             }
-            this.streamRequest = new StreamRequest(vbid, seqno, SessionState.NO_END_SEQNO, uuid, snapshotStartSeqno,
-                    snapshotEndSeqno);
+            this.streamRequest =
+                    new StreamRequest(vbid, seqno, streamEndSeq, uuid, snapshotStartSeqno, snapshotEndSeqno);
         }
     }
 
