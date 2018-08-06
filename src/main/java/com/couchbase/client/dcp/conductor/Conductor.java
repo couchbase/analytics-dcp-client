@@ -84,9 +84,10 @@ public class Conductor {
         if (!connected) {
             return;
         }
-        if (Thread.currentThread() != fixerThread && fixerThread != null) {
+        Thread lastFixerThread = fixerThread;
+        if (Thread.currentThread() != lastFixerThread && lastFixerThread != null) {
             LOGGER.info("Waiting for fixer thread to finish.");
-            fixerThread.join();
+            lastFixerThread.join();
             LOGGER.info("Fixer thread finished.");
         }
         fixerThread = null;
