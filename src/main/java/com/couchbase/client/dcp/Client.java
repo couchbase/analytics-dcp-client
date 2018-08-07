@@ -191,18 +191,16 @@ public class Client {
      */
     public void dataEventHandler(final ClientDataEventHandler dataEventHandler) {
         env.setDataEventHandler((ackHandle, event) -> {
-            boolean uuidChanged = false;
-            PartitionState ps = null;
             if (DcpMutationMessage.is(event)) {
                 short partition = DcpMutationMessage.partition(event);
-                ps = sessionState().get(partition);
-                uuidChanged = ps.hasBucketUuidChanged(DcpMutationMessage.bySeqno(event));
+                PartitionState ps = sessionState().get(partition);
+                ps.setSeqno(DcpMutationMessage.bySeqno(event));
             } else if (DcpDeletionMessage.is(event)) {
                 short partition = DcpDeletionMessage.partition(event);
-                ps = sessionState().get(partition);
-                uuidChanged = ps.hasBucketUuidChanged(DcpDeletionMessage.bySeqno(event));
+                PartitionState ps = sessionState().get(partition);
+                ps.setSeqno(DcpDeletionMessage.bySeqno(event));
             }
-            dataEventHandler.onEvent(ackHandle, event, uuidChanged ? ps.getUuidChangeEvent() : null);
+            dataEventHandler.onEvent(ackHandle, event);
         });
     }
 
