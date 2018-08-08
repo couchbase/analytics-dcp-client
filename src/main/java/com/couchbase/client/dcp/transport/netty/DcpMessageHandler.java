@@ -34,6 +34,7 @@ import com.couchbase.client.deps.io.netty.channel.ChannelDuplexHandler;
 import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
 import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
+import com.couchbase.client.deps.io.netty.util.ReferenceCountUtil;
 
 /**
  * Handles the "business logic" of incoming DCP mutation and control messages.
@@ -117,14 +118,21 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             dataEventHandler.onEvent(this, message);
         } else if (isControlMessage(message)) {
             controlEventHandler.onEvent(this, message);
-        } else if (DcpNoopRequest.is(message)) {
-            ByteBuf buffer = ctx.alloc().buffer();
-            DcpNoopResponse.init(buffer);
-            MessageUtil.setOpaque(MessageUtil.getOpaque(message), buffer);
-            LOGGER.info("Sending back a NoOp response" + dcpChannel + ". Current ack counter = " + ackCounter);
-            ctx.writeAndFlush(buffer);
         } else {
-            LOGGER.warn("Unknown DCP Message, ignoring. \n{}", MessageUtil.humanize(message));
+            // We handle the message here and we're responsible for releasing it
+            try {
+                if (DcpNoopRequest.is(message)) {
+                    ByteBuf buffer = ctx.alloc().buffer();
+                    DcpNoopResponse.init(buffer);
+                    MessageUtil.setOpaque(MessageUtil.getOpaque(message), buffer);
+                    LOGGER.info("Sending back a NoOp response" + dcpChannel + ". Current ack counter = " + ackCounter);
+                    ctx.writeAndFlush(buffer);
+                } else {
+                    LOGGER.warn("Unknown DCP Message, ignoring. \n{}", MessageUtil.humanize(message));
+                }
+            } finally {
+                ReferenceCountUtil.release(message);
+            }
         }
     }
 
