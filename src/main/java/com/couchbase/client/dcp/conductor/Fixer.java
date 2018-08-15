@@ -27,8 +27,8 @@ public class Fixer implements Runnable, SystemEventHandler {
     private static final Logger LOGGER = LogManager.getLogger();
     private static final DcpEvent POISON_PILL = () -> DcpEvent.Type.DISCONNECT;
     private static final Delay DELAY = Delay.fixed(0, TimeUnit.MILLISECONDS);
-    private static final long CONFIG_PROVIDER_ATTEMPT_TIMEOUT = 500;
-    private static final long DCP_CHANNEL_ATTEMPT_TIMEOUT = 500;
+    private static final long CONFIG_PROVIDER_ATTEMPT_TIMEOUT = 1000;
+    private static final long DCP_CHANNEL_ATTEMPT_TIMEOUT = 1000;
     // Total timeout only control re-attempts. 0 -> a single attempt
     private static final long TOTAL_TIMEOUT = 0;
     private static final int MAX_REATTEMPTS = 100;

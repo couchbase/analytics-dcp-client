@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import org.apache.commons.lang3.mutable.MutableObject;
+import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -34,10 +35,12 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
     private static final Logger LOGGER = LogManager.getLogger();
+    private static final long MIN_MILLIS_PER_REFRESH = 1000;
     private final Set<InetSocketAddress> sockets = new HashSet<>();
 
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
+    private Span refreshPeriod;
     private volatile String uuid;
     private volatile Throwable cause;
 
@@ -45,6 +48,7 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
         this.env = env;
         this.uuid = env.uuid();
         sockets.addAll(env.clusterAt());
+        refreshPeriod = Span.start(0, TimeUnit.NANOSECONDS);
         LOGGER.info("Adding config nodes: " + sockets);
     }
 
@@ -61,7 +65,10 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
 
     @Override
     public void refresh(long attemptTimeout, long totalTimeout, Delay delay) throws Throwable {
-        tryConnectHosts(attemptTimeout, totalTimeout, delay);
+        if (refreshPeriod.elapsed()) {
+            tryConnectHosts(attemptTimeout, totalTimeout, delay);
+            refreshPeriod = Span.start(MIN_MILLIS_PER_REFRESH, TimeUnit.MILLISECONDS);
+        }
     }
 
     @Override
