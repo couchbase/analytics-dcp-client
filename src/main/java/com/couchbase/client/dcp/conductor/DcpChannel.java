@@ -216,6 +216,12 @@ public class DcpChannel {
             LOGGER.warn("Attempt to open stream on disconnected channel");
             env.eventBus().publish(endEvent);
             return;
+        } else if (startSeqno == endSeqno) {
+            StreamEndEvent endEvent = partitionState.getEndEvent();
+            endEvent.setReason(StreamEndReason.OK);
+            LOGGER.warn("Attempt to open stream on disconnected channel");
+            env.eventBus().publish(endEvent);
+            return;
         }
         LOGGER.debug(
                 "Opening Stream against {} with vbid: {}, vbuuid: {}, startSeqno: {}, "

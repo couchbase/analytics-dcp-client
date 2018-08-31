@@ -1,6 +1,12 @@
 package com.couchbase.client.dcp.events;
 
+import java.util.concurrent.TimeUnit;
+
+import org.apache.hyracks.util.Span;
+
 public interface DcpEvent {
+    public static final Span ELAPSED = Span.start(0, TimeUnit.NANOSECONDS);
+
     enum Type {
         STREAM_END,
         CHANNEL_DROPPED,
@@ -11,4 +17,8 @@ public interface DcpEvent {
     }
 
     Type getType();
+
+    default Span delay() {
+        return ELAPSED;
+    }
 }

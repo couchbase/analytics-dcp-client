@@ -171,6 +171,10 @@ public class PartitionState {
         this.streamEndSeq = seq;
     }
 
+    public long getStreamEndSeq() {
+        return streamEndSeq;
+    }
+
     public StreamRequest getStreamRequest() {
         return streamRequest;
     }
@@ -188,6 +192,9 @@ public class PartitionState {
         if (streamRequest == null) {
             if (snapshotStartSeqno > seqno) {
                 snapshotStartSeqno = seqno;
+            }
+            if (SessionState.NO_END_SEQNO != streamEndSeq && Long.compareUnsigned(streamEndSeq, seqno) < 0) {
+                streamEndSeq = snapshotEndSeqno;
             }
             this.streamRequest =
                     new StreamRequest(vbid, seqno, streamEndSeq, uuid, snapshotStartSeqno, snapshotEndSeqno);
