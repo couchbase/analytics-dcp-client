@@ -1,9 +1,11 @@
 package com.couchbase.client.dcp.conductor;
 
-import java.util.LinkedList;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -34,11 +36,12 @@ public class Fixer implements Runnable, SystemEventHandler {
     private static final int MAX_REATTEMPTS = 100;
     private final Conductor conductor;
     private final UnexpectedFailureEvent failure = new UnexpectedFailureEvent();
+    private Span nextFailed = DcpEvent.ELAPSED;
     private volatile boolean running;
 
     // unbounded
     private final LinkedBlockingQueue<DcpEvent> inbox = new LinkedBlockingQueue<>();
-    private final LinkedList<DcpEvent> failed = new LinkedList<>();
+    private final Deque<DcpEvent> backlog = new ArrayDeque<>(1024);
 
     public Fixer(Conductor conductor) {
         this.conductor = conductor;
@@ -47,6 +50,7 @@ public class Fixer implements Runnable, SystemEventHandler {
 
     public boolean poison() {
         if (running) {
+            backlog.clear();
             inbox.clear();
             inbox.offer(POISON_PILL);
             if (!running) {
@@ -74,8 +78,10 @@ public class Fixer implements Runnable, SystemEventHandler {
                     attemptFixingBroken();
                     detection.run();
                 }
-                next = failed.isEmpty() ? inbox.poll(detection.nanosTilNextCheck(), TimeUnit.NANOSECONDS)
-                        : inbox.poll(MAX_REATTEMPTS, TimeUnit.MILLISECONDS);
+                next = backlog.isEmpty() ? inbox.poll(detection.nanosTilNextCheck(), TimeUnit.NANOSECONDS)
+                        : inbox.poll(
+                                Long.min(detection.nanosTilNextCheck(), nextFailed.remaining(TimeUnit.NANOSECONDS)),
+                                TimeUnit.NANOSECONDS);
             }
             LOGGER.info("{} has been poisoned", this);
         } catch (InterruptedException ie) {
@@ -98,13 +104,32 @@ public class Fixer implements Runnable, SystemEventHandler {
     }
 
     private void attemptFixingBroken() {
-        inbox.addAll(failed);
-        failed.clear();
+        if (backlog.isEmpty() || !nextFailed.elapsed()) {
+            return;
+        }
+        nextFailed = DcpEvent.ELAPSED;
+        int size = backlog.size();
+        for (int i = 0; i < size; i++) {
+            DcpEvent failedEvent = backlog.poll();
+            if (failedEvent.delay().elapsed()) {
+                inbox.add(failedEvent);
+            } else {
+                addToBacklog(failedEvent);
+            }
+        }
+    }
+
+    private void addToBacklog(DcpEvent failedEvent) {
+        Span delay = failedEvent.delay();
+        if (backlog.isEmpty() || delay.remaining(TimeUnit.NANOSECONDS) < nextFailed.remaining(TimeUnit.NANOSECONDS)) {
+            nextFailed = delay;
+        }
+        backlog.add(failedEvent);
     }
 
     private void reset() {
         inbox.clear();
-        failed.clear();
+        backlog.clear();
     }
 
     private void handle(DcpEvent event) throws InterruptedException {
@@ -123,33 +148,41 @@ public class Fixer implements Runnable, SystemEventHandler {
                     fixDroppedChannel((ChannelDroppedEvent) event);
                     break;
                 case OPEN_STREAM_RESPONSE:
-                    LOGGER.info("Handling {}", event);
                     OpenStreamResponse response = (OpenStreamResponse) event;
                     if (response.getStatus() == MemcachedStatus.ROLLBACK) {
+                        LOGGER.info("Handling {}", event);
                         // abort all, close the channels
                         conductor.disconnect(true);
                     } else {
                         // Refresh the config, find the assigned kv node
                         // (could still be the same one), and re-attempt connection
                         // this should never cause a permanent failure
-                        refreshConfig();
-                        try {
-                            synchronized (conductor.getChannels()) {
-                                CouchbaseBucketConfig config = conductor.config();
-                                int index = config.nodeIndexForMaster(response.getPartitionState().vbid(), false);
-                                NodeInfo node = config.nodeAtIndex(index);
-                                conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
-                                PartitionState state = response.getPartitionState();
-                                state.prepareNextStreamRequest();
-                                conductor.startStreamForPartition(state.getStreamRequest());
+                        if (response.getStatus() == MemcachedStatus.INVALID_ARGUMENTS) {
+                            throw new IllegalStateException("Open stream was created with illegal arguments: "
+                                    + response.getPartitionState().getStreamRequest());
+                        } else if (response.delay().elapsed()) {
+                            LOGGER.info("Handling {}", event);
+                            refreshConfig();
+                            try {
+                                synchronized (conductor.getChannels()) {
+                                    CouchbaseBucketConfig config = conductor.config();
+                                    int index = config.nodeIndexForMaster(response.getPartitionState().vbid(), false);
+                                    NodeInfo node = config.nodeAtIndex(index);
+                                    conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
+                                    PartitionState state = response.getPartitionState();
+                                    state.prepareNextStreamRequest();
+                                    conductor.startStreamForPartition(state.getStreamRequest());
+                                }
+                            } catch (InterruptedException e) {
+                                LOGGER.warn("Interrupted while handling not my vbucket event", e);
+                                giveUp(e);
+                                throw e;
+                            } catch (Throwable th) {
+                                LOGGER.warn("Failure during attempt to handle not my vbucket event", th);
+                                addToBacklog(response);
                             }
-                        } catch (InterruptedException e) {
-                            LOGGER.warn("Interrupted while handling not my vbucket event", e);
-                            giveUp(e);
-                            throw e;
-                        } catch (Throwable th) {
-                            LOGGER.warn("Failure during attempt to handle not my vbucket event", th);
-                            failed.add(response);
+                        } else {
+                            addToBacklog(response);
                         }
                     }
                     break;
@@ -184,13 +217,13 @@ public class Fixer implements Runnable, SystemEventHandler {
                 LOGGER.warn(this + " the channel is going to drop. not sure when this could happen."
                         + "Should wait for the drop event before attempting a fix");
                 break;
-            case INVALID:
-                LOGGER.error(this + " this should never happen. must abort");
-                break;
             case OK:
                 // Normal op, reached the end of the requested DCP stream
                 LOGGER.info(this + " stream reached the end of your request");
                 break;
+            case INVALID:
+                LOGGER.error("{} Stream ended with invalid indicating a producer error, should re-open the stream",
+                        this);
             case STATE_CHANGED:
             case CHANNEL_DROPPED:
                 // Preparing to rebalance, update the config
@@ -265,7 +298,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             giveUp(th);
         } else {
             LOGGER.warn(this + " retrying for the " + event.getAttempts() + " time");
-            failed.add(event);
+            addToBacklog(event);
         }
     }
 
@@ -277,7 +310,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             giveUp(th);
         } else {
             LOGGER.warn(this + " retrying for the " + streamEndEvent.getAttempts() + " time");
-            failed.add(streamEndEvent);
+            addToBacklog(streamEndEvent);
         }
     }
 
@@ -287,7 +320,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             LOGGER.warn(this + " failed to fix a vbucket stream " + streamEndEvent.getAttempts() + " times. Giving up");
             giveUp(new NotConnectedException());
         } else {
-            failed.add(streamEndEvent);
+            addToBacklog(streamEndEvent);
         }
     }
 

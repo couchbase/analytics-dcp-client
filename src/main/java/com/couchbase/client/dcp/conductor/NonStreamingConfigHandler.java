@@ -18,6 +18,7 @@ import org.apache.logging.log4j.Logger;
 import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.parser.BucketConfigParser;
+import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
@@ -36,7 +37,7 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
     /**
      * Hostname used to replace $HOST parts in the config when used against localhost.
      */
-    private final String hostname;
+    private final InetSocketAddress address;
 
     /**
      * The config stream where the configs are emitted into.
@@ -61,7 +62,7 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
      */
     NonStreamingConfigHandler(final InetSocketAddress address, ClientEnvironment environment,
             MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
-        this.hostname = address.getHostString();
+        this.address = address;
         this.config = config;
         this.failure = failure;
         this.environment = environment;
@@ -90,14 +91,16 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
         synchronized (config) {
             if (failure.getValue() == null) {
                 String rawConfig = null;
+                String hostAddress = address.getAddress().getHostAddress();
                 if (responseContent != null) {
-                    rawConfig = fixupJVMCBC521(responseContent.toString(CharsetUtil.UTF_8)).replace("$HOST",
-                            encodeIPv6LiteralHost(hostname));
+                    rawConfig = responseContent.toString(CharsetUtil.UTF_8).replace("$HOST",
+                            encodeIPv6LiteralHost(hostAddress));
                     LOGGER.log(Level.DEBUG, "Received Config: {}", rawConfig);
                 }
+                NetworkAddress origin = NetworkAddress.create(hostAddress);
                 if (rawConfig != null && !rawConfig.isEmpty()) {
                     try {
-                        config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment));
+                        config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment, origin));
                     } catch (Exception e) {
                         failure.setValue(e);
                     }
@@ -108,23 +111,6 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
             }
         }
         ctx.fireChannelInactive();
-    }
-
-    private String fixupJVMCBC521(String orig) throws IOException {
-        try {
-            JsonNode config = new ObjectMapper().readTree(orig);
-            ArrayNode nodesExt = (ArrayNode) config.get("nodesExt");
-            for (Iterator<JsonNode> iter = nodesExt.elements(); iter.hasNext();) {
-                ObjectNode node = (ObjectNode) iter.next();
-                if (!node.has("hostname")) {
-                    node.put("hostname", "$HOST");
-                }
-            }
-            return JSONUtil.convertNode(config);
-        } catch (Exception e) {
-            LOGGER.warn("ignoring exception trying to fixup JVMCBC-521", e);
-            return orig;
-        }
     }
 
     /**
