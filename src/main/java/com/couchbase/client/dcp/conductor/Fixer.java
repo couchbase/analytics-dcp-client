@@ -108,9 +108,14 @@ public class Fixer implements Runnable, SystemEventHandler {
             return;
         }
         nextFailed = DcpEvent.ELAPSED;
+        // we don't want to process entries we push back onto the backlog; remember the size
         int size = backlog.size();
         for (int i = 0; i < size; i++) {
             DcpEvent failedEvent = backlog.poll();
+            if (failedEvent == null) {
+                // someone has cleared the backlog (e.g. we were poisoned)
+                break;
+            }
             if (failedEvent.delay().elapsed()) {
                 inbox.add(failedEvent);
             } else {
