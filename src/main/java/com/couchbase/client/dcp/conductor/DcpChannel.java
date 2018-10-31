@@ -199,9 +199,9 @@ public class DcpChannel {
         }
         if (wait) {
             wait(State.DISCONNECTED);
+            LOGGER.info(toString() + " disconnected");
         }
         channel = null;
-        LOGGER.info(toString() + " disconnected");
     }
 
     public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,
