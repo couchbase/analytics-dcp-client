@@ -12,6 +12,7 @@ import com.couchbase.client.core.CouchbaseException;
  * @since 1.0.0
  */
 public class BootstrapException extends CouchbaseException {
+    private static final long serialVersionUID = 4129369535195239711L;
 
     public BootstrapException() {
     }
