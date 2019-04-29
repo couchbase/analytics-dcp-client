@@ -5,12 +5,9 @@ package com.couchbase.client.dcp.conductor;
 
 import static org.apache.hyracks.util.NetworkUtil.encodeIPv6LiteralHost;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Iterator;
 
 import org.apache.commons.lang3.mutable.MutableObject;
-import org.apache.hyracks.util.JSONUtil;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -26,10 +23,6 @@ import com.couchbase.client.deps.io.netty.channel.SimpleChannelInboundHandler;
 import com.couchbase.client.deps.io.netty.handler.codec.http.HttpContent;
 import com.couchbase.client.deps.io.netty.handler.codec.http.HttpObject;
 import com.couchbase.client.deps.io.netty.util.CharsetUtil;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
     public static final Logger LOGGER = LogManager.getLogger();
