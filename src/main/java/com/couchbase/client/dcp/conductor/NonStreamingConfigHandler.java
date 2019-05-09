@@ -93,7 +93,8 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
                 NetworkAddress origin = NetworkAddress.create(hostAddress);
                 if (rawConfig != null && !rawConfig.isEmpty()) {
                     try {
-                        config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment, origin));
+                        config.setValue(
+                                (CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment, origin));
                     } catch (Exception e) {
                         failure.setValue(e);
                     }

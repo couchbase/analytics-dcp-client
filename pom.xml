@@ -14,6 +14,7 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <core.version>1.6.1</core.version>
     <client.version>2.6.1</client.version>
+    <maven.javadoc.skip>true</maven.javadoc.skip>
   </properties>
   <name>Couchbase Java DCP Client</name>
   <description>The official, lightweight DCP Client for the JVM.</description>
