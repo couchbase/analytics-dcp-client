@@ -14,6 +14,7 @@ import com.couchbase.client.core.CouchbaseException;
  * @since 1.0.0
  */
 public class CannotRetryException extends CouchbaseException {
+    private static final long serialVersionUID = 6216622075438962790L;
 
     public CannotRetryException(String message) {
         super(message);

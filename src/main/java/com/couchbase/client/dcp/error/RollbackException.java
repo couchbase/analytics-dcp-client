@@ -12,6 +12,7 @@ import com.couchbase.client.core.CouchbaseException;
  * @since 1.0.0
  */
 public class RollbackException extends CouchbaseException {
+    private static final long serialVersionUID = -3116060802712271509L;
 
     public RollbackException() {
     }

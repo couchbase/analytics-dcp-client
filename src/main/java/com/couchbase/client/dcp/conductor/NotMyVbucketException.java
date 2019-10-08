@@ -9,6 +9,7 @@ import com.couchbase.client.core.CouchbaseException;
  * Created by daschl on 01/09/16.
  */
 public class NotMyVbucketException extends CouchbaseException {
+    private static final long serialVersionUID = 728931767913343314L;
 
     public NotMyVbucketException() {
     }
