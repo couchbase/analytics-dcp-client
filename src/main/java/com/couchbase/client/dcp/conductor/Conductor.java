@@ -189,7 +189,7 @@ public class Conductor {
                         "partition " + partition + " does not have a master node. Configuration: " + config);
             }
             NodeInfo node = config.nodeAtIndex(index);
-            InetSocketAddress address = new InetSocketAddress(node.hostname().nameOrAddress(),
+            InetSocketAddress address = new InetSocketAddress(node.hostname(),
                     (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
             DcpChannel theChannel = channels.get(address);
             if (theChannel == null) {
@@ -218,7 +218,7 @@ public class Conductor {
             if (!config.hasPrimaryPartitionsOnNode(node.hostname())) {
                 return;
             }
-            InetSocketAddress address = new InetSocketAddress(node.hostname().nameOrAddress(),
+            InetSocketAddress address = new InetSocketAddress(node.hostname(),
                     (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
             if (channels.containsKey(address)) {
                 return;

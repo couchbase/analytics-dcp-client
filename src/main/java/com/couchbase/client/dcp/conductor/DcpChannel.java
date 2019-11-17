@@ -12,7 +12,6 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.core.time.Delay;
-import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpCloseStreamRequest;
@@ -46,7 +45,7 @@ public class DcpChannel {
     private static final Logger LOGGER = LogManager.getLogger();
     private volatile State state;
     private final ClientEnvironment env;
-    private final NetworkAddress networkAddress;
+    private final String hostname;
     private final InetSocketAddress inetAddress;
     private final boolean[] failoverLogRequests;
     private final boolean[] openStreams;
@@ -59,11 +58,11 @@ public class DcpChannel {
     private volatile long lastConnectionTime = System.currentTimeMillis();
     private boolean channelDroppedReported = false;
 
-    public DcpChannel(InetSocketAddress inetAddress, NetworkAddress networkAddress, final ClientEnvironment env,
-            final SessionState sessionState, int numOfPartitions) {
+    public DcpChannel(InetSocketAddress inetAddress, String hostname, final ClientEnvironment env,
+                      final SessionState sessionState, int numOfPartitions) {
         setState(State.DISCONNECTED);
         this.inetAddress = inetAddress;
-        this.networkAddress = networkAddress;
+        this.hostname = hostname;
         this.env = env;
         this.sessionState = sessionState;
         this.failoverLogRequests = new boolean[numOfPartitions];
@@ -101,7 +100,7 @@ public class DcpChannel {
                         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) attemptTimeout)
                         .remoteAddress(inetAddress.getHostString(), inetAddress.getPort())
                         .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
-                        .handler(new DcpPipeline(this, networkAddress.nameOrAddress(), inetAddress.getPort(), env,
+                        .handler(new DcpPipeline(this, hostname, inetAddress.getPort(), env,
                                 controlHandler))
                         .group(env.eventLoopGroup());
                 connectFuture = bootstrap.connect();
@@ -373,8 +372,8 @@ public class DcpChannel {
         return false;
     }
 
-    public NetworkAddress getNetworkAddress() {
-        return networkAddress;
+    public String getHostname() {
+        return hostname;
     }
 
     public synchronized boolean producerDroppedConnection() {

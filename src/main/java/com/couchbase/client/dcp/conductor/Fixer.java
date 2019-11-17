@@ -356,7 +356,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             synchronized (channel) {
                 if (channel.getState() == State.CONNECTED) {
                     channel.setState(State.DISCONNECTED);
-                    if (config.hasPrimaryPartitionsOnNode(channel.getNetworkAddress())) {
+                    if (config.hasPrimaryPartitionsOnNode(channel.getHostname())) {
                         try {
                             LOGGER.debug(this + " trying to reconnect " + channel);
                             channel.connect(DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);

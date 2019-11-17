@@ -12,8 +12,8 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <core.version>1.6.1</core.version>
-    <client.version>2.6.1</client.version>
+    <core.version>1.7.10</core.version>
+    <client.version>2.7.10</client.version>
     <maven.javadoc.skip>true</maven.javadoc.skip>
   </properties>
   <name>Couchbase Java DCP Client</name>

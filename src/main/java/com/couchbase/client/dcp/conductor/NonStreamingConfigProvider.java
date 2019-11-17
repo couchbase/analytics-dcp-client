@@ -163,7 +163,7 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
             List<InetSocketAddress> configNodes = new ArrayList<>(config.nodes().size());
             for (NodeInfo node : config.nodes()) {
                 int port = (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.CONFIG);
-                InetSocketAddress address = new InetSocketAddress(node.rawHostname(), port);
+                InetSocketAddress address = new InetSocketAddress(node.hostname(), port);
                 LOGGER.info("Adding a config node {}", address);
                 configNodes.add(address);
             }
