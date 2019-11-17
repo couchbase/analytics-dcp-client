@@ -15,7 +15,6 @@ import org.apache.logging.log4j.Logger;
 import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.parser.BucketConfigParser;
-import com.couchbase.client.core.utils.NetworkAddress;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
@@ -90,11 +89,10 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
                             encodeIPv6LiteralHost(hostAddress));
                     LOGGER.log(Level.DEBUG, "Received Config: {}", rawConfig);
                 }
-                NetworkAddress origin = NetworkAddress.create(hostAddress);
                 if (rawConfig != null && !rawConfig.isEmpty()) {
                     try {
                         config.setValue(
-                                (CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment, origin));
+                                (CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment, hostAddress));
                     } catch (Exception e) {
                         failure.setValue(e);
                     }
