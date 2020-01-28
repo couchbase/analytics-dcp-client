@@ -76,6 +76,9 @@ class StartStreamHandler extends ConnectInterceptingHandler<HttpResponse> {
      * Helper method to add authentication credentials to the config stream request.
      */
     private void addHttpBasicAuth(final ChannelHandlerContext ctx, final HttpRequest request) {
+        if (username == null || username.isEmpty()) {
+            return;
+        }
         final String pw = password == null ? "" : password;
         ByteBuf raw = ctx.alloc().buffer(username.length() + pw.length() + 1);
         raw.writeBytes((username + ":" + pw).getBytes(CharsetUtil.UTF_8));

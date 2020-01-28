@@ -3,6 +3,10 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import java.net.InetSocketAddress;
+
+import org.apache.commons.lang3.tuple.Pair;
+
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
@@ -89,8 +93,12 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
             pipeline.addLast(new LoggingHandler(LogLevel.TRACE));
         }
 
-        pipeline.addLast(new AuthHandler(environment.credentialsProvider(), host, port))
-                .addLast(new DcpConnectHandler(environment))
+        Pair<String, String> pair =
+                environment.credentialsProvider().get(InetSocketAddress.createUnresolved(host, port));
+        if (pair != null && pair.getLeft() != null) {
+            pipeline.addLast(new AuthHandler(pair.getLeft(), pair.getRight()));
+        }
+        pipeline.addLast(new DcpConnectHandler(environment))
                 .addLast(new DcpNegotiationHandler(environment.dcpControl())).addLast(new DcpMessageHandler(dcpChannel,
                         ch, environment, environment.dataEventHandler(), controlHandler));
     }
