@@ -16,6 +16,7 @@ public class Hello {
     public static final short XATTR = 0x06;
     public static final short XERROR = 0x07;
     public static final short SELECT = 0x08;
+    public static final short COLLECTION = 0x12;
 
     private Hello() {
     }
@@ -23,6 +24,6 @@ public class Hello {
     public static void init(ByteBuf buffer, ByteBuf connectionName) {
         MessageUtil.initRequest(MessageUtil.HELO_OPCODE, buffer);
         MessageUtil.setKey(connectionName, buffer);
-        MessageUtil.setContent(Unpooled.copyShort(XERROR, SELECT), buffer);
+        MessageUtil.setContent(Unpooled.copyShort(XERROR, SELECT, COLLECTION), buffer);
     }
 }

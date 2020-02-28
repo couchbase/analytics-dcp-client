@@ -65,6 +65,10 @@ public enum DcpOpenStreamRequest {
         MessageUtil.setOpaque(opaque, buffer);
     }
 
+    public static void setValue(final ByteBuf value, final ByteBuf buffer) {
+        MessageUtil.setContent(value, buffer);
+    }
+
     public static int flags(final ByteBuf buffer) {
         return MessageUtil.getExtras(buffer).getInt(0);
     }

@@ -25,6 +25,9 @@ import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamRequest;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.DcpPipeline;
+import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
+import com.couchbase.client.deps.com.fasterxml.jackson.databind.node.ArrayNode;
+import com.couchbase.client.deps.com.fasterxml.jackson.databind.node.ObjectNode;
 import com.couchbase.client.deps.io.netty.bootstrap.Bootstrap;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.ByteBufAllocator;
@@ -35,6 +38,7 @@ import com.couchbase.client.deps.io.netty.channel.Channel;
 import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
 import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
 import com.couchbase.client.deps.io.netty.channel.ChannelOption;
+import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
 /**
  * Logical representation of a DCP cluster connection.
@@ -57,9 +61,10 @@ public class DcpChannel {
     private volatile boolean stateFetched = true;
     private volatile long lastConnectionTime = System.currentTimeMillis();
     private boolean channelDroppedReported = false;
+    private boolean isCollectionCapable;
 
     public DcpChannel(InetSocketAddress inetAddress, String hostname, final ClientEnvironment env,
-            final SessionState sessionState, int numOfPartitions) {
+            final SessionState sessionState, int numOfPartitions, boolean isCollectionCapable) {
         setState(State.DISCONNECTED);
         this.inetAddress = inetAddress;
         this.hostname = hostname;
@@ -70,6 +75,7 @@ public class DcpChannel {
         this.openStreams = new boolean[numOfPartitions];
         this.closeListener = new DcpChannelCloseListener(this);
         this.deadConnectionDetectionInterval = env.getDeadConnectionDetectionInterval();
+        this.isCollectionCapable = isCollectionCapable;
     }
 
     public void connect() throws Throwable {
@@ -235,6 +241,23 @@ public class DcpChannel {
         DcpOpenStreamRequest.endSeqno(buffer, endSeqno);
         DcpOpenStreamRequest.snapshotStartSeqno(buffer, snapshotStartSeqno);
         DcpOpenStreamRequest.snapshotEndSeqno(buffer, snapshotEndSeqno);
+
+        if (isCollectionCapable) {
+            ObjectMapper om = new ObjectMapper();
+            ObjectNode json = om.createObjectNode();
+            ArrayNode an = json.arrayNode();
+            for (String uid : env.collectionUids()) {
+                an.add(uid);
+            }
+            json.put("collections", an);
+            String str;
+            try {
+                str = om.writeValueAsString(json);
+                DcpOpenStreamRequest.setValue(Unpooled.copiedBuffer(str, CharsetUtil.UTF_8), buffer);
+            } catch (Exception e) {
+
+            }
+        }
         ChannelFuture future = channel.writeAndFlush(buffer);
         if (LOGGER.isDebugEnabled()) {
             future.addListener(f -> {

@@ -17,16 +17,16 @@ public enum DcpExpirationMessage {
         return buffer.getByte(0) == MessageUtil.MAGIC_REQ && buffer.getByte(1) == DCP_EXPIRATION_OPCODE;
     }
 
-    public static ByteBuf key(final ByteBuf buffer) {
-        return MessageUtil.getKey(buffer);
+    public static ByteBuf key(final ByteBuf buffer, boolean isCollectionEnabled) {
+        return MessageUtil.getKey(buffer, isCollectionEnabled);
     }
 
-    public static String keyString(final ByteBuf buffer, Charset charset) {
-        return key(buffer).toString(charset);
+    public static String keyString(final ByteBuf buffer, Charset charset, boolean isCollectionEnabled) {
+        return key(buffer, isCollectionEnabled).toString(charset);
     }
 
-    public static String keyString(final ByteBuf buffer) {
-        return keyString(buffer, CharsetUtil.UTF_8);
+    public static String keyString(final ByteBuf buffer, boolean isCollectionEnabled) {
+        return keyString(buffer, CharsetUtil.UTF_8, isCollectionEnabled);
     }
 
     public static long cas(final ByteBuf buffer) {
@@ -45,8 +45,9 @@ public enum DcpExpirationMessage {
         return buffer.getLong(MessageUtil.HEADER_SIZE + 8);
     }
 
-    public static String toString(final ByteBuf buffer) {
-        return "ExpirationMessage [key: \"" + keyString(buffer) + "\", vbid: " + partition(buffer) + ", cas: "
-                + cas(buffer) + ", bySeqno: " + bySeqno(buffer) + ", revSeqno: " + revisionSeqno(buffer) + "]";
+    public static String toString(final ByteBuf buffer, boolean isCollectionEnabled) {
+        return "ExpirationMessage [key: \"" + keyString(buffer, isCollectionEnabled) + "\", vbid: " + partition(buffer)
+                + ", cas: " + cas(buffer) + ", bySeqno: " + bySeqno(buffer) + ", revSeqno: " + revisionSeqno(buffer)
+                + "]";
     }
 }

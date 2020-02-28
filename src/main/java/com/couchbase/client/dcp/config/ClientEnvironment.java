@@ -76,6 +76,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final String bucket;
 
     /**
+     * The list of collections (in uids) for this channel
+     */
+    private final List<String> collectionUids;
+
+    /**
      * DCP control params, optional.
      */
     private final DcpControl dcpControl;
@@ -166,6 +171,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private ClientEnvironment(final Builder builder) {
         connectionNameGenerator = builder.connectionNameGenerator;
         bucket = builder.bucket;
+        collectionUids = builder.collectionUids;
         credentialsProvider = builder.credentialsProvider;
         dcpControl = builder.dcpControl;
         eventLoopGroup = builder.eventLoopGroup;
@@ -246,6 +252,10 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      */
     public String bucket() {
         return bucket;
+    }
+
+    public List<String> collectionUids() {
+        return collectionUids;
     }
 
     public String uuid() {
@@ -411,6 +421,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private FlowControlCallback flowControlCallback;
         private String uuid;
         private boolean dynamicConfigurationNodes = true;
+        private List<String> collectionUids;
         /*
          * Config Provider
          */
@@ -442,6 +453,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
         public Builder setBucket(String bucket) {
             this.bucket = bucket;
+            return this;
+        }
+
+        public Builder setCollectionsUid(List<String> collectionUids) {
+            this.collectionUids = collectionUids;
             return this;
         }
 

@@ -31,6 +31,10 @@ public enum StreamFlags {
      */
     NO_VALUE(0x08),
     /**
+     * Indicates if the server is collection capable.
+     */
+    FEATURES_COLLECTION(0x12),
+    /**
      * Indicate the server to add stream only if the VBucket is active.
      * If the VBucket is not active, the stream request fails with ERR_NOT_MY_VBUCKET (0x07)
      */

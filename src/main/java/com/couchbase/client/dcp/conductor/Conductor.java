@@ -225,7 +225,7 @@ public class Conductor {
             }
             LOGGER.debug("Adding DCP Channel against {}", node);
             final DcpChannel channel = new DcpChannel(address, node.hostname(), env, sessionState,
-                    configProvider.config().numberOfPartitions());
+                    configProvider.config().numberOfPartitions(), configProvider.isCollectionCapable());
             channels.put(address, channel);
             try {
                 channel.connect(attemptTimeout, totalTimeout, delay);

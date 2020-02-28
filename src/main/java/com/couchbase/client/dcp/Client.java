@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import com.couchbase.client.core.config.BucketCapabilities;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
@@ -76,8 +77,9 @@ public class Client {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
         env = ClientEnvironment.builder().setConnectionNameGenerator(builder.connectionNameGenerator())
-                .setBucket(builder.bucket()).setCredentialsProvider(builder.credentialsProvider())
-                .setDcpControl(builder.dcpControl()).setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
+                .setBucket(builder.bucket()).setCollectionsUid(builder.collectionUids())
+                .setCredentialsProvider(builder.credentialsProvider()).setDcpControl(builder.dcpControl())
+                .setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
                 .setBufferAckWatermark(builder.bufferAckWatermark()).setBufferPooling(builder.poolBuffers())
                 .setConfigProviderAttemptTimeout(builder.configProviderAttemptTimeout())
                 .setConfigProviderReconnectDelay(builder.configProviderReconnectDelay())
@@ -91,7 +93,6 @@ public class Client {
                 .setVbuckets(builder.vbuckets()).setClusterAt(builder.clusterAt())
                 .setFlowControlCallback(builder.flowControlCallback()).setUuid(builder.uuid())
                 .setDynamicConfigurationNodes(builder.dynamicConfigurationNodes()).build();
-
         ackEnabled = env.dcpControl().ackEnabled();
         if (ackEnabled && env.ackWaterMark() == 0) {
             throw new IllegalArgumentException("The bufferAckWatermark needs to be set if bufferAck is enabled.");
@@ -400,6 +401,10 @@ public class Client {
         return conductor.config();
     }
 
+    public boolean isCollectionCapable() {
+        return config().capabilities().contains(BucketCapabilities.COLLECTIONS);
+    }
+
     public synchronized void establishDcpConnections() throws Throwable {
         if (env.vbuckets() == null) {
             CouchbaseBucketConfig configs = conductor.config();
@@ -473,6 +478,7 @@ public class Client {
         private long dcpChannelAttemptTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_ATTEMPT_TIMEOUT;
         private long dcpChannelTotalTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT;
         private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
+        private List<String> collectionUids = new ArrayList<>();
 
         /**
          * The buffer acknowledge watermark in percent.
@@ -570,6 +576,11 @@ public class Client {
          */
         public Builder bucket(final String bucket) {
             this.bucket = bucket;
+            return this;
+        }
+
+        public Builder collectionUids(final List<String> collectionUids) {
+            this.collectionUids = collectionUids;
             return this;
         }
 
@@ -808,6 +819,10 @@ public class Client {
 
         public String bucket() {
             return bucket;
+        }
+
+        public List<String> collectionUids() {
+            return this.collectionUids;
         }
 
         public CredentialsProvider credentialsProvider() {

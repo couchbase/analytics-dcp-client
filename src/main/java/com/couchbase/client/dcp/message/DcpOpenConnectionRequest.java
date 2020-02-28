@@ -37,13 +37,6 @@ public enum DcpOpenConnectionRequest {
         MessageUtil.setKey(connectionName, buffer);
     }
 
-    /**
-     * Returns the connection name (a slice out of the original buffer).
-     */
-    public static ByteBuf connectionName(final ByteBuf buffer) {
-        return MessageUtil.getKey(buffer);
-    }
-
     enum Type {
         /**
          * Consumer type of DCP connection is set then the sender of the {@link DcpOpenConnectionRequest}

@@ -146,7 +146,7 @@ public class PartitionState {
     public void setSeqno(long seqno) {
         if (seqno <= this.seqno) {
             LOGGER.warn("A bug. sequence number received(" + seqno + ") <= the previous sequence number(" + this.seqno
-                    + ")");
+                    + ")"); //TODO(Sandeep): if in OSO state do not warn
         }
         this.seqno = seqno;
     }

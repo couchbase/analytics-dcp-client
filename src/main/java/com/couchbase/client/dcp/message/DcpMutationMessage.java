@@ -17,16 +17,21 @@ public enum DcpMutationMessage {
         return buffer.getByte(0) == MessageUtil.MAGIC_REQ && buffer.getByte(1) == DCP_MUTATION_OPCODE;
     }
 
-    public static ByteBuf key(final ByteBuf buffer) {
-        return MessageUtil.getKey(buffer);
+    public static int getCollectionUid(final ByteBuf buffer) {
+        //We first get the leb encoded collectionUid + key buffer and then extract the collectionUid
+        return MessageUtil.readLEB128(MessageUtil.getKey(buffer, false));
     }
 
-    public static String keyString(final ByteBuf buffer, Charset charset) {
-        return key(buffer).toString(charset);
+    public static ByteBuf key(final ByteBuf buffer, boolean isCollectionEnabled) {
+        return MessageUtil.getKey(buffer, isCollectionEnabled);
     }
 
-    public static String keyString(final ByteBuf buffer) {
-        return keyString(buffer, CharsetUtil.UTF_8);
+    public static String keyString(final ByteBuf buffer, Charset charset, boolean isCollectionEnabled) {
+        return key(buffer, isCollectionEnabled).toString(charset);
+    }
+
+    public static String keyString(final ByteBuf buffer, boolean isCollectionEnabled) {
+        return keyString(buffer, CharsetUtil.UTF_8, isCollectionEnabled);
     }
 
     public static ByteBuf content(final ByteBuf buffer) {
@@ -67,10 +72,10 @@ public enum DcpMutationMessage {
         return buffer.getInt(MessageUtil.HEADER_SIZE + 24);
     }
 
-    public static String toString(final ByteBuf buffer) {
-        return "MutationMessage [key: \"" + keyString(buffer) + "\", vbid: " + partition(buffer) + ", cas: "
-                + cas(buffer) + ", bySeqno: " + bySeqno(buffer) + ", revSeqno: " + revisionSeqno(buffer) + ", flags: "
-                + flags(buffer) + ", expiry: " + expiry(buffer) + ", lockTime: " + lockTime(buffer) + ", clength: "
-                + content(buffer).readableBytes() + "]";
+    public static String toString(final ByteBuf buffer, boolean isCollectionEnabled) {
+        return "MutationMessage [key: \"" + keyString(buffer, isCollectionEnabled) + "\", vbid: " + partition(buffer)
+                + ", cas: " + cas(buffer) + ", bySeqno: " + bySeqno(buffer) + ", revSeqno: " + revisionSeqno(buffer)
+                + ", flags: " + flags(buffer) + ", expiry: " + expiry(buffer) + ", lockTime: " + lockTime(buffer)
+                + ", clength: " + content(buffer).readableBytes() + "]";
     }
 }

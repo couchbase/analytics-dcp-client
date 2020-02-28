@@ -43,7 +43,6 @@ public enum MessageUtil {
     public static final byte DCP_BUFFER_ACK_OPCODE = 0x5d;
     public static final byte DCP_CONTROL_OPCODE = 0x5e;
     public static final byte SELECT_BUCKET_OPCODE = (byte) 0x89;
-
     public static final byte INTERNAL_ROLLBACK_OPCODE = 0x01;
 
     /**
@@ -162,10 +161,16 @@ public enum MessageUtil {
         // todo: what if old key with different size is there
     }
 
-    public static ByteBuf getKey(ByteBuf buffer) {
+    public static ByteBuf getKey(ByteBuf buffer, boolean isCollectionEnabled) {
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
         short keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
-        return buffer.slice(HEADER_SIZE + extrasLength, keyLength);
+        ByteBuf keyWithPrefix = buffer.slice(HEADER_SIZE + extrasLength, keyLength);
+        if (!isCollectionEnabled) {
+            return keyWithPrefix; //if collection is not enabled, then key does not contain cid prefix
+        }
+        //if collection enabled
+        int collectionUidPrefixLength = lengthLEB128(keyWithPrefix);
+        return keyWithPrefix.slice(collectionUidPrefixLength, keyLength - collectionUidPrefixLength);
     }
 
     /**
@@ -207,6 +212,53 @@ public enum MessageUtil {
 
     public static long getCas(ByteBuf buffer) {
         return buffer.getLong(CAS_OFFSET);
+    }
+
+    /**
+     * Get the int value encoded using leb128
+     */
+    public static int readLEB128(ByteBuf bytebuf) {
+        //TODO: too baremetal, needs out-of-bound checks
+        int result = 0;
+        int shift = 0;
+        while (true) {
+            byte b = bytebuf.readByte();
+            int cur = b & 0x7F;
+            result |= cur << shift;
+            shift += 7;
+            int hob = b & 0x80; //get highest order bit value
+            if (hob == 0) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Get length (in bytes) of the leb128 encoded value
+     */
+    public static int lengthLEB128(ByteBuf bytebuf) {
+        int result = 0;
+        int shift = 0;
+        int length = 0;
+        int num_groups = 0;
+        while (true) {
+            byte b = bytebuf.readByte();
+            int cur = b & 0x7F;
+            if (num_groups == 9 && (b & 0xfe) != 0) { //we have at least seen 9 groups of size 7 (63 bits)
+                throw new ArithmeticException("Value is larger than 64-bits"); //if the current group has 2 more bits there is overflow
+            }
+            result |= cur << shift;
+            shift += 7;
+            int hob = b & 0x80;
+            ++length;
+            if (hob == 0) {
+                break;
+            }
+
+            ++num_groups;
+        }
+        return length;
     }
 
 }
