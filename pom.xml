@@ -12,7 +12,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <core.version>1.7.12</core.version>
+    <core.version>1.7.13</core.version>
     <client.version>2.7.10</client.version>
     <maven.javadoc.skip>true</maven.javadoc.skip>
   </properties>
