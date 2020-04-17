@@ -34,9 +34,6 @@ import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
 
-import rx.Completable;
-import rx.Observable;
-
 /**
  * This {@link Client} provides the main API to configure and use the DCP client.
  * Just an interface to the outside world
@@ -117,7 +114,6 @@ public class Client {
      * Each element emitted into the observable has two elements. The first element is the partition and
      * the second element is its sequence number.
      *
-     * @return an {@link Observable} of sequence number arrays.
      * @throws InterruptedException
      */
     public void getSequenceNumbers() throws Throwable {
@@ -207,7 +203,6 @@ public class Client {
     /**
      * Initializes the underlying connections (not the streams) and sets up everything as needed.
      *
-     * @return a {@link Completable} signaling that the connect phase has been completed or failed.
      * @throws Throwable
      */
     public synchronized void connect() throws Throwable {
@@ -234,7 +229,6 @@ public class Client {
      * If custom state is used (like a shared {@link EventLoopGroup}), then they must be closed and managed
      * separately after this disconnect process has finished.
      *
-     * @return a {@link Completable} signaling that the disconnect phase has been completed or failed.
      * @throws InterruptedException
      */
     public synchronized void disconnect() throws InterruptedException {
@@ -252,46 +246,38 @@ public class Client {
      *
      * @param vbids
      *            the partition ids (0-indexed) to start streaming for.
-     * @return a {@link Completable} indicating that streaming has started or failed.
      * @throws InterruptedException
      */
     public void startStreaming(short... vbids) throws Throwable {
         validateStream();
         int numPartitions = numPartitions();
-        final List<Short> partitions = partitionsForVbids(numPartitions, vbids);
-        ensureInitialized(partitions);
-        LOGGER.debug("Starting to Stream for " + partitions.size() + " partitions");
-        LOGGER.debug("Stream start against partitions: {}", partitions);
-        for (short vbid : vbids) {
-            PartitionState ps = sessionState().get(vbid);
-            LOGGER.debug("Starting partition " + vbid + " from the starting point " + ps.getStreamRequest());
-        }
-        for (short partition : partitions) {
-            PartitionState partitionState = sessionState().get(partition);
-            StreamRequest request = partitionState.getStreamRequest();
+        final List<PartitionState> partitionStates = partitionsForVbids(numPartitions, vbids);
+        ensureInitialized(partitionStates);
+        LOGGER.debug("Stream start against {} partitions: {}", partitionStates.size(), partitionStates);
+        for (PartitionState ps : partitionStates) {
+            StreamRequest request = ps.getStreamRequest();
+            LOGGER.debug("Starting partition {} from the starting point {}", ps.vbid(), request);
             conductor.startStreamForPartition(request);
         }
     }
 
-    private void ensureInitialized(List<Short> partitions) throws Throwable {
-        SessionState state = sessionState();
-        List<Short> nonInitialized = new ArrayList<>();
-        for (short partition : partitions) {
-            PartitionState ps = state.get(partition);
+    private void ensureInitialized(List<PartitionState> partitionStates) throws Throwable {
+        List<PartitionState> nonInitialized = new ArrayList<>();
+        for (PartitionState ps : partitionStates) {
             if (ps.getStreamRequest() == null) {
                 if (!ps.hasFailoverLogs()) {
                     ps.prepareNextStreamRequest();
                 } else {
-                    nonInitialized.add(ps.vbid());
+                    conductor.requestFailoverLog(ps);
+                    nonInitialized.add(ps);
                 }
             }
         }
         if (nonInitialized.isEmpty()) {
             return;
         }
-        failoverLogs(nonInitialized);
-        for (short sh : nonInitialized) {
-            PartitionState ps = state.get(sh);
+        for (PartitionState ps : nonInitialized) {
+            conductor.waitForFailoverLog(ps);
             ps.prepareNextStreamRequest();
         }
     }
@@ -300,21 +286,24 @@ public class Client {
      * Stop DCP streams for the given partition IDs (vbids).
      *
      * If no ids are provided, all partitions will be stopped. Note that you can also use this to "pause" streams
-     * if {@link #startStreaming(Short...)} is called later - since the session state is persisted and streaming
+     * if {@link #startStreaming(short...)} is called later - since the session state is persisted and streaming
      * will resume from the current position.
      *
      * @param vbids
      *            the partition ids (0-indexed) to stop streaming for.
-     * @return a {@link Completable} indicating that streaming has stopped or failed.
      * @throws InterruptedException
      */
     public void stopStreaming(short... vbids) throws InterruptedException {
-        List<Short> partitions = partitionsForVbids(numPartitions(), vbids);
-        LOGGER.debug("Stopping to Stream for " + partitions.size() + " partitions");
-        LOGGER.debug("Stream stop against partitions: {}", partitions);
-        for (short partition : partitions) {
-            conductor.stopStreamForPartition(partition);
+        List<PartitionState> partitionStates = partitionsForVbids(numPartitions(), vbids);
+        LOGGER.debug("Requesting stream stop against {} partitions: {}", partitionStates.size(), partitionStates);
+        for (PartitionState ps : partitionStates) {
+            conductor.requestStopStreamForPartition(ps);
         }
+        LOGGER.debug("Waiting for streaming to stop");
+        for (PartitionState ps : partitionStates) {
+            conductor.waitForStopStreamForPartition(ps);
+        }
+        LOGGER.debug("Streaming stopped");
     }
 
     /**
@@ -326,20 +315,22 @@ public class Client {
      *            the potentially empty array of selected vbids.
      * @return a sorted list of partitions to use.
      */
-    private static List<Short> partitionsForVbids(int numPartitions, short... vbids) {
-        List<Short> partitions = new ArrayList<>();
+    private List<PartitionState> partitionsForVbids(int numPartitions, short... vbids) {
+        SessionState state = sessionState();
+        List<PartitionState> states;
         if (vbids.length > 0) {
-            partitions = new ArrayList<>(vbids.length);
+            states = new ArrayList<>(vbids.length);
+            Arrays.sort(vbids);
             for (short sh : vbids) {
-                partitions.add(sh);
+                states.add(state.get(sh));
             }
         } else {
+            states = new ArrayList<>(numPartitions);
             for (short i = 0; i < numPartitions; i++) {
-                partitions.add(i);
+                states.add(state.get(i));
             }
         }
-        Collections.sort(partitions);
-        return partitions;
+        return states;
     }
 
     /**
@@ -350,23 +341,19 @@ public class Client {
      *
      * @param vbids
      *            the partitions to return the failover logs from.
-     * @return an {@link Observable} containing all failover logs.
-     * @throws InterruptedException
+     * @throws Throwable
      */
     public void failoverLogs(short... vbids) throws Throwable {
-        List<Short> partitions = partitionsForVbids(numPartitions(), vbids);
-        LOGGER.debug("Asking for failover logs on partitions {}", partitions);
-        for (short partition : partitions) {
-            conductor.getFailoverLog(partition);
+        List<PartitionState> partitionStates = partitionsForVbids(numPartitions(), vbids);
+        LOGGER.debug("Asking for failover logs on partitions {}", partitionStates);
+        for (PartitionState ps : partitionStates) {
+            conductor.requestFailoverLog(ps);
         }
-    }
-
-    private void failoverLogs(List<Short> nonInitialized) throws Throwable {
-        short[] vbids = new short[nonInitialized.size()];
-        for (int i = 0; i < nonInitialized.size(); i++) {
-            vbids[i] = nonInitialized.get(i);
+        LOGGER.debug("Waiting to receive failover logs");
+        for (PartitionState ps : partitionStates) {
+            conductor.waitForFailoverLog(ps);
         }
-        failoverLogs(vbids);
+        LOGGER.debug("Received failover logs");
     }
 
     public void getFailoverLogs() throws Throwable {
@@ -903,8 +890,7 @@ public class Client {
         }
         long[] currentSequences = new long[numPartitions()];
         short[] vbuckets = vbuckets();
-        for (int i = 0; i < vbuckets.length; i++) {
-            short next = vbuckets[i];
+        for (short next : vbuckets) {
             PartitionState ps = getState(next);
             currentSequences[next] = ps == null ? 0 : Long.max(0L, ps.getSeqno());
         }

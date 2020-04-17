@@ -122,16 +122,16 @@ public class Conductor {
     public void getSeqnos() throws Throwable {
         short[] vbuckets = env.vbuckets();
         // set request to all
-        for (int i = 0; i < vbuckets.length; i++) {
-            sessionState.get(vbuckets[i]).currentSeqRequest();
+        for (short vbucket : vbuckets) {
+            sessionState.get(vbucket).currentSeqRequest();
         }
         synchronized (channels) {
             for (DcpChannel channel : channels.values()) {
                 getSeqnosForChannel(channel);
             }
         }
-        for (int i = 0; i < vbuckets.length; i++) {
-            sessionState.get(vbuckets[i]).waitTillCurrentSeqUpdated(env.partitionRequestsTimeout());
+        for (short vbucket : vbuckets) {
+            sessionState.get(vbucket).waitTillCurrentSeqUpdated(env.partitionRequestsTimeout());
         }
     }
 
@@ -139,12 +139,15 @@ public class Conductor {
         dcpChannel.getSeqnos();
     }
 
-    public void getFailoverLog(final short partition) throws Throwable {
-        PartitionState ps = getSessionState().get(partition);
+    public void requestFailoverLog(PartitionState ps) {
         ps.failoverRequest();
         synchronized (channels) {
-            masterChannelByPartition(partition).getFailoverLog(partition);
+            short vbid = ps.vbid();
+            masterChannelByPartition(vbid).getFailoverLog(vbid);
         }
+    }
+
+    public void waitForFailoverLog(PartitionState ps) throws Throwable {
         ps.waitTillFailoverUpdated(env.partitionRequestsTimeout());
     }
 
@@ -156,15 +159,18 @@ public class Conductor {
         }
     }
 
-    public void stopStreamForPartition(final short partition) throws InterruptedException {
-        if (streamIsOpen(partition)) {
-            PartitionState ps = sessionState.get(partition);
-            synchronized (channels) {
-                DcpChannel channel = masterChannelByPartition(partition);
+    public void requestStopStreamForPartition(final PartitionState ps) throws InterruptedException {
+        short partition = ps.vbid();
+        synchronized (channels) {
+            DcpChannel channel = masterChannelByPartition(partition);
+            if (channel.streamIsOpen(partition)) {
                 channel.closeStream(partition);
-                ps.wait(PartitionState.DISCONNECTED);
             }
         }
+    }
+
+    public void waitForStopStreamForPartition(final PartitionState ps) throws InterruptedException {
+        ps.wait(PartitionState.DISCONNECTED);
     }
 
     public boolean streamIsOpen(final short partition) {
