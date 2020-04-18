@@ -121,6 +121,7 @@ public class Conductor {
 
     public void getSeqnos() throws Throwable {
         short[] vbuckets = env.vbuckets();
+        LOGGER.debug("Getting sequence numbers for {} vbuckets", vbuckets.length);
         // set request to all
         for (short vbucket : vbuckets) {
             sessionState.get(vbucket).currentSeqRequest();
@@ -135,7 +136,7 @@ public class Conductor {
         }
     }
 
-    private void getSeqnosForChannel(final DcpChannel dcpChannel) throws InterruptedException {
+    private void getSeqnosForChannel(final DcpChannel dcpChannel) {
         dcpChannel.getSeqnos();
     }
 

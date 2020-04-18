@@ -72,8 +72,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         PartitionState partitionState = channel.getSessionState().get(vbid);
         OpenStreamResponse response = partitionState.getOpenStreamResponse();
         short status = MessageUtil.getStatus(buf);
-        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
-            LOGGER.debug("OpenStream {} (0x{}) for vbucket ", MemcachedStatus.toString(status),
+        if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
+            LOGGER.trace("OpenStream {} (0x{}) for vbucket {}", MemcachedStatus.toString(status),
                     Integer.toHexString(status), vbid);
         }
         if (status == MemcachedStatus.SUCCESS) {
@@ -106,16 +106,16 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleFailoverLogResponse(ByteBuf buf) {
         short vbid = (short) MessageUtil.getOpaque(buf);
         short status = MessageUtil.getStatus(buf);
-        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
-            LOGGER.debug("FailoverLog {} (0x{}) for vbucket ", MemcachedStatus.toString(status),
+        if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
+            LOGGER.trace("FailoverLog {} (0x{}) for vbucket {}", MemcachedStatus.toString(status),
                     Integer.toHexString(status), vbid);
         }
         if (status == MemcachedStatus.SUCCESS) {
             handleFailoverLogResponseSuccess(buf, vbid);
         } else {
             if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
-                LOGGER.warn("FailoverLog unexpected response: {} (0x{}) for vbucket ", MemcachedStatus.toString(status),
-                        Integer.toHexString(status), vbid);
+                LOGGER.warn("FailoverLog unexpected response: {} (0x{}) for vbucket {}",
+                        MemcachedStatus.toString(status), Integer.toHexString(status), vbid);
             }
             PartitionState ps = channel.getSessionState().get(vbid);
             ps.failoverRequestFailed(new Exception("Failover response " + MemcachedStatus.toString(status) + "(0x"

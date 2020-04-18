@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.logging.CouchbaseLogger;
@@ -256,7 +257,6 @@ public class Client {
         LOGGER.debug("Stream start against {} partitions: {}", partitionStates.size(), partitionStates);
         for (PartitionState ps : partitionStates) {
             StreamRequest request = ps.getStreamRequest();
-            LOGGER.debug("Starting partition {} from the starting point {}", ps.vbid(), request);
             conductor.startStreamForPartition(request);
         }
     }
@@ -345,7 +345,10 @@ public class Client {
      */
     public void failoverLogs(short... vbids) throws Throwable {
         List<PartitionState> partitionStates = partitionsForVbids(numPartitions(), vbids);
-        LOGGER.debug("Asking for failover logs on partitions {}", partitionStates);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Asking for failover logs on partitions [{}]",
+                    partitionStates.stream().map(PartitionState::vbid).collect(Collectors.toList()));
+        }
         for (PartitionState ps : partitionStates) {
             conductor.requestFailoverLog(ps);
         }
@@ -353,7 +356,7 @@ public class Client {
         for (PartitionState ps : partitionStates) {
             conductor.waitForFailoverLog(ps);
         }
-        LOGGER.debug("Received failover logs");
+        LOGGER.debug("Received failover logs: {}", partitionStates);
     }
 
     public void getFailoverLogs() throws Throwable {

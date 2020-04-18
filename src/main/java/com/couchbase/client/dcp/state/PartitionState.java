@@ -33,6 +33,7 @@ public class PartitionState {
     public static final byte CONNECTED = 0x03;
     public static final byte DISCONNECTING = 0x04;
     public static final long RECOVERING = 0x05;
+    public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
      * Stores the failover log for this partition.
@@ -126,8 +127,8 @@ public class PartitionState {
      *            the uuid for the sequence.
      */
     public void addToFailoverLog(long seqno, long vbuuid) {
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.log(Level.DEBUG, "Adding failover log entry: (" + vbuuid + "-" + seqno + ")");
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.log(Level.TRACE, "Adding failover log entry: (" + vbuuid + "-" + seqno + ") for vbucket " + vbid);
         }
         failoverLog.add(new FailoverLogEntry(seqno, vbuuid));
         uuid = vbuuid;
@@ -161,7 +162,7 @@ public class PartitionState {
     }
 
     public synchronized void wait(byte state) throws InterruptedException {
-        LOGGER.debug("Waiting until state is " + state);
+        LOGGER.trace("Waiting until state is {} for {}", state, vbid);
         while (this.state != state) {
             wait();
         }
@@ -221,9 +222,8 @@ public class PartitionState {
 
     @Override
     public String toString() {
-        ObjectMapper mapper = new ObjectMapper();
         try {
-            return mapper.writeValueAsString(toMap());
+            return OBJECT_MAPPER.writeValueAsString(toMap());
         } catch (IOException e) {
             LOGGER.log(Level.WARN, e);
             return "{\"" + this.getClass().getSimpleName() + "\":\"" + e.toString() + "\"}";
@@ -242,28 +242,27 @@ public class PartitionState {
     }
 
     public synchronized void failoverUpdated() {
-        LOGGER.debug("Failover log updated");
+        LOGGER.trace("Failover log updated for {}", vbid);
         failoverUpdated = true;
         notifyAll();
     }
 
     public void failoverRequest() {
-        LOGGER.debug("Failover log requested");
+        LOGGER.trace("Failover log requested for {}", vbid);
         failoverUpdated = false;
         failoverLogRequestFailure = null;
     }
 
     public void currentSeqRequest() {
-        LOGGER.debug("Current Seq requested");
         currentSeqUpdated = false;
         seqsRequestFailure = null;
     }
 
     public synchronized void waitTillFailoverUpdated(long timeout) throws Throwable {
         Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
-        LOGGER.debug("Waiting until failover log updated");
+        LOGGER.trace("Waiting until failover log updated for {}", vbid);
         while (!clientDisconnected && failoverLogRequestFailure == null && !failoverUpdated && !span.elapsed()) {
-            TimeUnit.NANOSECONDS.timedWait(this, span.remaining(TimeUnit.NANOSECONDS));
+            span.wait(this);
         }
         if (clientDisconnected) {
             throw new CancellationException("Client disconnected while waiting for reply");
@@ -272,15 +271,15 @@ public class PartitionState {
             throw failoverLogRequestFailure;
         }
         if (!failoverUpdated) {
-            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining failover logs for this partition");
+            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining failover logs for " + vbid);
         }
     }
 
     public synchronized void waitTillCurrentSeqUpdated(long timeout) throws Throwable {
         Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
-        LOGGER.debug("Waiting until failover log updated");
+        LOGGER.trace("Waiting until current seq updated for {}", vbid);
         while (!clientDisconnected && seqsRequestFailure == null && !currentSeqUpdated && !span.elapsed()) {
-            TimeUnit.NANOSECONDS.timedWait(this, span.remaining(TimeUnit.NANOSECONDS));
+            span.wait(this);
         }
         if (clientDisconnected) {
             throw new CancellationException("Client disconnected while waiting for reply");
@@ -289,7 +288,7 @@ public class PartitionState {
             throw failoverLogRequestFailure;
         }
         if (!currentSeqUpdated) {
-            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining failover logs for this partition");
+            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining current seq for " + vbid);
         }
     }
 
