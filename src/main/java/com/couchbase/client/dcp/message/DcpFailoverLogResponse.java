@@ -60,8 +60,8 @@ public enum DcpFailoverLogResponse {
     public static void fill(final ByteBuf buffer, PartitionState ps) {
         ps.clearFailoverLog();
         int numEntries = numLogEntries(buffer);
-        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
-            LOGGER.log(CouchbaseLogLevel.DEBUG,
+        if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
+            LOGGER.log(CouchbaseLogLevel.TRACE,
                     "Failover log response for vbucket " + ps.vbid() + " contains " + numEntries + " entries");
         }
         for (int i = numEntries - 1; i >= 0; i--) {

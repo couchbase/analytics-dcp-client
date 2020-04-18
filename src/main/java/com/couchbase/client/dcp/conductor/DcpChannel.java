@@ -263,8 +263,6 @@ public class DcpChannel {
 
     /**
      * Returns all seqnos for all vbuckets on that channel.
-     *
-     * @throws InterruptedException
      */
     public synchronized void getSeqnos() {
         stateFetched = false;

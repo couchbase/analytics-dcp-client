@@ -260,8 +260,7 @@ public class Client {
         int numPartitions = numPartitions();
         final List<Short> partitions = partitionsForVbids(numPartitions, vbids);
         ensureInitialized(partitions);
-        LOGGER.debug("Starting to Stream for " + partitions.size() + " partitions");
-        LOGGER.debug("Stream start against partitions: {}", partitions);
+        LOGGER.debug("Stream start against {} partitions: {}", partitions.size(), partitions);
         for (short vbid : vbids) {
             PartitionState ps = sessionState().get(vbid);
             LOGGER.debug("Starting partition " + vbid + " from the starting point " + ps.getStreamRequest());
@@ -300,7 +299,7 @@ public class Client {
      * Stop DCP streams for the given partition IDs (vbids).
      *
      * If no ids are provided, all partitions will be stopped. Note that you can also use this to "pause" streams
-     * if {@link #startStreaming(Short...)} is called later - since the session state is persisted and streaming
+     * if {@link #startStreaming(short...)} is called later - since the session state is persisted and streaming
      * will resume from the current position.
      *
      * @param vbids
