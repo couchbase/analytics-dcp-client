@@ -18,7 +18,7 @@ public class StreamEndEvent implements PartitionDcpEvent {
 
     public StreamEndEvent(PartitionState state) {
         this.state = state;
-        reason = StreamEndReason.INVALID;
+        reason = StreamEndReason.UNKNOWN;
     }
 
     @Override
@@ -35,7 +35,7 @@ public class StreamEndEvent implements PartitionDcpEvent {
     }
 
     public void reset() {
-        reason = StreamEndReason.INVALID;
+        reason = StreamEndReason.UNKNOWN;
         setFailoverLogsRequested(false);
         setSeqRequested(false);
         attempts = 0;

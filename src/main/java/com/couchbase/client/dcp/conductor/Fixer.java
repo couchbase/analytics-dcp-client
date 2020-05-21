@@ -226,7 +226,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                 // Normal op, reached the end of the requested DCP stream
                 LOGGER.info(this + " stream reached the end of your request");
                 break;
-            case INVALID:
+            case UNKNOWN:
                 LOGGER.error("{} Stream ended with invalid indicating a producer error, should re-open the stream",
                         this);
             case STATE_CHANGED:
@@ -270,6 +270,9 @@ public class Fixer implements Runnable, SystemEventHandler {
             case TOO_SLOW:
                 // Log, requesting upgrade to analytics resources and re-open the stream
                 LOGGER.warn(this + " need more analytics ingestion nodes. we are slow for the producer node");
+                break;
+            case LOST_PRIVILEGES:
+                LOGGER.warn(this + " we have lost privileges");
                 break;
             default:
                 LOGGER.error(this + " unexpected event type " + streamEndEvent);
