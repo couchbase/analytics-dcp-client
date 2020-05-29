@@ -34,7 +34,8 @@ public class DcpChannelCloseListener implements ChannelFutureListener {
                     channel.setState(State.DISCONNECTED);
                     break;
                 default:
-                    LOGGER.error("This should never happen");
+                    LOGGER.error("Unexpected state {} on dropped connection for channel {}", channel.getState(),
+                            channel);
                     channel.getEnv().eventBus().publish(new ImpossibleEvent());
                     break;
             }

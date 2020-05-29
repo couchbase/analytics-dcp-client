@@ -3,6 +3,8 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetry;
+
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
@@ -137,7 +139,7 @@ public class DcpChannel {
                 if (failure == null) {
                     failure = e;
                 }
-                if (System.currentTimeMillis() - startTime > totalTimeout) {
+                if (!shouldRetry(e) || System.currentTimeMillis() - startTime > totalTimeout) {
                     LOGGER.warn("Connection FAILED " + attempt + " times");
                     channel = null;
                     setState(State.DISCONNECTED);
@@ -286,8 +288,6 @@ public class DcpChannel {
 
     /**
      * Returns all seqnos for all vbuckets on that channel.
-     *
-     * @throws InterruptedException
      */
     public synchronized void getSeqnos() {
         stateFetched = false;
