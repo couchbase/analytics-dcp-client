@@ -12,8 +12,8 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <core.version>1.7.10</core.version>
-    <client.version>2.7.10</client.version>
+    <core.version>1.7.14</core.version>
+    <client.version>2.7.14</client.version>
     <maven.javadoc.skip>true</maven.javadoc.skip>
   </properties>
   <name>Couchbase Java DCP Client</name>
@@ -59,7 +59,6 @@
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
       <artifactId>log4j-api</artifactId>
-      <version>2.12.1</version>
     </dependency>
         <!-- for examples -->
     <dependency>
