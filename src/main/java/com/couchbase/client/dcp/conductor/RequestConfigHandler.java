@@ -78,7 +78,7 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
     @Override
     protected void channelRead0(final ChannelHandlerContext ctx, final HttpResponse msg) throws Exception {
         int statusCode = msg.getStatus().code();
-        LOGGER.log(Level.INFO, "Status code " + statusCode);
+        LOGGER.debug("Status code " + statusCode);
         if (statusCode == 200) {
             ctx.pipeline().remove(this);
             originalPromise().setSuccess();

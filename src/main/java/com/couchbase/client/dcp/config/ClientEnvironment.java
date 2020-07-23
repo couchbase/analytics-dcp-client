@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import com.couchbase.client.core.env.ConfigParserEnvironment;
+import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.node.DefaultMemcachedHashingStrategy;
 import com.couchbase.client.core.node.MemcachedHashingStrategy;
 import com.couchbase.client.core.time.Delay;
@@ -156,6 +157,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private short[] vbuckets;
     private final String uuid;
     private final boolean dynamicConfigurationNodes;
+    private final NetworkResolution networkResolution;
 
     /**
      * Creates a new environment based on the builder.
@@ -197,6 +199,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         partitionRequestsTimeout = builder.partitionRequestsTimeout;
         uuid = builder.uuid;
         dynamicConfigurationNodes = builder.dynamicConfigurationNodes;
+        networkResolution = builder.networkResolution;
     }
 
     /**
@@ -390,6 +393,10 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         return DefaultMemcachedHashingStrategy.INSTANCE;
     }
 
+    public NetworkResolution networkResolution() {
+        return networkResolution;
+    }
+
     public static class Builder {
         private List<InetSocketAddress> clusterAt;
         private ConnectionNameGenerator connectionNameGenerator = DefaultConnectionNameGenerator.INSTANCE;
@@ -424,6 +431,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private long dcpChannelTotalTimeout = DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT;
         private Delay dcpChannelsReconnectDelay = DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
         private long partitionRequestsTimeout = DEFAULT_PARTITION_REQUESTS_TIMEOUT;
+        private NetworkResolution networkResolution;
 
         public Builder setClusterAt(List<InetSocketAddress> clusterAt) {
             this.clusterAt = clusterAt;
@@ -599,6 +607,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
                 }
             }
             return new ClientEnvironment(this);
+        }
+
+        public Builder setNetworkResolution(NetworkResolution networkResolution) {
+            this.networkResolution = networkResolution;
+            return this;
         }
     }
 

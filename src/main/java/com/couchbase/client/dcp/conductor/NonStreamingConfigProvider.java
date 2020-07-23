@@ -3,11 +3,14 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import static com.couchbase.client.core.env.NetworkResolution.EXTERNAL;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -18,6 +21,7 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.client.core.config.AlternateAddress;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.service.ServiceType;
@@ -36,7 +40,7 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
 
     private static final Logger LOGGER = LogManager.getLogger();
     private static final long MIN_MILLIS_PER_REFRESH = 1000;
-    private final Set<InetSocketAddress> sockets = new HashSet<>();
+    private final Set<InetSocketAddress> sockets = new LinkedHashSet<>();
 
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
@@ -164,8 +168,27 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
             for (NodeInfo node : config.nodes()) {
                 int port = (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.CONFIG);
                 InetSocketAddress address = new InetSocketAddress(node.hostname(), port);
-                LOGGER.info("Adding a config node {}", address);
-                configNodes.add(address);
+                if (env.networkResolution().equals(EXTERNAL)) {
+                    AlternateAddress aa = node.alternateAddresses().get(EXTERNAL.name());
+                    if (aa == null) {
+                        LOGGER.info("omitting node {} which does not provide an external alternate address", address);
+                        continue;
+                    }
+                    Map<ServiceType, Integer> services = env.sslEnabled() ? aa.sslServices() : aa.services();
+                    if (services.containsKey(ServiceType.CONFIG)) {
+                        int altPort = services.get(ServiceType.CONFIG);
+                        InetSocketAddress altAddress = new InetSocketAddress(aa.hostname(), altPort);
+                        LOGGER.info("Adding a config node {} at alternate address {}", address, altAddress);
+                        configNodes.add(altAddress);
+                    } else {
+                        LOGGER.info(
+                                "omitting node {} which does not provide the config service on its external alternate address",
+                                address);
+                    }
+                } else {
+                    LOGGER.info("Adding a config node {}", address);
+                    configNodes.add(address);
+                }
             }
             if (!configNodes.isEmpty()) {
                 sockets.clear();
