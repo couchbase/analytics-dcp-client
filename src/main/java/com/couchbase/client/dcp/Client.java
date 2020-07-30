@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 
 import com.couchbase.client.core.config.BucketCapabilities;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
+import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.time.Delay;
@@ -90,7 +91,9 @@ public class Client {
                 .setBootstrapHttpDirectPort(builder.configPort()).setBootstrapHttpSslPort(builder.sslConfigPort())
                 .setVbuckets(builder.vbuckets()).setClusterAt(builder.clusterAt())
                 .setFlowControlCallback(builder.flowControlCallback()).setUuid(builder.uuid())
-                .setDynamicConfigurationNodes(builder.dynamicConfigurationNodes()).build();
+                .setDynamicConfigurationNodes(builder.dynamicConfigurationNodes())
+                .setNetworkResolution(builder.networkResolution()).build();
+
         ackEnabled = env.dcpControl().ackEnabled();
         if (ackEnabled && env.ackWaterMark() == 0) {
             throw new IllegalArgumentException("The bufferAckWatermark needs to be set if bufferAck is enabled.");
@@ -461,6 +464,7 @@ public class Client {
         private int sslConfigPort = ClientEnvironment.BOOTSTRAP_HTTP_SSL_PORT;
         private short[] vbuckets;
         private FlowControlCallback flowControlCallback = FlowControlCallback.NOOP;
+        private NetworkResolution networkResolution = NetworkResolution.DEFAULT;
         // Total timeouts, attempt timeouts, and delays
         private long configProviderAttemptTimeout = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_ATTEMPT_TIMEOUT;
         private long configProviderTotalTimeout = ClientEnvironment.DEFAULT_CONFIG_PROVIDER_TOTAL_TIMEOUT;
@@ -803,6 +807,10 @@ public class Client {
             return this;
         }
 
+        public void networkResolution(NetworkResolution external) {
+            this.networkResolution = external;
+        }
+
         public ConnectionNameGenerator connectionNameGenerator() {
             return connectionNameGenerator;
         }
@@ -898,6 +906,10 @@ public class Client {
 
         public String connectionString() {
             return connectionString;
+        }
+
+        public NetworkResolution networkResolution() {
+            return networkResolution;
         }
     }
 

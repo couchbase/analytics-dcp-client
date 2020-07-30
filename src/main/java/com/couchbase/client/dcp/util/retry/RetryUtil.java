@@ -6,6 +6,7 @@ package com.couchbase.client.dcp.util.retry;
 import org.apache.hyracks.api.util.ExceptionUtils;
 
 import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.dcp.conductor.MasterDcpChannelNotFoundException;
 import com.couchbase.client.dcp.error.BucketNotFoundException;
 
 public class RetryUtil {
@@ -15,7 +16,7 @@ public class RetryUtil {
 
     public static boolean shouldRetry(Throwable th) {
         Throwable root = ExceptionUtils.getRootCause(th);
-        return !((root instanceof BucketNotFoundException)
+        return !((root instanceof BucketNotFoundException) || (root instanceof MasterDcpChannelNotFoundException)
                 || (root instanceof CouchbaseException && root.getMessage().contains("Unauthorized"))
                 || (root.getMessage().contains("36: No access")));
     }

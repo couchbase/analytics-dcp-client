@@ -3,14 +3,17 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import static com.couchbase.client.core.env.NetworkResolution.EXTERNAL;
+
 import java.net.InetSocketAddress;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.hyracks.api.util.InvokeUtil;
+import org.apache.hyracks.util.NetworkUtil;
 
 import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.config.AlternateAddress;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
@@ -193,17 +196,41 @@ public class Conductor {
             int index = config.nodeIndexForMaster(partition, false);
             if (index < 0) {
                 throw new CouchbaseException(
-                        "partition " + partition + " does not have a master node. Configuration: " + config);
+                        "partition " + partition + " does not have a master node; config: " + config);
             }
-            NodeInfo node = config.nodeAtIndex(index);
-            InetSocketAddress address = new InetSocketAddress(node.hostname(),
-                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
-            DcpChannel theChannel = channels.get(address);
+            DcpChannel theChannel = dcpChannelForNode(partition, config.nodeAtIndex(index));
             if (theChannel == null) {
-                throw new IllegalStateException("No DcpChannel found for partition " + partition + ". env vbuckets = "
-                        + Arrays.toString(env.vbuckets()));
+                throw new MasterDcpChannelNotFoundException(
+                        "master DcpChannel not found for partition " + partition + "; config: " + config);
             }
             return theChannel;
+        }
+    }
+
+    private DcpChannel dcpChannelForNode(short partition, NodeInfo node) {
+        if (env.networkResolution().equals(EXTERNAL)) {
+            AlternateAddress aa = node.alternateAddresses().get(EXTERNAL.name());
+            if (aa == null) {
+                LOGGER.debug("partition {} master node {} does not provide an external alternate address", partition,
+                        NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.CONFIG)));
+                return null;
+            }
+            Map<ServiceType, Integer> services = env.sslEnabled() ? aa.sslServices() : aa.services();
+            if (services.containsKey(ServiceType.BINARY)) {
+                int altPort = services.get(ServiceType.BINARY);
+                InetSocketAddress altAddress = new InetSocketAddress(aa.hostname(), altPort);
+                return channels.get(altAddress);
+            } else {
+                LOGGER.debug(
+                        "partition {} master node {} does not provide the KV service on its external alternate address {}",
+                        partition, NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.CONFIG)),
+                        aa.hostname());
+                return null;
+            }
+        } else {
+            InetSocketAddress address = new InetSocketAddress(node.hostname(),
+                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
+            return channels.get(address);
         }
     }
 
@@ -218,28 +245,41 @@ public class Conductor {
     public void add(NodeInfo node, CouchbaseBucketConfig config, long attemptTimeout, long totalTimeout, Delay delay)
             throws Throwable {
         synchronized (channels) {
-            if (!(node.services().containsKey(ServiceType.BINARY)
-                    || node.sslServices().containsKey(ServiceType.BINARY))) {
-                return;
-            }
             if (!config.hasPrimaryPartitionsOnNode(node.hostname())) {
                 return;
             }
-            InetSocketAddress address = new InetSocketAddress(node.hostname(),
-                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
+            InetSocketAddress address;
+            if (env.networkResolution().equals(EXTERNAL)) {
+                AlternateAddress aa = node.alternateAddresses().get(EXTERNAL.name());
+                if (aa == null) {
+                    LOGGER.warn("node {} does not provide an external alternate address",
+                            NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.CONFIG)));
+                    return;
+                }
+                Map<ServiceType, Integer> services = env.sslEnabled() ? aa.sslServices() : aa.services();
+                if (!services.containsKey(ServiceType.BINARY)) {
+                    LOGGER.warn("node {} does not provide the KV service on its external alternate address {}",
+                            NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.CONFIG)),
+                            aa.hostname());
+                    return;
+                }
+                int altPort = services.get(ServiceType.BINARY);
+                address = new InetSocketAddress(aa.hostname(), altPort);
+            } else {
+                final Map<ServiceType, Integer> services = env.sslEnabled() ? node.sslServices() : node.services();
+                if (!services.containsKey(ServiceType.BINARY)) {
+                    return;
+                }
+                address = new InetSocketAddress(node.hostname(), services.get(ServiceType.BINARY));
+            }
             if (channels.containsKey(address)) {
                 return;
             }
-            LOGGER.debug("Adding DCP Channel against {}", node);
-            final DcpChannel channel = new DcpChannel(address, node.hostname(), env, sessionState,
+            DcpChannel channel = new DcpChannel(address, node.hostname(), env, sessionState,
                     configProvider.config().numberOfPartitions(), configProvider.isCollectionCapable());
+            LOGGER.debug("Adding DCP Channel against {}", node);
+            channel.connect(attemptTimeout, totalTimeout, delay);
             channels.put(address, channel);
-            try {
-                channel.connect(attemptTimeout, totalTimeout, delay);
-            } catch (Throwable th) {
-                channels.remove(address);
-                throw th;
-            }
         }
     }
 
