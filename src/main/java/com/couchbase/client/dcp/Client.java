@@ -37,6 +37,9 @@ import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
 
+import it.unimi.dsi.fastutil.ints.IntList;
+import it.unimi.dsi.fastutil.ints.IntLists;
+
 /**
  * This {@link Client} provides the main API to configure and use the DCP client.
  * Just an interface to the outside world
@@ -76,7 +79,7 @@ public class Client {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
         env = ClientEnvironment.builder().setConnectionNameGenerator(builder.connectionNameGenerator())
-                .setBucket(builder.bucket()).setCollectionsUid(builder.collectionUids())
+                .setBucket(builder.bucket()).setCids(builder.cids())
                 .setCredentialsProvider(builder.credentialsProvider()).setDcpControl(builder.dcpControl())
                 .setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
                 .setBufferAckWatermark(builder.bufferAckWatermark()).setBufferPooling(builder.poolBuffers())
@@ -472,7 +475,7 @@ public class Client {
         private long dcpChannelAttemptTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_ATTEMPT_TIMEOUT;
         private long dcpChannelTotalTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT;
         private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
-        private List<String> collectionUids = new ArrayList<>();
+        private IntList cids = IntLists.EMPTY_LIST;
 
         /**
          * The buffer acknowledge watermark in percent.
@@ -573,8 +576,8 @@ public class Client {
             return this;
         }
 
-        public Builder collectionUids(final List<String> collectionUids) {
-            this.collectionUids = collectionUids;
+        public Builder cids(final IntList cids) {
+            this.cids = cids;
             return this;
         }
 
@@ -819,8 +822,8 @@ public class Client {
             return bucket;
         }
 
-        public List<String> collectionUids() {
-            return this.collectionUids;
+        public IntList cids() {
+            return this.cids;
         }
 
         public CredentialsProvider credentialsProvider() {

@@ -17,7 +17,7 @@ public enum DcpMutationMessage {
         return buffer.getByte(0) == MessageUtil.MAGIC_REQ && buffer.getByte(1) == DCP_MUTATION_OPCODE;
     }
 
-    public static int getCollectionUid(final ByteBuf buffer) {
+    public static int cid(final ByteBuf buffer) {
         //We first get the leb encoded collectionUid + key buffer and then extract the collectionUid
         return MessageUtil.readLEB128(MessageUtil.getKey(buffer, false));
     }
@@ -72,10 +72,11 @@ public enum DcpMutationMessage {
         return buffer.getInt(MessageUtil.HEADER_SIZE + 24);
     }
 
-    public static String toString(final ByteBuf buffer, boolean isCollectionEnabled) {
-        return "MutationMessage [key: \"" + keyString(buffer, isCollectionEnabled) + "\", vbid: " + partition(buffer)
-                + ", cas: " + cas(buffer) + ", bySeqno: " + bySeqno(buffer) + ", revSeqno: " + revisionSeqno(buffer)
-                + ", flags: " + flags(buffer) + ", expiry: " + expiry(buffer) + ", lockTime: " + lockTime(buffer)
-                + ", clength: " + content(buffer).readableBytes() + "]";
+    public static String toString(final ByteBuf buffer, boolean collections) {
+        return "MutationMessage [key: \"" + keyString(buffer, collections) + "\", "
+                + (collections ? "cid: 0x" + Integer.toUnsignedString(cid(buffer), 16) + ", " : "") + "vbid: "
+                + partition(buffer) + ", cas: " + cas(buffer) + ", bySeqno: " + bySeqno(buffer) + ", revSeqno: "
+                + revisionSeqno(buffer) + ", flags: " + flags(buffer) + ", expiry: " + expiry(buffer) + ", lockTime: "
+                + lockTime(buffer) + ", clength: " + content(buffer).readableBytes() + "]";
     }
 }

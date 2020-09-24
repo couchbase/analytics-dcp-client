@@ -7,6 +7,7 @@ import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetry;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.function.IntConsumer;
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
@@ -247,11 +248,8 @@ public class DcpChannel {
         if (isCollectionCapable) {
             ObjectMapper om = new ObjectMapper();
             ObjectNode json = om.createObjectNode();
-            ArrayNode an = json.arrayNode();
-            for (String uid : env.collectionUids()) {
-                an.add(uid);
-            }
-            json.put("collections", an);
+            ArrayNode an = json.putArray("collections");
+            env.cids().forEach((IntConsumer) uid -> an.add(Integer.toUnsignedString(uid, 16)));
             String str;
             try {
                 str = om.writeValueAsString(json);

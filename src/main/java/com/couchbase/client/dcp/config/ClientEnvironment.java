@@ -25,6 +25,7 @@ import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 
+import it.unimi.dsi.fastutil.ints.IntList;
 import rx.Completable;
 import rx.Observable;
 
@@ -79,7 +80,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     /**
      * The list of collections (in uids) for this channel
      */
-    private final List<String> collectionUids;
+    private final IntList cids;
 
     /**
      * DCP control params, optional.
@@ -173,7 +174,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private ClientEnvironment(final Builder builder) {
         connectionNameGenerator = builder.connectionNameGenerator;
         bucket = builder.bucket;
-        collectionUids = builder.collectionUids;
+        cids = builder.cids;
         credentialsProvider = builder.credentialsProvider;
         dcpControl = builder.dcpControl;
         eventLoopGroup = builder.eventLoopGroup;
@@ -257,8 +258,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         return bucket;
     }
 
-    public List<String> collectionUids() {
-        return collectionUids;
+    public IntList cids() {
+        return cids;
     }
 
     public String uuid() {
@@ -428,7 +429,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private FlowControlCallback flowControlCallback;
         private String uuid;
         private boolean dynamicConfigurationNodes = true;
-        private List<String> collectionUids;
+        private IntList cids;
         /*
          * Config Provider
          */
@@ -464,8 +465,8 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
             return this;
         }
 
-        public Builder setCollectionsUid(List<String> collectionUids) {
-            this.collectionUids = collectionUids;
+        public Builder setCids(IntList cids) {
+            this.cids = cids;
             return this;
         }
 

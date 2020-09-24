@@ -218,19 +218,20 @@ public enum MessageUtil {
      * Get the int value encoded using leb128
      */
     public static int readLEB128(ByteBuf bytebuf) {
-        //TODO: too baremetal, needs out-of-bound checks
         int result = 0;
         int shift = 0;
-        while (true) {
+        int hob;
+        do {
             byte b = bytebuf.readByte();
-            int cur = b & 0x7F;
-            result |= cur << shift;
-            shift += 7;
-            int hob = b & 0x80; //get highest order bit value
-            if (hob == 0) {
-                break;
+            result |= (b & 0x7F) << shift;
+            if (shift == 28 && (b & 0xf0) != 0) {
+                // we have already seen 28 bits; if anything more than low 4 bits is present we have an overflow
+                throw new ArithmeticException("LEB128 value is larger than 32-bits (low 32-bits: 0x"
+                        + Integer.toUnsignedString(result, 16) + ")");
             }
-        }
+            shift += 7;
+            hob = b & 0x80; //get highest order bit value
+        } while (hob != 0);
         return result;
     }
 
@@ -238,26 +239,18 @@ public enum MessageUtil {
      * Get length (in bytes) of the leb128 encoded value
      */
     public static int lengthLEB128(ByteBuf bytebuf) {
-        int result = 0;
-        int shift = 0;
+        int numGroups = 0;
         int length = 0;
-        int num_groups = 0;
-        while (true) {
+        int hob;
+        do {
             byte b = bytebuf.readByte();
-            int cur = b & 0x7F;
-            if (num_groups == 9 && (b & 0xfe) != 0) { //we have at least seen 9 groups of size 7 (63 bits)
-                throw new ArithmeticException("Value is larger than 64-bits"); //if the current group has 2 more bits there is overflow
+            if (numGroups++ == 4 && (b & 0xf0) != 0) {
+                // we have already seen 28 bits; if anything more than low 4 bits is present we have an overflow
+                throw new ArithmeticException("LEB128 value is larger than 32-bits");
             }
-            result |= cur << shift;
-            shift += 7;
-            int hob = b & 0x80;
-            ++length;
-            if (hob == 0) {
-                break;
-            }
-
-            ++num_groups;
-        }
+            hob = b & 0x80;
+            length++;
+        } while (hob != 0);
         return length;
     }
 
