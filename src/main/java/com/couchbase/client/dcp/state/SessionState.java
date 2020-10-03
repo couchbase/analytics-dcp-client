@@ -5,6 +5,8 @@ package com.couchbase.client.dcp.state;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 import rx.functions.Action1;
 
@@ -91,6 +93,13 @@ public class SessionState {
             }
             action.call(ps);
         }
+    }
+
+    /**
+     * Provides a stream over all partitions
+     */
+    public Stream<PartitionState> partitionStream() {
+        return partitionStates.stream().filter(Objects::nonNull);
     }
 
     /**

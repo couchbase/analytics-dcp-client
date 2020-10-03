@@ -124,7 +124,12 @@ public class DcpControl implements Iterable<Map.Entry<String, String>> {
          * disabling cursor dropping for backwards compatibility. This parameter is available
          * starting in Couchbase 4.5.
          */
-        SUPPORTS_CURSOR_DROPPING("supports_cursor_dropping");
+        SUPPORTS_CURSOR_DROPPING("supports_cursor_dropping"),
+        /**
+         * Tells the server that the client supports out of order DCP. The server may, if
+         * possible send DCP messages in a different order than sequence number order.
+         */
+        ENABLE_OUT_OF_ORDER_SNAPSHOTS("enable_out_of_order_snapshots");
 
         private String value;
 

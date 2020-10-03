@@ -3,6 +3,8 @@
  */
 package com.couchbase.client.dcp.state;
 
+import static java.util.Objects.requireNonNull;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,6 +22,7 @@ import org.apache.logging.log4j.Logger;
 import com.couchbase.client.dcp.events.FailoverLogUpdateEvent;
 import com.couchbase.client.dcp.events.OpenStreamResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
+import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -62,11 +65,17 @@ public class PartitionState {
 
     private volatile boolean currentSeqUpdated;
 
+    private volatile boolean collectionsManifestUpdated;
+
     private volatile boolean clientDisconnected;
 
     private volatile Throwable failoverLogRequestFailure;
 
     private volatile Throwable seqsRequestFailure;
+
+    private volatile Throwable collectionsManifestFailure;
+
+    private volatile boolean outOfOrder;
 
     private StreamRequest streamRequest;
 
@@ -74,6 +83,8 @@ public class PartitionState {
     private final FailoverLogUpdateEvent failoverLogUpdateEvent;
 
     private final OpenStreamResponse openStreamResponse;
+
+    private volatile CollectionsManifest collectionsManifest;
 
     /**
      * Initialize a new partition state.
@@ -145,9 +156,9 @@ public class PartitionState {
      * Allows to set the current sequence number.
      */
     public void setSeqno(long seqno) {
-        if (seqno <= this.seqno) {
-            LOGGER.warn("A bug. sequence number received(" + seqno + ") <= the previous sequence number(" + this.seqno
-                    + ")"); //TODO(Sandeep): if in OSO state do not warn
+        if (!outOfOrder && Long.compareUnsigned(seqno, this.seqno) <= 0) {
+            LOGGER.warn("new seqno received (0x{}) <= the previous seqno(0x{}) for vbid: {}",
+                    Long.toUnsignedString(seqno, 16), Long.toUnsignedString(this.seqno, 16), vbid);
         }
         this.seqno = seqno;
     }
@@ -258,6 +269,12 @@ public class PartitionState {
         seqsRequestFailure = null;
     }
 
+    public void collectionsManifestRequest() {
+        LOGGER.trace("Collections manifest requested for {}", vbid);
+        collectionsManifestUpdated = false;
+        collectionsManifestFailure = null;
+    }
+
     public synchronized void waitTillFailoverUpdated(long timeout) throws Throwable {
         Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
         LOGGER.trace("Waiting until failover log updated for {}", vbid);
@@ -289,6 +306,24 @@ public class PartitionState {
         }
         if (!currentSeqUpdated) {
             throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining current seq for " + vbid);
+        }
+    }
+
+    public synchronized void waitCollectionsManifestUpdated(long timeout) throws Throwable {
+        Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
+        LOGGER.trace("Waiting until failover log updated for {}", vbid);
+        while (!clientDisconnected && collectionsManifestFailure == null && !collectionsManifestUpdated
+                && !span.elapsed()) {
+            span.wait(this);
+        }
+        if (clientDisconnected) {
+            throw new CancellationException("Client disconnected while waiting for reply");
+        }
+        if (collectionsManifestFailure != null) {
+            throw collectionsManifestFailure;
+        }
+        if (!collectionsManifestUpdated) {
+            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining collections manifest for " + vbid);
         }
     }
 
@@ -326,6 +361,11 @@ public class PartitionState {
         notifyAll();
     }
 
+    public synchronized void collectionsManifestRequestFailed(Throwable th) {
+        collectionsManifestFailure = th;
+        notifyAll();
+    }
+
     public synchronized void clientDisconnected() {
         clientDisconnected = true;
         notifyAll();
@@ -343,4 +383,23 @@ public class PartitionState {
     public void clearFailoverLog() {
         failoverLog.clear();
     }
+
+    public void beginOutOfOrder() {
+        outOfOrder = true;
+    }
+
+    public void endOutOfOrder() {
+        outOfOrder = false;
+    }
+
+    public CollectionsManifest getCollectionsManifest() {
+        return collectionsManifest;
+    }
+
+    public synchronized void setCollectionsManifest(CollectionsManifest collectionsManifest) {
+        this.collectionsManifest = requireNonNull(collectionsManifest);
+        collectionsManifestUpdated = true;
+        notifyAll();
+    }
+
 }

@@ -14,6 +14,7 @@ import org.apache.hyracks.util.NetworkUtil;
 
 import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.config.AlternateAddress;
+import com.couchbase.client.core.config.BucketCapabilities;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
@@ -160,6 +161,17 @@ public class Conductor {
             DcpChannel channel = masterChannelByPartition(request.getPartition());
             channel.openStream(request.getPartition(), request.getVbucketUuid(), request.getStartSeqno(),
                     request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno());
+            if (config().capabilities().contains(BucketCapabilities.COLLECTIONS)) {
+                PartitionState state = sessionState.get(request.getPartition());
+                requestCollectionsManifest(state);
+                // TODO(mblow): defer wait for manifest until we actually need it
+                try {
+                    waitForCollectionsManifest(state);
+                } catch (Throwable th) {
+                    // TODO(mblow): what do we do when we fail to get the collection manifest?
+                    LOGGER.error("failed to obtain collections manifest for {}", request.getPartition(), th);
+                }
+            }
         }
     }
 
@@ -181,6 +193,17 @@ public class Conductor {
         synchronized (channels) {
             return masterChannelByPartition(partition).streamIsOpen(partition);
         }
+    }
+
+    public void requestCollectionsManifest(PartitionState ps) {
+        ps.collectionsManifestRequest();
+        synchronized (channels) {
+            masterChannelByPartition(ps.vbid()).requestCollectionsManifest(ps.vbid());
+        }
+    }
+
+    public void waitForCollectionsManifest(PartitionState ps) throws Throwable {
+        ps.waitCollectionsManifestUpdated(env.partitionRequestsTimeout());
     }
 
     /**

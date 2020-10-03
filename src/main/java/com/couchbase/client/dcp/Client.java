@@ -23,6 +23,7 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.events.EventBus;
+import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.message.DcpDeletionMessage;
 import com.couchbase.client.dcp.message.DcpExpirationMessage;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
@@ -287,6 +288,18 @@ public class Client {
             conductor.waitForFailoverLog(ps);
             ps.prepareNextStreamRequest();
         }
+    }
+
+    public CollectionsManifest getCollectionsManifest() throws Throwable {
+        if (!config().capabilities().contains(BucketCapabilities.COLLECTIONS)) {
+            // TODO (mblow): should we throw a specific exception here instead of just failing to resolve the
+            // collection later?
+            return CollectionsManifest.DEFAULT;
+        }
+        PartitionState ps = sessionState().partitionStream().findAny().orElseThrow(IllegalStateException::new);
+        conductor.requestCollectionsManifest(ps);
+        conductor.waitForCollectionsManifest(ps);
+        return ps.getCollectionsManifest();
     }
 
     /**

@@ -109,8 +109,10 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
         ctx.pipeline().remove(this);
         originalPromise().setSuccess();
         ctx.fireChannelActive();
-        LOGGER.debug("DCP Connection opened with Name \"{}\" against Node {}", connectionName,
-                ctx.channel().remoteAddress());
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("DCP Connection opened with Name \"{}\" against Node {}",
+                    connectionName.toString(CharsetUtil.UTF_8), ctx.channel().remoteAddress());
+        }
     }
 
     private void helo(ChannelHandlerContext ctx, ByteBuf msg) {

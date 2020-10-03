@@ -19,6 +19,7 @@ import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpCloseStreamRequest;
 import com.couchbase.client.dcp.message.DcpFailoverLogRequest;
+import com.couchbase.client.dcp.message.DcpGetCollectionsManifestRequest;
 import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosRequest;
 import com.couchbase.client.dcp.message.DcpOpenStreamRequest;
 import com.couchbase.client.dcp.message.StreamEndReason;
@@ -320,6 +321,21 @@ public class DcpChannel {
         DcpFailoverLogRequest.vbucket(buffer, vbid);
         channel.writeAndFlush(buffer);
         LOGGER.debug("Asked for failover log on {} for vbid: {}", channel.remoteAddress(), vbid);
+    }
+
+    public synchronized void requestCollectionsManifest(final short vbid) {
+        LOGGER.debug("requesting collections manifest for vbucket {}", vbid);
+        if (getState() != State.CONNECTED) {
+            PartitionState ps = sessionState.get(vbid);
+            if (!ps.isClientDisconnected()) {
+                ps.collectionsManifestRequestFailed(new NotConnectedException());
+            }
+            return;
+        }
+        ByteBuf buffer = Unpooled.buffer();
+        DcpGetCollectionsManifestRequest.init(buffer);
+        DcpGetCollectionsManifestRequest.opaque(buffer, vbid);
+        channel.writeAndFlush(buffer);
     }
 
     public boolean streamIsOpen(short vbid) {

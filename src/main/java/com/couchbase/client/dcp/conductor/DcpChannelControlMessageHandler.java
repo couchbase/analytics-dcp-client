@@ -3,6 +3,10 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import java.io.IOException;
+
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
@@ -10,13 +14,15 @@ import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DcpAckHandle;
 import com.couchbase.client.dcp.events.OpenStreamResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
-import com.couchbase.client.dcp.message.DcpCloseStreamResponse;
+import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
-import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
+import com.couchbase.client.dcp.message.DcpOsoSnapshotMarkerMessage;
+import com.couchbase.client.dcp.message.DcpSeqnoAdvancedMessage;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
-import com.couchbase.client.dcp.message.DcpStateVbucketStateMessage;
 import com.couchbase.client.dcp.message.DcpStreamEndMessage;
+import com.couchbase.client.dcp.message.DcpSystemEvent;
+import com.couchbase.client.dcp.message.DcpSystemEventMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.state.PartitionState;
@@ -35,20 +41,42 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     @Override
     public void onEvent(DcpAckHandle ackHandle, ByteBuf buf) {
-        if (DcpOpenStreamResponse.is(buf)) {
-            handleOpenStreamResponse(buf);
-        } else if (DcpFailoverLogResponse.is(buf)) {
-            handleFailoverLogResponse(buf);
-        } else if (DcpStreamEndMessage.is(buf)) {
-            handleDcpStreamEndMessage(buf);
-        } else if (DcpCloseStreamResponse.is(buf)) {
-            handleDcpCloseStreamResponse(buf);
-        } else if (DcpGetPartitionSeqnosResponse.is(buf)) {
-            handleDcpGetPartitionSeqnosResponse(buf);
-        } else if (DcpSnapshotMarkerRequest.is(buf)) {
-            handleDcpSnapshotMarker(buf);
-        } else if (DcpStateVbucketStateMessage.is(buf)) {
-            handleDcpStateVbucketStateMessage(buf);
+        switch (buf.getShort(0)) {
+            case MessageUtil.STREAM_REQUEST_RESPONSE_PREFIX:
+                handleOpenStreamResponse(buf);
+                break;
+            case MessageUtil.FAILOVER_LOG_RESPONSE_PREFIX:
+                handleFailoverLogResponse(buf);
+                break;
+            case MessageUtil.STREAM_END_REQUEST_PREFIX:
+                handleDcpStreamEndMessage(buf);
+                break;
+            case MessageUtil.STREAM_CLOSE_RESPONSE_PREFIX:
+                handleDcpCloseStreamResponse(buf);
+                break;
+            case MessageUtil.GET_SEQNOS_RESPONSE_PREFIX:
+                handleDcpGetPartitionSeqnosResponse(buf);
+                break;
+            case MessageUtil.SNAPSHOT_MARKER_REQUEST_PREFIX:
+                handleDcpSnapshotMarker(buf);
+                break;
+            case MessageUtil.SET_VBUCKET_STATE_RESPONSE_PREFIX:
+                handleDcpStateVbucketStateMessage(buf);
+                break;
+            case MessageUtil.SEQNO_ADVANCED_REQUEST_PREFIX:
+                handleSeqnoAdvanced(buf);
+                break;
+            case MessageUtil.SYSTEM_EVENT_REQUEST_PREFIX:
+                handleSystemEvent(buf);
+                break;
+            case MessageUtil.OSO_SNAPSHOT_MARKER_REQUEST_PREFIX:
+                handleOsoSnapshotMarker(buf);
+                break;
+            case MessageUtil.GET_COLLECTIONS_MANIFEST_RESPONSE_PREFIX:
+                handleCollectionsManifest(buf);
+                break;
+            default:
+                LOGGER.warn("ignoring {}", MessageUtil.humanize(buf));
         }
         channel.getEnv().controlEventHandler().onEvent(ackHandle, buf);
     }
@@ -176,11 +204,63 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleDcpCloseStreamResponse(ByteBuf buf) {
-        Short vbid = (short) MessageUtil.getOpaque(buf);
+        short vbid = (short) MessageUtil.getOpaque(buf);
         channel.openStreams()[vbid] = false;
         channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
         if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
             LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getAddress(), vbid);
+        }
+    }
+
+    private void handleSeqnoAdvanced(ByteBuf buf) {
+        short vbid = MessageUtil.getVbucket(buf);
+        long seqno = DcpSeqnoAdvancedMessage.getSeqno(buf);
+        LOGGER.debug("Seqno for vbucket {} advanced to {}", vbid, seqno);
+        channel.getSessionState().get(vbid).setSeqno(seqno);
+    }
+
+    private void handleSystemEvent(ByteBuf buf) {
+        short vbid = MessageUtil.getVbucket(buf);
+        long seqno = DcpSystemEventMessage.seqno(buf);
+        DcpSystemEvent event = DcpSystemEvent.parse(buf);
+        PartitionState ps = channel.getSessionState().get(event.getVbucket());
+        LOGGER.info("received {}", event);
+        if (event.getType() != DcpSystemEvent.Type.UNKNOWN) {
+            LOGGER.debug("Seqno for vbucket {} advanced to system event", vbid, seqno);
+            ps.setSeqno(seqno);
+            ps.setCollectionsManifest(event.apply(ps.getCollectionsManifest()));
+        }
+    }
+
+    private void handleOsoSnapshotMarker(ByteBuf buf) {
+        short vbid = DcpOsoSnapshotMarkerMessage.vbucket(buf);
+        boolean begin = DcpOsoSnapshotMarkerMessage.begin(buf);
+        boolean end = DcpOsoSnapshotMarkerMessage.end(buf);
+        if (!begin && !end) {
+            LOGGER.warn("malformed OSO snapshot marker (neither begin nor end): {}",
+                    DcpOsoSnapshotMarkerMessage.toString(buf));
+            return;
+        }
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Received {}", DcpOsoSnapshotMarkerMessage.toString(buf));
+        }
+        if (begin) {
+            channel.getSessionState().get(vbid).beginOutOfOrder();
+        } else {
+            channel.getSessionState().get(vbid).endOutOfOrder();
+        }
+    }
+
+    private void handleCollectionsManifest(ByteBuf buf) {
+        byte[] manifestJsonBytes = MessageUtil.getContentAsByteArray(buf);
+        int vbid = MessageUtil.getOpaque(buf);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Got collections manifest: {}", new String(manifestJsonBytes, UTF_8));
+        }
+        try {
+            channel.getSessionState().get(vbid).setCollectionsManifest(CollectionsManifest.fromJson(manifestJsonBytes));
+        } catch (IOException e) {
+            LOGGER.warn("ignoring malformed manifest update for {}: {}", vbid, new String(manifestJsonBytes, UTF_8), e);
         }
     }
 }

@@ -3,7 +3,10 @@
  */
 package com.couchbase.client.dcp.message;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.deps.io.netty.buffer.ByteBufUtil;
 
 public enum MessageUtil {
     ;
@@ -42,8 +45,34 @@ public enum MessageUtil {
     public static final byte DCP_NOOP_OPCODE = 0x5c;
     public static final byte DCP_BUFFER_ACK_OPCODE = 0x5d;
     public static final byte DCP_CONTROL_OPCODE = 0x5e;
+    public static final byte DCP_SYSTEM_EVENT_OPCODE = 0x5f;
+    public static final byte DCP_SEQNO_ADVANCED_OPCODE = 0x64;
+    public static final byte DCP_OSO_SNAPSHOT_MARKER_OPCODE = 0x65;
     public static final byte SELECT_BUCKET_OPCODE = (byte) 0x89;
+    public static final byte OBSERVE_SEQNO_OPCODE = (byte) 0x91;
+    public static final byte GET_CLUSTER_CONFIG_OPCODE = (byte) 0xb5;
+    public static final byte GET_COLLECTIONS_MANIFEST_OPCODE = (byte) 0xba;
     public static final byte INTERNAL_ROLLBACK_OPCODE = 0x01;
+
+    public static final short GET_COLLECTIONS_MANIFEST_RESPONSE_PREFIX =
+            MAGIC_RES << 8 | GET_COLLECTIONS_MANIFEST_OPCODE & 0xff;
+    public static final short STREAM_REQUEST_RESPONSE_PREFIX = MAGIC_RES << 8 | DCP_STREAM_REQUEST_OPCODE & 0xff;
+    public static final short STREAM_END_REQUEST_PREFIX = MAGIC_REQ << 8 | DCP_STREAM_END_OPCODE & 0xff;
+    public static final short SEQNO_ADVANCED_REQUEST_PREFIX = MAGIC_REQ << 8 | DCP_SEQNO_ADVANCED_OPCODE & 0xff;
+    public static final short OSO_SNAPSHOT_MARKER_REQUEST_PREFIX =
+            MessageUtil.MAGIC_REQ << 8 | DCP_OSO_SNAPSHOT_MARKER_OPCODE & 0xff;
+    public static final short SYSTEM_EVENT_REQUEST_PREFIX = MessageUtil.MAGIC_REQ << 8 | DCP_SYSTEM_EVENT_OPCODE & 0xff;
+    public static final short SET_VBUCKET_STATE_RESPONSE_PREFIX =
+            MessageUtil.MAGIC_RES << 8 | DCP_SET_VBUCKET_STATE_OPCODE & 0xff;
+    public static final short SNAPSHOT_MARKER_REQUEST_PREFIX =
+            MessageUtil.MAGIC_REQ << 8 | DCP_SNAPSHOT_MARKER_OPCODE & 0xff;
+    public static final short GET_SEQNOS_RESPONSE_PREFIX = MessageUtil.MAGIC_RES << 8 | GET_SEQNOS_OPCODE & 0xff;
+    public static final short STREAM_CLOSE_RESPONSE_PREFIX =
+            MessageUtil.MAGIC_RES << 8 | DCP_STREAM_CLOSE_OPCODE & 0xff;
+    public static final short FAILOVER_LOG_RESPONSE_PREFIX =
+            MessageUtil.MAGIC_RES << 8 | DCP_FAILOVER_LOG_OPCODE & 0xff;
+
+    private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
     /**
      * Returns true if message can be processed and false if more data is needed.
@@ -173,6 +202,10 @@ public enum MessageUtil {
         return keyWithPrefix.slice(collectionUidPrefixLength, keyLength - collectionUidPrefixLength);
     }
 
+    public static String getKeyAsString(ByteBuf buffer, boolean isCollectionEnabled) {
+        return getKey(buffer, isCollectionEnabled).toString(UTF_8);
+    }
+
     /**
      * Sets the content payload of the buffer, updating the content length as well.
      */
@@ -254,4 +287,33 @@ public enum MessageUtil {
         return length;
     }
 
+    /**
+     * Returns the message content in its original form (possibly compressed).
+     * <p>
+     * The returned buffer shares its reference count with the given buffer.
+     */
+    public static ByteBuf getRawContent(ByteBuf buffer) {
+        short keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
+        byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
+        int contentLength = buffer.getInt(BODY_LENGTH_OFFSET) - keyLength - extrasLength;
+        return buffer.slice(HEADER_SIZE + keyLength + extrasLength, contentLength);
+    }
+
+    /**
+     * Returns a new array containing the uncompressed content of the given message.
+     */
+    public static byte[] getContentAsByteArray(ByteBuf buffer) {
+        final ByteBuf rawContent = getRawContent(buffer);
+
+        // When OpenConnectionFlags.NO_VALUE is used, the content is always empty.
+        // Documents can still be flagged as snappy compressed, so do this check before
+        // attempting to decompress the empty content, otherwise snappy decompression fails.
+        if (rawContent.readableBytes() == 0) {
+            // ByteBufUtil.getBytes(rawContent) would return a new array.
+            // Generate less garbage by reusing the same empty array.
+            return EMPTY_BYTE_ARRAY;
+        }
+
+        return ByteBufUtil.getBytes(rawContent);
+    }
 }
