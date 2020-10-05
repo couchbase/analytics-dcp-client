@@ -17,6 +17,10 @@ public enum DcpDeletionMessage {
         return buffer.getByte(0) == MessageUtil.MAGIC_REQ && buffer.getByte(1) == DCP_DELETION_OPCODE;
     }
 
+    public static int cid(final ByteBuf buffer) {
+        return MessageUtil.getCid(buffer);
+    }
+
     public static ByteBuf key(final ByteBuf buffer, boolean isCollectionEnabled) {
         return MessageUtil.getKey(buffer, isCollectionEnabled);
     }

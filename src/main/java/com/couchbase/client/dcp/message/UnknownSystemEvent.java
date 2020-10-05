@@ -7,6 +7,7 @@ package com.couchbase.client.dcp.message;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public class UnknownSystemEvent extends DcpSystemEvent {
+    private static final long serialVersionUID = 1L;
 
     public UnknownSystemEvent(short vbucket, long seqno, int version, ByteBuf buffer) {
         super(Type.UNKNOWN, vbucket, seqno, version);
@@ -18,7 +19,7 @@ public class UnknownSystemEvent extends DcpSystemEvent {
     }
 
     @Override
-    public long getManifestId() {
+    public long getManifestUid() {
         throw new IllegalStateException();
     }
 

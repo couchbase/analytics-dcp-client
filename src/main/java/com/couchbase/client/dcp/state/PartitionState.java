@@ -3,7 +3,7 @@
  */
 package com.couchbase.client.dcp.state;
 
-import static java.util.Objects.requireNonNull;
+import static com.couchbase.client.dcp.util.MathUtil.maxUnsigned;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -42,6 +42,7 @@ public class PartitionState {
      * Stores the failover log for this partition.
      */
     private final List<FailoverLogEntry> failoverLog;
+
     private volatile long currentVBucketSeqnoInMaster = INVALID;
 
     private final short vbid;
@@ -65,26 +66,25 @@ public class PartitionState {
 
     private volatile boolean currentSeqUpdated;
 
-    private volatile boolean collectionsManifestUpdated;
-
     private volatile boolean clientDisconnected;
 
     private volatile Throwable failoverLogRequestFailure;
 
     private volatile Throwable seqsRequestFailure;
 
-    private volatile Throwable collectionsManifestFailure;
+    private volatile boolean osoSnapshot;
 
-    private volatile boolean outOfOrder;
+    private volatile long osoMaxSeqno = 0;
 
     private StreamRequest streamRequest;
 
     private final StreamEndEvent endEvent;
+
     private final FailoverLogUpdateEvent failoverLogUpdateEvent;
 
     private final OpenStreamResponse openStreamResponse;
 
-    private volatile CollectionsManifest collectionsManifest;
+    private volatile CollectionsManifest manifest;
 
     /**
      * Initialize a new partition state.
@@ -156,11 +156,25 @@ public class PartitionState {
      * Allows to set the current sequence number.
      */
     public void setSeqno(long seqno) {
-        if (!outOfOrder && Long.compareUnsigned(seqno, this.seqno) <= 0) {
-            LOGGER.warn("new seqno received (0x{}) <= the previous seqno(0x{}) for vbid: {}",
-                    Long.toUnsignedString(seqno, 16), Long.toUnsignedString(this.seqno, 16), vbid);
+        if (osoSnapshot) {
+            //noinspection NonAtomicOperationOnVolatileField
+            osoMaxSeqno = maxUnsigned(seqno, osoMaxSeqno);
+        } else {
+            if (Long.compareUnsigned(seqno, this.seqno) <= 0) {
+                LOGGER.warn("new seqno received (0x{}) <= the previous seqno(0x{}) for vbid: {}",
+                        Long.toUnsignedString(seqno, 16), Long.toUnsignedString(this.seqno, 16), vbid);
+            }
+            this.seqno = seqno;
         }
-        this.seqno = seqno;
+    }
+
+    /**
+     * Allows to set the current sequence number.
+     */
+    public void advanceSeqno(long seqno) {
+        setSeqno(seqno);
+        setSnapshotStartSeqno(seqno);
+        setSnapshotEndSeqno(seqno);
     }
 
     public byte getState() {
@@ -208,8 +222,8 @@ public class PartitionState {
             if (SessionState.NO_END_SEQNO != streamEndSeq && Long.compareUnsigned(streamEndSeq, seqno) < 0) {
                 streamEndSeq = snapshotEndSeqno;
             }
-            this.streamRequest =
-                    new StreamRequest(vbid, seqno, streamEndSeq, uuid, snapshotStartSeqno, snapshotEndSeqno);
+            this.streamRequest = new StreamRequest(vbid, seqno, streamEndSeq, uuid, snapshotStartSeqno,
+                    snapshotEndSeqno, manifest.getUid());
         }
     }
 
@@ -249,6 +263,8 @@ public class PartitionState {
         tree.put("seqno", seqno);
         tree.put("state", state);
         tree.put("failoverLog", failoverLog);
+        tree.put("osoSnapshot", osoSnapshot);
+        tree.put("osoMaxSeq", osoMaxSeqno);
         return tree;
     }
 
@@ -267,12 +283,6 @@ public class PartitionState {
     public void currentSeqRequest() {
         currentSeqUpdated = false;
         seqsRequestFailure = null;
-    }
-
-    public void collectionsManifestRequest() {
-        LOGGER.trace("Collections manifest requested for {}", vbid);
-        collectionsManifestUpdated = false;
-        collectionsManifestFailure = null;
     }
 
     public synchronized void waitTillFailoverUpdated(long timeout) throws Throwable {
@@ -306,24 +316,6 @@ public class PartitionState {
         }
         if (!currentSeqUpdated) {
             throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining current seq for " + vbid);
-        }
-    }
-
-    public synchronized void waitCollectionsManifestUpdated(long timeout) throws Throwable {
-        Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
-        LOGGER.trace("Waiting until failover log updated for {}", vbid);
-        while (!clientDisconnected && collectionsManifestFailure == null && !collectionsManifestUpdated
-                && !span.elapsed()) {
-            span.wait(this);
-        }
-        if (clientDisconnected) {
-            throw new CancellationException("Client disconnected while waiting for reply");
-        }
-        if (collectionsManifestFailure != null) {
-            throw collectionsManifestFailure;
-        }
-        if (!collectionsManifestUpdated) {
-            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining collections manifest for " + vbid);
         }
     }
 
@@ -361,11 +353,6 @@ public class PartitionState {
         notifyAll();
     }
 
-    public synchronized void collectionsManifestRequestFailed(Throwable th) {
-        collectionsManifestFailure = th;
-        notifyAll();
-    }
-
     public synchronized void clientDisconnected() {
         clientDisconnected = true;
         notifyAll();
@@ -385,21 +372,24 @@ public class PartitionState {
     }
 
     public void beginOutOfOrder() {
-        outOfOrder = true;
+        osoSnapshot = true;
+        osoMaxSeqno = 0;
     }
 
-    public void endOutOfOrder() {
-        outOfOrder = false;
+    public long endOutOfOrder() {
+        // On disconnect after successfully receiving the OSO end, reconnect
+        // with a stream-request where start=X, snap.start=X, snap.end=X
+        useStreamRequest();
+        osoSnapshot = false;
+        advanceSeqno(osoMaxSeqno);
+        return osoMaxSeqno;
     }
 
     public CollectionsManifest getCollectionsManifest() {
-        return collectionsManifest;
+        return manifest;
     }
 
-    public synchronized void setCollectionsManifest(CollectionsManifest collectionsManifest) {
-        this.collectionsManifest = requireNonNull(collectionsManifest);
-        collectionsManifestUpdated = true;
-        notifyAll();
+    public void setCollectionsManifest(CollectionsManifest manifest) {
+        this.manifest = manifest;
     }
-
 }

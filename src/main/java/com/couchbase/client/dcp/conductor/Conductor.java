@@ -8,6 +8,7 @@ import static com.couchbase.client.core.env.NetworkResolution.EXTERNAL;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 
 import org.apache.hyracks.api.util.InvokeUtil;
 import org.apache.hyracks.util.NetworkUtil;
@@ -24,6 +25,7 @@ import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
+import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamRequest;
@@ -160,18 +162,8 @@ public class Conductor {
         synchronized (channels) {
             DcpChannel channel = masterChannelByPartition(request.getPartition());
             channel.openStream(request.getPartition(), request.getVbucketUuid(), request.getStartSeqno(),
-                    request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno());
-            if (config().capabilities().contains(BucketCapabilities.COLLECTIONS)) {
-                PartitionState state = sessionState.get(request.getPartition());
-                requestCollectionsManifest(state);
-                // TODO(mblow): defer wait for manifest until we actually need it
-                try {
-                    waitForCollectionsManifest(state);
-                } catch (Throwable th) {
-                    // TODO(mblow): what do we do when we fail to get the collection manifest?
-                    LOGGER.error("failed to obtain collections manifest for {}", request.getPartition(), th);
-                }
-            }
+                    request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno(),
+                    request.getManifestUid());
         }
     }
 
@@ -193,17 +185,6 @@ public class Conductor {
         synchronized (channels) {
             return masterChannelByPartition(partition).streamIsOpen(partition);
         }
-    }
-
-    public void requestCollectionsManifest(PartitionState ps) {
-        ps.collectionsManifestRequest();
-        synchronized (channels) {
-            masterChannelByPartition(ps.vbid()).requestCollectionsManifest(ps.vbid());
-        }
-    }
-
-    public void waitForCollectionsManifest(PartitionState ps) throws Throwable {
-        ps.waitCollectionsManifestUpdated(env.partitionRequestsTimeout());
     }
 
     /**
@@ -332,6 +313,17 @@ public class Conductor {
             add(node, config, env.dcpChannelAttemptTimeout(), env.dcpChannelTotalTimeout(),
                     env.dcpChannelsReconnectDelay());
         }
+        getCollectionsManifest();
+    }
+
+    public CollectionsManifest getCollectionsManifest() throws InterruptedException, TimeoutException {
+        if (config().capabilities().contains(BucketCapabilities.COLLECTIONS)) {
+            synchronized (channels) {
+                sessionState.requestCollectionsManifest(channels.values().iterator().next());
+            }
+            return sessionState.waitForCollectionsManifest(env.partitionRequestsTimeout());
+        }
+        return sessionState.getCollectionsManifest();
     }
 
     public DcpChannel getChannel(short vbid) {

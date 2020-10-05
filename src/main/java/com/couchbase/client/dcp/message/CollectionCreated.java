@@ -7,7 +7,8 @@ package com.couchbase.client.dcp.message;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public class CollectionCreated extends DcpSystemEvent {
-    private final long newManifestId;
+    private static final long serialVersionUID = 1L;
+    private final long newManifestUid;
     private final int scopeId;
     private final int collectionId;
     private final String collectionName;
@@ -19,7 +20,7 @@ public class CollectionCreated extends DcpSystemEvent {
         collectionName = MessageUtil.getKeyAsString(buffer, false);
         ByteBuf value = MessageUtil.getContent(buffer);
 
-        newManifestId = value.readLong();
+        newManifestUid = value.readLong();
         scopeId = value.readInt();
         collectionId = value.readInt();
 
@@ -28,8 +29,8 @@ public class CollectionCreated extends DcpSystemEvent {
     }
 
     @Override
-    public long getManifestId() {
-        return newManifestId;
+    public long getManifestUid() {
+        return newManifestUid;
     }
 
     public int getScopeId() {
@@ -53,12 +54,12 @@ public class CollectionCreated extends DcpSystemEvent {
 
     @Override
     public CollectionsManifest apply(CollectionsManifest currentManifest) {
-        return currentManifest.withCollection(newManifestId, scopeId, collectionId, collectionName, maxTtl);
+        return currentManifest.withCollection(newManifestUid, scopeId, collectionId, collectionName, maxTtl);
     }
 
     @Override
     public String toString() {
-        return "CollectionCreated{" + "newManifestId=0x" + Long.toUnsignedString(newManifestId, 16) + ", scopeId=0x"
+        return "CollectionCreated{" + "newManifestUid=0x" + Long.toUnsignedString(newManifestUid, 16) + ", scopeId=0x"
                 + Integer.toUnsignedString(scopeId, 16) + ", collectionId=0x"
                 + Integer.toUnsignedString(collectionId, 16) + ", collectionName='" + collectionName + '\''
                 + ", maxTtl=" + maxTtl + ", vbucket=" + getVbucket() + ", seqno=" + getSeqno() + ", version="

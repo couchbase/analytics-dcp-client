@@ -7,7 +7,8 @@ package com.couchbase.client.dcp.message;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public class CollectionFlushed extends DcpSystemEvent {
-    private final long newManifestId;
+    private static final long serialVersionUID = 1L;
+    private final long newManifestUid;
     private final int collectionId;
     private final int scopeId;
 
@@ -16,14 +17,14 @@ public class CollectionFlushed extends DcpSystemEvent {
 
         ByteBuf value = MessageUtil.getContent(buffer);
 
-        newManifestId = value.readLong();
+        newManifestUid = value.readLong();
         scopeId = value.readInt();
         collectionId = value.readInt();
     }
 
     @Override
-    public long getManifestId() {
-        return newManifestId;
+    public long getManifestUid() {
+        return newManifestUid;
     }
 
     public int getScopeId() {
@@ -36,12 +37,12 @@ public class CollectionFlushed extends DcpSystemEvent {
 
     @Override
     public CollectionsManifest apply(CollectionsManifest currentManifest) {
-        return currentManifest.withManifestId(newManifestId);
+        return currentManifest.withManifestId(newManifestUid);
     }
 
     @Override
     public String toString() {
-        return "CollectionFlushed{" + "newManifestId=0x" + Long.toUnsignedString(newManifestId, 16)
+        return "CollectionFlushed{" + "newManifestUid=0x" + Long.toUnsignedString(newManifestUid, 16)
                 + ", collectionId=0x" + Integer.toUnsignedString(collectionId, 16) + ", scopeId=0x"
                 + Integer.toUnsignedString(scopeId, 16) + ", vbucket=" + getVbucket() + ", seqno=" + getSeqno()
                 + ", version=" + getVersion() + '}';

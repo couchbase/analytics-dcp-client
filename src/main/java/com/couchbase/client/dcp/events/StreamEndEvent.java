@@ -47,7 +47,7 @@ public class StreamEndEvent implements PartitionDcpEvent {
 
     @Override
     public String toString() {
-        return "StreamEndEvent{" + "partition=" + state.vbid() + "reason=" + reason + '}';
+        return "StreamEndEvent{" + "partition=" + state.vbid() + " reason=" + reason + '}';
     }
 
     public PartitionState getState() {

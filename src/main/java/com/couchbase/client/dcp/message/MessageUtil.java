@@ -54,23 +54,20 @@ public enum MessageUtil {
     public static final byte GET_COLLECTIONS_MANIFEST_OPCODE = (byte) 0xba;
     public static final byte INTERNAL_ROLLBACK_OPCODE = 0x01;
 
-    public static final short GET_COLLECTIONS_MANIFEST_RESPONSE_PREFIX =
-            MAGIC_RES << 8 | GET_COLLECTIONS_MANIFEST_OPCODE & 0xff;
-    public static final short STREAM_REQUEST_RESPONSE_PREFIX = MAGIC_RES << 8 | DCP_STREAM_REQUEST_OPCODE & 0xff;
-    public static final short STREAM_END_REQUEST_PREFIX = MAGIC_REQ << 8 | DCP_STREAM_END_OPCODE & 0xff;
-    public static final short SEQNO_ADVANCED_REQUEST_PREFIX = MAGIC_REQ << 8 | DCP_SEQNO_ADVANCED_OPCODE & 0xff;
-    public static final short OSO_SNAPSHOT_MARKER_REQUEST_PREFIX =
-            MessageUtil.MAGIC_REQ << 8 | DCP_OSO_SNAPSHOT_MARKER_OPCODE & 0xff;
-    public static final short SYSTEM_EVENT_REQUEST_PREFIX = MessageUtil.MAGIC_REQ << 8 | DCP_SYSTEM_EVENT_OPCODE & 0xff;
-    public static final short SET_VBUCKET_STATE_RESPONSE_PREFIX =
-            MessageUtil.MAGIC_RES << 8 | DCP_SET_VBUCKET_STATE_OPCODE & 0xff;
-    public static final short SNAPSHOT_MARKER_REQUEST_PREFIX =
-            MessageUtil.MAGIC_REQ << 8 | DCP_SNAPSHOT_MARKER_OPCODE & 0xff;
-    public static final short GET_SEQNOS_RESPONSE_PREFIX = MessageUtil.MAGIC_RES << 8 | GET_SEQNOS_OPCODE & 0xff;
-    public static final short STREAM_CLOSE_RESPONSE_PREFIX =
-            MessageUtil.MAGIC_RES << 8 | DCP_STREAM_CLOSE_OPCODE & 0xff;
-    public static final short FAILOVER_LOG_RESPONSE_PREFIX =
-            MessageUtil.MAGIC_RES << 8 | DCP_FAILOVER_LOG_OPCODE & 0xff;
+    public static final short REQ_DCP_MUTATION = MAGIC_REQ << 8 | DCP_MUTATION_OPCODE & 0xff;
+    public static final short REQ_DCP_DELETION = MAGIC_REQ << 8 | DCP_DELETION_OPCODE & 0xff;
+    public static final short REQ_DCP_EXPIRATION = MAGIC_REQ << 8 | DCP_EXPIRATION_OPCODE & 0xff;
+    public static final short REQ_STREAM_END = MAGIC_REQ << 8 | DCP_STREAM_END_OPCODE & 0xff;
+    public static final short REQ_SEQNO_ADVANCED = MAGIC_REQ << 8 | DCP_SEQNO_ADVANCED_OPCODE & 0xff;
+    public static final short REQ_OSO_SNAPSHOT_MARKER = MAGIC_REQ << 8 | DCP_OSO_SNAPSHOT_MARKER_OPCODE & 0xff;
+    public static final short REQ_SYSTEM_EVENT = MAGIC_REQ << 8 | DCP_SYSTEM_EVENT_OPCODE & 0xff;
+    public static final short REQ_SET_VBUCKET_STATE = MAGIC_REQ << 8 | DCP_SET_VBUCKET_STATE_OPCODE & 0xff;
+    public static final short REQ_SNAPSHOT_MARKER = MAGIC_REQ << 8 | DCP_SNAPSHOT_MARKER_OPCODE & 0xff;
+    public static final short RES_GET_COLLECTIONS_MANIFEST = MAGIC_RES << 8 | GET_COLLECTIONS_MANIFEST_OPCODE & 0xff;
+    public static final short RES_STREAM_REQUEST = MAGIC_RES << 8 | DCP_STREAM_REQUEST_OPCODE & 0xff;
+    public static final short RES_GET_SEQNOS = MAGIC_RES << 8 | GET_SEQNOS_OPCODE & 0xff;
+    public static final short RES_STREAM_CLOSE = MAGIC_RES << 8 | DCP_STREAM_CLOSE_OPCODE & 0xff;
+    public static final short RES_FAILOVER_LOG = MAGIC_RES << 8 | DCP_FAILOVER_LOG_OPCODE & 0xff;
 
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
@@ -197,13 +194,16 @@ public enum MessageUtil {
         if (!isCollectionEnabled) {
             return keyWithPrefix; //if collection is not enabled, then key does not contain cid prefix
         }
-        //if collection enabled
-        int collectionUidPrefixLength = lengthLEB128(keyWithPrefix);
-        return keyWithPrefix.slice(collectionUidPrefixLength, keyLength - collectionUidPrefixLength);
+        int cidPrefixLength = lengthLEB128(keyWithPrefix);
+        return keyWithPrefix.slice(cidPrefixLength, keyLength - cidPrefixLength);
     }
 
     public static String getKeyAsString(ByteBuf buffer, boolean isCollectionEnabled) {
         return getKey(buffer, isCollectionEnabled).toString(UTF_8);
+    }
+
+    public static int getCid(ByteBuf buffer) {
+        return readLEB128(getKey(buffer, false));
     }
 
     /**
@@ -241,6 +241,10 @@ public enum MessageUtil {
 
     public static int getOpaque(ByteBuf buffer) {
         return buffer.getInt(OPAQUE_OFFSET);
+    }
+
+    public static void setCas(long cas, ByteBuf buffer) {
+        buffer.setLong(CAS_OFFSET, cas);
     }
 
     public static long getCas(ByteBuf buffer) {

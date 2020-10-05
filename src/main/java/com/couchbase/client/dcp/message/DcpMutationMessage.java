@@ -18,8 +18,7 @@ public enum DcpMutationMessage {
     }
 
     public static int cid(final ByteBuf buffer) {
-        //We first get the leb encoded collectionUid + key buffer and then extract the collectionUid
-        return MessageUtil.readLEB128(MessageUtil.getKey(buffer, false));
+        return MessageUtil.getCid(buffer);
     }
 
     public static ByteBuf key(final ByteBuf buffer, boolean isCollectionEnabled) {

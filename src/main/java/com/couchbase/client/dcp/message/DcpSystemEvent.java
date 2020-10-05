@@ -4,11 +4,14 @@
 
 package com.couchbase.client.dcp.message;
 
+import java.io.Serializable;
+
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
-public abstract class DcpSystemEvent {
+public abstract class DcpSystemEvent implements Serializable {
+    private static final long serialVersionUID = 1L;
     private static final CouchbaseLogger log = CouchbaseLoggerFactory.getInstance(DcpSystemEvent.class.getName());
 
     public enum Type {
@@ -61,7 +64,7 @@ public abstract class DcpSystemEvent {
 
     public abstract CollectionsManifest apply(CollectionsManifest currentManifest);
 
-    public abstract long getManifestId();
+    public abstract long getManifestUid();
 
     public static DcpSystemEvent parse(final ByteBuf buffer) {
         final short vbucket = MessageUtil.getVbucket(buffer);

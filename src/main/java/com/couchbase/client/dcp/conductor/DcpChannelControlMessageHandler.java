@@ -42,37 +42,37 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     @Override
     public void onEvent(DcpAckHandle ackHandle, ByteBuf buf) {
         switch (buf.getShort(0)) {
-            case MessageUtil.STREAM_REQUEST_RESPONSE_PREFIX:
+            case MessageUtil.RES_STREAM_REQUEST:
                 handleOpenStreamResponse(buf);
                 break;
-            case MessageUtil.FAILOVER_LOG_RESPONSE_PREFIX:
+            case MessageUtil.RES_FAILOVER_LOG:
                 handleFailoverLogResponse(buf);
                 break;
-            case MessageUtil.STREAM_END_REQUEST_PREFIX:
+            case MessageUtil.REQ_STREAM_END:
                 handleDcpStreamEndMessage(buf);
                 break;
-            case MessageUtil.STREAM_CLOSE_RESPONSE_PREFIX:
+            case MessageUtil.RES_STREAM_CLOSE:
                 handleDcpCloseStreamResponse(buf);
                 break;
-            case MessageUtil.GET_SEQNOS_RESPONSE_PREFIX:
+            case MessageUtil.RES_GET_SEQNOS:
                 handleDcpGetPartitionSeqnosResponse(buf);
                 break;
-            case MessageUtil.SNAPSHOT_MARKER_REQUEST_PREFIX:
+            case MessageUtil.REQ_SNAPSHOT_MARKER:
                 handleDcpSnapshotMarker(buf);
                 break;
-            case MessageUtil.SET_VBUCKET_STATE_RESPONSE_PREFIX:
+            case MessageUtil.REQ_SET_VBUCKET_STATE:
                 handleDcpStateVbucketStateMessage(buf);
                 break;
-            case MessageUtil.SEQNO_ADVANCED_REQUEST_PREFIX:
+            case MessageUtil.REQ_SEQNO_ADVANCED:
                 handleSeqnoAdvanced(buf);
                 break;
-            case MessageUtil.SYSTEM_EVENT_REQUEST_PREFIX:
+            case MessageUtil.REQ_SYSTEM_EVENT:
                 handleSystemEvent(buf);
                 break;
-            case MessageUtil.OSO_SNAPSHOT_MARKER_REQUEST_PREFIX:
+            case MessageUtil.REQ_OSO_SNAPSHOT_MARKER:
                 handleOsoSnapshotMarker(buf);
                 break;
-            case MessageUtil.GET_COLLECTIONS_MANIFEST_RESPONSE_PREFIX:
+            case MessageUtil.RES_GET_COLLECTIONS_MANIFEST:
                 handleCollectionsManifest(buf);
                 break;
             default:
@@ -216,7 +216,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         short vbid = MessageUtil.getVbucket(buf);
         long seqno = DcpSeqnoAdvancedMessage.getSeqno(buf);
         LOGGER.debug("Seqno for vbucket {} advanced to {}", vbid, seqno);
-        channel.getSessionState().get(vbid).setSeqno(seqno);
+        channel.getSessionState().get(vbid).advanceSeqno(seqno);
     }
 
     private void handleSystemEvent(ByteBuf buf) {
@@ -247,20 +247,22 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         if (begin) {
             channel.getSessionState().get(vbid).beginOutOfOrder();
         } else {
-            channel.getSessionState().get(vbid).endOutOfOrder();
+            long maxSeqNo = channel.getSessionState().get(vbid).endOutOfOrder();
+            // we store the max sequence number in the message as it may be needed by other event
+            DcpOsoSnapshotMarkerMessage.setMaxSeqNo(maxSeqNo, buf);
         }
     }
 
     private void handleCollectionsManifest(ByteBuf buf) {
         byte[] manifestJsonBytes = MessageUtil.getContentAsByteArray(buf);
-        int vbid = MessageUtil.getOpaque(buf);
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Got collections manifest: {}", new String(manifestJsonBytes, UTF_8));
         }
         try {
-            channel.getSessionState().get(vbid).setCollectionsManifest(CollectionsManifest.fromJson(manifestJsonBytes));
+            channel.getSessionState().onCollectionsManifest(CollectionsManifest.fromJson(manifestJsonBytes));
         } catch (IOException e) {
-            LOGGER.warn("ignoring malformed manifest update for {}: {}", vbid, new String(manifestJsonBytes, UTF_8), e);
+            LOGGER.error("malformed collections manifest {}", new String(manifestJsonBytes, UTF_8), e);
+            channel.getSessionState().onCollectionsManifestFailure(e);
         }
     }
 }

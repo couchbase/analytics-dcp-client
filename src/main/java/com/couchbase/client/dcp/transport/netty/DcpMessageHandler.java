@@ -3,6 +3,21 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_DELETION;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_EXPIRATION;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_MUTATION;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_OSO_SNAPSHOT_MARKER;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_SEQNO_ADVANCED;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_SET_VBUCKET_STATE;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_SNAPSHOT_MARKER;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_STREAM_END;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_SYSTEM_EVENT;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_FAILOVER_LOG;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_GET_COLLECTIONS_MANIFEST;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_GET_SEQNOS;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_CLOSE;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_REQUEST;
+
 import java.io.IOException;
 
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
@@ -15,22 +30,8 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.message.DcpBufferAckRequest;
-import com.couchbase.client.dcp.message.DcpCloseStreamResponse;
-import com.couchbase.client.dcp.message.DcpDeletionMessage;
-import com.couchbase.client.dcp.message.DcpExpirationMessage;
-import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
-import com.couchbase.client.dcp.message.DcpGetCollectionsManifestResponse;
-import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosResponse;
-import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpNoopRequest;
 import com.couchbase.client.dcp.message.DcpNoopResponse;
-import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
-import com.couchbase.client.dcp.message.DcpOsoSnapshotMarkerMessage;
-import com.couchbase.client.dcp.message.DcpSeqnoAdvancedMessage;
-import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
-import com.couchbase.client.dcp.message.DcpStateVbucketStateMessage;
-import com.couchbase.client.dcp.message.DcpStreamEndMessage;
-import com.couchbase.client.dcp.message.DcpSystemEventMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.Channel;
@@ -148,11 +149,22 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
      * @return true if it is, false otherwise.
      */
     private static boolean isControlMessage(final ByteBuf msg) {
-        return DcpStateVbucketStateMessage.is(msg) || DcpOpenStreamResponse.is(msg) || DcpStreamEndMessage.is(msg)
-                || DcpSnapshotMarkerRequest.is(msg) || DcpFailoverLogResponse.is(msg) || DcpCloseStreamResponse.is(msg)
-                || DcpGetPartitionSeqnosResponse.is(msg) || DcpSeqnoAdvancedMessage.is(msg)
-                || DcpSystemEventMessage.is(msg) || DcpOsoSnapshotMarkerMessage.is(msg)
-                || DcpGetCollectionsManifestResponse.is(msg);
+        switch (msg.getShort(0)) {
+            case REQ_STREAM_END:
+            case REQ_SNAPSHOT_MARKER:
+            case REQ_SET_VBUCKET_STATE:
+            case REQ_OSO_SNAPSHOT_MARKER:
+            case REQ_SYSTEM_EVENT:
+            case REQ_SEQNO_ADVANCED:
+            case RES_STREAM_REQUEST:
+            case RES_FAILOVER_LOG:
+            case RES_STREAM_CLOSE:
+            case RES_GET_SEQNOS:
+            case RES_GET_COLLECTIONS_MANIFEST:
+                return true;
+            default:
+                return false;
+        }
     }
 
     /**
@@ -163,37 +175,55 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
      * @return true if it is, false otherwise.
      */
     private static boolean isDataMessage(final ByteBuf msg) {
-        return DcpMutationMessage.is(msg) || DcpDeletionMessage.is(msg) || DcpExpirationMessage.is(msg);
+        switch (msg.getShort(0)) {
+            case REQ_DCP_MUTATION:
+            case REQ_DCP_DELETION:
+            case REQ_DCP_EXPIRATION:
+                return true;
+            default:
+                return false;
+        }
     }
 
     @Override
     public synchronized void ack(ByteBuf message) {
-        if (ackEnabled && (DcpStateVbucketStateMessage.is(message) || DcpSnapshotMarkerRequest.is(message)
-                || DcpStreamEndMessage.is(message) || DcpCloseStreamResponse.is(message)
-                || DcpMutationMessage.is(message) || DcpDeletionMessage.is(message)
-                || DcpExpirationMessage.is(message))) {
-            ackCounter += message.readableBytes();
-            boolean trace = LOGGER.isTraceEnabled();
-            if (trace) {
-                LOGGER.trace("BufferAckCounter is now {}", ackCounter);
-            }
-            if (ackCounter >= ackWatermark) {
-                env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
+        if (!ackEnabled) {
+            return;
+        }
+        switch (message.getShort(0)) {
+            case REQ_SET_VBUCKET_STATE:
+            case REQ_SNAPSHOT_MARKER:
+            case REQ_STREAM_END:
+            case RES_STREAM_CLOSE:
+            case REQ_DCP_MUTATION:
+            case REQ_DCP_DELETION:
+            case REQ_DCP_EXPIRATION:
+            case REQ_OSO_SNAPSHOT_MARKER:
+                ackCounter += message.readableBytes();
+                boolean trace = LOGGER.isTraceEnabled();
                 if (trace) {
-                    LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.",
+                    LOGGER.trace("BufferAckCounter is now {}", ackCounter);
+                }
+                if (ackCounter >= ackWatermark) {
+                    env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
+                    if (trace) {
+                        LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.",
+                                channel.remoteAddress());
+                    }
+                    ByteBuf buffer = channel.alloc().buffer();
+                    DcpBufferAckRequest.init(buffer);
+                    DcpBufferAckRequest.ackBytes(buffer, ackCounter);
+                    ChannelFuture future = channel.writeAndFlush(buffer);
+                    future.addListener(ackListener);
+                    ackCounter = 0;
+                }
+                if (trace) {
+                    LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
                             channel.remoteAddress());
                 }
-                ByteBuf buffer = channel.alloc().buffer();
-                DcpBufferAckRequest.init(buffer);
-                DcpBufferAckRequest.ackBytes(buffer, ackCounter);
-                ChannelFuture future = channel.writeAndFlush(buffer);
-                future.addListener(ackListener);
-                ackCounter = 0;
-            }
-            if (trace) {
-                LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
-                        channel.remoteAddress());
-            }
+                break;
+            default:
+                // no-op for non-ACKable messages
         }
     }
 

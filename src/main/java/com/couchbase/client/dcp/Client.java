@@ -296,10 +296,7 @@ public class Client {
             // collection later?
             return CollectionsManifest.DEFAULT;
         }
-        PartitionState ps = sessionState().partitionStream().findAny().orElseThrow(IllegalStateException::new);
-        conductor.requestCollectionsManifest(ps);
-        conductor.waitForCollectionsManifest(ps);
-        return ps.getCollectionsManifest();
+        return conductor.getCollectionsManifest();
     }
 
     /**

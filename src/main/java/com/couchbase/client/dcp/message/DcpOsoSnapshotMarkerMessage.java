@@ -22,6 +22,15 @@ public class DcpOsoSnapshotMarkerMessage {
         return MessageUtil.getVbucket(buffer);
     }
 
+    public static void setMaxSeqNo(long maxSeqNo, final ByteBuf buffer) {
+        // we stash the max sequence number observed in the oso snapshot in the unused CAS field
+        MessageUtil.setCas(maxSeqNo, buffer);
+    }
+
+    public static long maxSeqNo(final ByteBuf buffer) {
+        return MessageUtil.getCas(buffer);
+    }
+
     public static int flags(ByteBuf event) {
         return MessageUtil.getExtras(event).readInt();
     }
@@ -38,5 +47,4 @@ public class DcpOsoSnapshotMarkerMessage {
         return "DcpOsoSnapshotMarker [vbucket: " + vbucket(buffer) + ", flags: " + flags(buffer) + ", begin: "
                 + begin(buffer) + ", end: " + end(buffer) + "]";
     }
-
 }

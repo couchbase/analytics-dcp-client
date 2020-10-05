@@ -6,7 +6,16 @@ package com.couchbase.client.dcp.state;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
+
+import org.apache.hyracks.util.Span;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import com.couchbase.client.dcp.conductor.DcpChannel;
+import com.couchbase.client.dcp.message.CollectionsManifest;
 
 import rx.functions.Action1;
 
@@ -14,7 +23,7 @@ import rx.functions.Action1;
  * Holds the state information for the current session (all partitions involved).
  */
 public class SessionState {
-
+    private static final Logger LOGGER = LogManager.getLogger();
     /**
      * Special Sequence number defined by DCP which says "no end".
      */
@@ -36,6 +45,10 @@ public class SessionState {
     private final List<PartitionState> partitionStates;
 
     private final String uuid;
+
+    private CollectionsManifest collectionsManifest = CollectionsManifest.DEFAULT;
+
+    private Throwable collectionsManifestFailure;
 
     /**
      * Initializes with an empty partition state for 1024 partitions.
@@ -140,5 +153,46 @@ public class SessionState {
 
     public String getUuid() {
         return uuid;
+    }
+
+    public synchronized void requestCollectionsManifest(DcpChannel channel) {
+        collectionsManifest = null;
+        collectionsManifestFailure = null;
+        channel.requestCollectionsManifest();
+    }
+
+    public synchronized CollectionsManifest waitForCollectionsManifest(long timeout)
+            throws InterruptedException, TimeoutException {
+        if (collectionsManifest == null) {
+            Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
+            LOGGER.debug("Waiting until manifest is updated");
+            while (collectionsManifest == null && collectionsManifestFailure == null && !span.elapsed()
+                    && !partitionStates.get(0).isClientDisconnected()) {
+                span.wait(this);
+            }
+            if (collectionsManifest == null) {
+                throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining collections manifest");
+            }
+        }
+        return collectionsManifest;
+    }
+
+    public synchronized void onCollectionsManifest(CollectionsManifest collectionsManifest) {
+        this.collectionsManifest = collectionsManifest;
+        this.collectionsManifestFailure = null;
+        for (PartitionState ps : partitionStates) {
+            ps.setCollectionsManifest(collectionsManifest);
+        }
+        notifyAll();
+    }
+
+    public synchronized void onCollectionsManifestFailure(Throwable failure) {
+        this.collectionsManifest = null;
+        this.collectionsManifestFailure = failure;
+        notifyAll();
+    }
+
+    public synchronized CollectionsManifest getCollectionsManifest() {
+        return collectionsManifest;
     }
 }

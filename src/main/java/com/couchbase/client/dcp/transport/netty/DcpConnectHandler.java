@@ -111,7 +111,8 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
         ctx.fireChannelActive();
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("DCP Connection opened with Name \"{}\" against Node {}",
-                    connectionName.toString(CharsetUtil.UTF_8), ctx.channel().remoteAddress());
+                    connectionName.toString(0, connectionName.writerIndex(), StandardCharsets.UTF_8),
+                    ctx.channel().remoteAddress());
         }
     }
 

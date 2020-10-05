@@ -9,7 +9,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.function.IntConsumer;
 
-import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -42,7 +41,6 @@ import com.couchbase.client.deps.io.netty.channel.Channel;
 import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
 import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
 import com.couchbase.client.deps.io.netty.channel.ChannelOption;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
 /**
  * Logical representation of a DCP cluster connection.
@@ -158,12 +156,12 @@ public class DcpChannel {
                 ps.prepareNextStreamRequest();
                 StreamRequest req = ps.getStreamRequest();
                 openStream((short) i, req.getVbucketUuid(), req.getStartSeqno(), req.getEndSeqno(),
-                        req.getSnapshotStartSeqno(), req.getSnapshotEndSeqno());
+                        req.getSnapshotStartSeqno(), req.getSnapshotEndSeqno(), req.getManifestUid());
             }
         }
         for (int i = 0; i < failoverLogRequests.length; i++) {
             if (failoverLogRequests[i]) {
-                LOGGER.debug("Re requesting failover logs for vbucket " + i);
+                LOGGER.debug("Re-requesting failover logs for vbucket " + i);
                 getFailoverLog((short) i);
             }
         }
@@ -213,10 +211,7 @@ public class DcpChannel {
     }
 
     public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,
-            final long snapshotStartSeqno, final long snapshotEndSeqno) {
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("opening stream for " + vbid);
-        }
+            final long snapshotStartSeqno, final long snapshotEndSeqno, long manifestUid) {
         PartitionState partitionState = sessionState.get(vbid);
         if (getState() != State.CONNECTED) {
             StreamEndEvent endEvent = partitionState.getEndEvent();
@@ -233,8 +228,9 @@ public class DcpChannel {
         }
         LOGGER.debug(
                 "Opening Stream against {} with vbid: {}, vbuuid: {}, startSeqno: {}, "
-                        + "endSeqno: {},  snapshotStartSeqno: {}, snapshotEndSeqno: {}",
-                channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno, snapshotEndSeqno);
+                        + "endSeqno: {},  snapshotStartSeqno: {}, snapshotEndSeqno: {}, manifestUid: {}",
+                channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno, snapshotEndSeqno,
+                manifestUid);
         partitionState.setState(PartitionState.CONNECTING);
         openStreams[vbid] = true;
         ByteBuf buffer = Unpooled.buffer();
@@ -251,12 +247,14 @@ public class DcpChannel {
             ObjectNode json = om.createObjectNode();
             ArrayNode an = json.putArray("collections");
             env.cids().forEach((IntConsumer) uid -> an.add(Integer.toUnsignedString(uid, 16)));
-            String str;
+            if (manifestUid != 0) {
+                json.put("uid", Long.toUnsignedString(manifestUid));
+            }
             try {
-                str = om.writeValueAsString(json);
-                DcpOpenStreamRequest.setValue(Unpooled.copiedBuffer(str, CharsetUtil.UTF_8), buffer);
+                byte[] value = om.writeValueAsBytes(json);
+                DcpOpenStreamRequest.setValue(Unpooled.copiedBuffer(value), buffer);
             } catch (Exception e) {
-
+                throw new IllegalStateException(e);
             }
         }
         ChannelFuture future = channel.writeAndFlush(buffer);
@@ -306,7 +304,7 @@ public class DcpChannel {
     }
 
     public synchronized void getFailoverLog(final short vbid) {
-        LOGGER.debug("requesting failover logs for vbucket " + vbid);
+        LOGGER.trace("requesting failover logs for vbucket " + vbid);
         failoverLogRequests[vbid] = true;
         if (getState() != State.CONNECTED) {
             PartitionState ps = sessionState.get(vbid);
@@ -320,21 +318,16 @@ public class DcpChannel {
         DcpFailoverLogRequest.opaque(buffer, vbid);
         DcpFailoverLogRequest.vbucket(buffer, vbid);
         channel.writeAndFlush(buffer);
-        LOGGER.debug("Asked for failover log on {} for vbid: {}", channel.remoteAddress(), vbid);
+        LOGGER.trace("Asked for failover log on {} for vbid: {}", channel.remoteAddress(), vbid);
     }
 
-    public synchronized void requestCollectionsManifest(final short vbid) {
-        LOGGER.debug("requesting collections manifest for vbucket {}", vbid);
+    public synchronized void requestCollectionsManifest() {
+        LOGGER.debug("requesting collections manifest");
         if (getState() != State.CONNECTED) {
-            PartitionState ps = sessionState.get(vbid);
-            if (!ps.isClientDisconnected()) {
-                ps.collectionsManifestRequestFailed(new NotConnectedException());
-            }
-            return;
+            throw new IllegalStateException("channel is not connected");
         }
         ByteBuf buffer = Unpooled.buffer();
         DcpGetCollectionsManifestRequest.init(buffer);
-        DcpGetCollectionsManifestRequest.opaque(buffer, vbid);
         channel.writeAndFlush(buffer);
     }
 
@@ -418,10 +411,10 @@ public class DcpChannel {
         }
         long now = System.currentTimeMillis();
         if (now - lastConnectionTime > deadConnectionDetectionInterval) {
-            LOGGER.log(Level.INFO, "Detected dead connection on {}", this);
+            LOGGER.info("Detected dead connection on {}", this);
             return true;
         } else {
-            LOGGER.log(Level.INFO, "Connection {} is not dead", this);
+            LOGGER.info("Connection {} is not dead", this);
             return false;
         }
     }

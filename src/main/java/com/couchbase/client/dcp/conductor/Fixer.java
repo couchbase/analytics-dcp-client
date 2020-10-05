@@ -229,6 +229,8 @@ public class Fixer implements Runnable, SystemEventHandler {
             case UNKNOWN:
                 LOGGER.error("{} Stream ended with invalid indicating a producer error, should re-open the stream",
                         this);
+                // fall-through
+            case BACKFILL_FAIL:
             case STATE_CHANGED:
             case CHANNEL_DROPPED:
                 // Preparing to rebalance, update the config

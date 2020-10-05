@@ -7,7 +7,8 @@ package com.couchbase.client.dcp.message;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public class ScopeCreated extends DcpSystemEvent {
-    private final long newManifestId;
+    private static final long serialVersionUID = 1L;
+    private final long newManifestUid;
     private final int scopeId;
     private final String scopeName;
 
@@ -17,13 +18,13 @@ public class ScopeCreated extends DcpSystemEvent {
         scopeName = MessageUtil.getKeyAsString(buffer, false);
         ByteBuf value = MessageUtil.getContent(buffer);
 
-        newManifestId = value.readLong();
+        newManifestUid = value.readLong();
         scopeId = value.readInt();
     }
 
     @Override
-    public long getManifestId() {
-        return newManifestId;
+    public long getManifestUid() {
+        return newManifestUid;
     }
 
     public int getScopeId() {
@@ -36,12 +37,12 @@ public class ScopeCreated extends DcpSystemEvent {
 
     @Override
     public CollectionsManifest apply(CollectionsManifest currentManifest) {
-        return currentManifest.withScope(newManifestId, scopeId, scopeName);
+        return currentManifest.withScope(newManifestUid, scopeId, scopeName);
     }
 
     @Override
     public String toString() {
-        return "ScopeCreated{" + "newManifestId=0x" + Long.toUnsignedString(newManifestId, 16) + ", scopeId=0x"
+        return "ScopeCreated{" + "newManifestUid=0x" + Long.toUnsignedString(newManifestUid, 16) + ", scopeId=0x"
                 + Integer.toUnsignedString(scopeId, 16) + ", scopeName='" + scopeName + '\'' + ", vbucket="
                 + getVbucket() + ", seqno=" + getSeqno() + ", version=" + getVersion() + '}';
     }
