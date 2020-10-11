@@ -385,6 +385,10 @@ public class PartitionState {
         return osoMaxSeqno;
     }
 
+    public boolean isOsoSnapshot() {
+        return osoSnapshot;
+    }
+
     public CollectionsManifest getCollectionsManifest() {
         return manifest;
     }
