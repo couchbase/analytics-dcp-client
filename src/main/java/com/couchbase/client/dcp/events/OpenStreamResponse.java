@@ -5,18 +5,20 @@ import java.util.concurrent.TimeUnit;
 import org.apache.hyracks.util.Span;
 
 import com.couchbase.client.dcp.conductor.DcpChannel;
-import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 
 public class OpenStreamResponse implements PartitionDcpEvent {
-    private final PartitionState state;
+    private final StreamPartitionState state;
+    private final int streamId;
     private DcpChannel channel;
     private short status;
     private long rollbackSeq;
     private Span delay = ELAPSED;
 
-    public OpenStreamResponse(PartitionState state) {
+    public OpenStreamResponse(StreamPartitionState state, int streamId) {
         this.state = state;
+        this.streamId = streamId;
     }
 
     @Override
@@ -48,7 +50,7 @@ public class OpenStreamResponse implements PartitionDcpEvent {
     }
 
     @Override
-    public PartitionState getPartitionState() {
+    public StreamPartitionState getPartitionState() {
         return state;
     }
 
@@ -70,7 +72,8 @@ public class OpenStreamResponse implements PartitionDcpEvent {
 
     @Override
     public String toString() {
-        return "{\"open-stream-response\":\"" + MemcachedStatus.toString(status) + "\"}";
+        return "{\"stream-id\":" + streamId + ", \"open-stream-response\":\"" + MemcachedStatus.toString(status)
+                + "\"}";
     }
 
     @Override

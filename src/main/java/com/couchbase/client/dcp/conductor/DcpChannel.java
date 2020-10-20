@@ -7,7 +7,9 @@ import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetry;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.util.function.IntConsumer;
+import java.util.Objects;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -23,9 +25,10 @@ import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosRequest;
 import com.couchbase.client.dcp.message.DcpOpenStreamRequest;
 import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.message.VbucketState;
-import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
+import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamRequest;
+import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.DcpPipeline;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,6 +45,12 @@ import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
 import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
 import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 
+import it.unimi.dsi.fastutil.ints.Int2BooleanMap;
+import it.unimi.dsi.fastutil.ints.Int2BooleanOpenHashMap;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.ints.IntSet;
+import it.unimi.dsi.fastutil.ints.IntSets;
+
 /**
  * Logical representation of a DCP cluster connection.
  *
@@ -54,13 +63,13 @@ public class DcpChannel {
     private final String hostname;
     private final InetSocketAddress inetAddress;
     private final boolean[] failoverLogRequests;
-    private final boolean[] openStreams;
+    private final IntSet[] openStreams;
     private final SessionState sessionState;
     private final DcpChannelControlMessageHandler controlHandler;
     private volatile Channel channel;
     private final DcpChannelCloseListener closeListener;
     private final long deadConnectionDetectionInterval;
-    private volatile boolean stateFetched = true;
+    private Int2BooleanMap stateFetched = new Int2BooleanOpenHashMap();
     private volatile long lastConnectionTime = System.currentTimeMillis();
     private boolean channelDroppedReported = false;
     private boolean isCollectionCapable;
@@ -74,7 +83,7 @@ public class DcpChannel {
         this.sessionState = sessionState;
         this.failoverLogRequests = new boolean[numOfPartitions];
         this.controlHandler = new DcpChannelControlMessageHandler(this);
-        this.openStreams = new boolean[numOfPartitions];
+        this.openStreams = new IntSet[numOfPartitions];
         this.closeListener = new DcpChannelCloseListener(this);
         this.deadConnectionDetectionInterval = env.getDeadConnectionDetectionInterval();
         this.isCollectionCapable = isCollectionCapable;
@@ -149,14 +158,19 @@ public class DcpChannel {
             }
         }
         // attempt to restart the dropped streams
-        for (int i = 0; i < openStreams.length; i++) {
-            if (openStreams[i]) {
-                LOGGER.debug("Opening a stream that was dropped for vbucket " + i);
-                PartitionState ps = sessionState.get(i);
-                ps.prepareNextStreamRequest();
+        for (short vbid = 0; vbid < openStreams.length; vbid++) {
+            if (openStreams[vbid] == null) {
+                continue;
+            }
+            for (int streamId : openStreams[vbid]) {
+                LOGGER.debug("Opening a stream {} that was dropped for vbucket {}", streamId, vbid);
+                final StreamState streamState = sessionState.streamState(streamId);
+                StreamPartitionState ps = streamState.get(vbid);
+                ps.prepareNextStreamRequest(sessionState, streamState);
                 StreamRequest req = ps.getStreamRequest();
-                openStream((short) i, req.getVbucketUuid(), req.getStartSeqno(), req.getEndSeqno(),
-                        req.getSnapshotStartSeqno(), req.getSnapshotEndSeqno(), req.getManifestUid());
+                openStream(vbid, req.getVbucketUuid(), req.getStartSeqno(), req.getEndSeqno(),
+                        req.getSnapshotStartSeqno(), req.getSnapshotEndSeqno(), req.getManifestUid(), req.getStreamId(),
+                        req.getCids());
             }
         }
         for (int i = 0; i < failoverLogRequests.length; i++) {
@@ -165,9 +179,8 @@ public class DcpChannel {
                 getFailoverLog((short) i);
             }
         }
-        if (!stateFetched) {
-            getSeqnos();
-        }
+        sessionState.streamStream().filter(s -> !stateFetched.getOrDefault(s.streamId(), true))
+                .forEach(this::getSeqnos);
         channel.closeFuture().addListener(closeListener);
     }
 
@@ -211,8 +224,8 @@ public class DcpChannel {
     }
 
     public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,
-            final long snapshotStartSeqno, final long snapshotEndSeqno, long manifestUid) {
-        PartitionState partitionState = sessionState.get(vbid);
+            final long snapshotStartSeqno, final long snapshotEndSeqno, long manifestUid, int streamId, int[] cids) {
+        StreamPartitionState partitionState = sessionState.streamState(streamId).get(vbid);
         if (getState() != State.CONNECTED) {
             StreamEndEvent endEvent = partitionState.getEndEvent();
             endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
@@ -222,20 +235,25 @@ public class DcpChannel {
         } else if (startSeqno == endSeqno) {
             StreamEndEvent endEvent = partitionState.getEndEvent();
             endEvent.setReason(StreamEndReason.OK);
-            LOGGER.warn("Attempt to open stream on disconnected channel");
+            LOGGER.warn(
+                    "Attempt to open stream {} against {} with vbid {} with no requested sequences (start == end) {}",
+                    streamId, channel.remoteAddress(), vbid, startSeqno);
             env.eventBus().publish(endEvent);
             return;
         }
-        LOGGER.debug(
-                "Opening Stream against {} with vbid: {}, vbuuid: {}, startSeqno: {}, "
-                        + "endSeqno: {},  snapshotStartSeqno: {}, snapshotEndSeqno: {}, manifestUid: {}",
-                channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno, snapshotEndSeqno,
-                manifestUid);
-        partitionState.setState(PartitionState.CONNECTING);
-        openStreams[vbid] = true;
+        LOGGER.trace(
+                "Opening stream {} against {} with vbid {} vbuuid {} startSeqno {} "
+                        + "endSeqno {} snapshotStartSeqno {} snapshotEndSeqno {} manifestUid {}",
+                streamId, channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno,
+                snapshotEndSeqno, manifestUid);
+        partitionState.setState(StreamPartitionState.CONNECTING);
+        if (openStreams[vbid] == null) {
+            openStreams[vbid] = new IntOpenHashSet();
+        }
+        openStreams[vbid].add(streamId);
         ByteBuf buffer = Unpooled.buffer();
         DcpOpenStreamRequest.init(buffer, vbid);
-        DcpOpenStreamRequest.opaque(buffer, vbid);
+        DcpOpenStreamRequest.opaque(buffer, streamId << 16 | vbid);
         DcpOpenStreamRequest.vbuuid(buffer, vbuuid);
         DcpOpenStreamRequest.startSeqno(buffer, startSeqno);
         DcpOpenStreamRequest.endSeqno(buffer, endSeqno);
@@ -246,9 +264,12 @@ public class DcpChannel {
             ObjectMapper om = new ObjectMapper();
             ObjectNode json = om.createObjectNode();
             ArrayNode an = json.putArray("collections");
-            env.cids().forEach((IntConsumer) uid -> an.add(Integer.toUnsignedString(uid, 16)));
+            IntStream.of(cids).mapToObj(uid -> Integer.toUnsignedString(uid, 16)).forEach(an::add);
             if (manifestUid != 0) {
                 json.put("uid", Long.toUnsignedString(manifestUid));
+            }
+            if (streamId > 0) {
+                json.put("sid", streamId);
             }
             try {
                 byte[] value = om.writeValueAsBytes(json);
@@ -269,13 +290,13 @@ public class DcpChannel {
         }
     }
 
-    public synchronized void closeStream(final short vbid) {
+    public synchronized void closeStream(final int streamId, final short vbid) {
         if (getState() != State.CONNECTED) {
             throw new NotConnectedException();
         }
         LOGGER.debug("Closing Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
-        sessionState.get(vbid).setState(PartitionState.DISCONNECTING);
-        openStreams[vbid] = false;
+        sessionState.streamState(streamId).get(vbid).setState(StreamPartitionState.DISCONNECTING);
+        openStreams[vbid].remove(streamId);
         ByteBuf buffer = Unpooled.buffer();
         DcpCloseStreamRequest.init(buffer);
         DcpCloseStreamRequest.vbucket(buffer, vbid);
@@ -285,21 +306,23 @@ public class DcpChannel {
 
     /**
      * Returns all seqnos for all vbuckets on that channel.
+     * @param streamState
      */
-    public synchronized void getSeqnos() {
-        stateFetched = false;
+    public synchronized void getSeqnos(StreamState streamState) {
+        final int streamId = streamState.streamId();
+        stateFetched.put(streamId, false);
         if (getState() != State.CONNECTED) {
-            for (int i = 0; i < openStreams.length; i++) {
-                PartitionState ps = sessionState.get(i);
-                if (!ps.isClientDisconnected()) {
-                    ps.seqsRequestFailed(new NotConnectedException());
-                }
-            }
+            streamState.seqsRequestFailed(new NotConnectedException());
             return;
         }
         ByteBuf buffer = Unpooled.buffer();
         DcpGetPartitionSeqnosRequest.init(buffer);
-        DcpGetPartitionSeqnosRequest.vbucketState(buffer, VbucketState.ACTIVE);
+        if (isCollectionCapable) {
+            DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE, streamState.collectionId());
+        } else {
+            DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE);
+        }
+        DcpGetPartitionSeqnosRequest.opaque(buffer, streamId);
         channel.writeAndFlush(buffer);
     }
 
@@ -307,10 +330,7 @@ public class DcpChannel {
         LOGGER.trace("requesting failover logs for vbucket " + vbid);
         failoverLogRequests[vbid] = true;
         if (getState() != State.CONNECTED) {
-            PartitionState ps = sessionState.get(vbid);
-            if (!ps.isClientDisconnected()) {
-                ps.failoverRequestFailed(new NotConnectedException());
-            }
+            sessionState.get(vbid).failoverLogsRequestFailed(new NotConnectedException());
             return;
         }
         ByteBuf buffer = Unpooled.buffer();
@@ -331,8 +351,8 @@ public class DcpChannel {
         channel.writeAndFlush(buffer);
     }
 
-    public boolean streamIsOpen(short vbid) {
-        return openStreams[vbid];
+    public IntSet openStreams(short vbid) {
+        return openStreams[vbid] != null ? openStreams[vbid] : IntSets.EMPTY_SET;
     }
 
     // Seriously!?
@@ -359,7 +379,7 @@ public class DcpChannel {
         return env;
     }
 
-    public boolean[] openStreams() {
+    public IntSet[] openStreams() {
         return openStreams;
     }
 
@@ -383,22 +403,17 @@ public class DcpChannel {
         return failoverLogRequests;
     }
 
-    public synchronized void stateFetched() {
-        stateFetched = true;
+    public synchronized void stateFetched(int streamId) {
+        stateFetched.put(streamId, true);
         notifyAll();
     }
 
-    public boolean isStateFetched() {
-        return stateFetched;
+    public boolean isStateFetched(int streamId) {
+        return stateFetched.getOrDefault(streamId, true);
     }
 
     public synchronized boolean anyStreamIsOpen() {
-        for (boolean bool : openStreams) {
-            if (bool == true) {
-                return true;
-            }
-        }
-        return false;
+        return !Stream.of(openStreams).filter(Objects::nonNull).allMatch(IntSet::isEmpty);
     }
 
     public String getHostname() {

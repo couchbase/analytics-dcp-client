@@ -17,7 +17,8 @@ public class RetryUtil {
     public static boolean shouldRetry(Throwable th) {
         Throwable root = ExceptionUtils.getRootCause(th);
         return !((root instanceof BucketNotFoundException) || (root instanceof MasterDcpChannelNotFoundException)
-                || (root instanceof CouchbaseException && root.getMessage().contains("Unauthorized"))
-                || (root.getMessage().contains("36: No access")));
+                || (root instanceof CouchbaseException && root.getMessage() != null
+                        && root.getMessage().contains("Unauthorized"))
+                || (root.getMessage() != null && root.getMessage().contains("36: No access")));
     }
 }

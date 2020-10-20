@@ -5,17 +5,24 @@ package com.couchbase.client.dcp.message;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import com.couchbase.client.dcp.conductor.DcpChannel;
+import com.couchbase.client.dcp.state.SessionState;
+import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.ByteBufUtil;
 
-public enum MessageUtil {
-    ;
+public class MessageUtil {
 
-    public static final int HEADER_SIZE = 24;
+    /**
+     * this does not take flex framing into account; consumers should instead use
+     * {@link MessageUtil#getHeaderSize(ByteBuf)}
+     */
+    private static final int HEADER_SIZE = 24;
 
     public static final byte MAGIC_INT = (byte) 0x79;
     public static final byte MAGIC_REQ = (byte) 0x80;
     public static final byte MAGIC_RES = (byte) 0x81;
+    public static final byte MAGIC_REQ_FLEX = (byte) 0x08;
 
     public static final short KEY_LENGTH_OFFSET = 2;
     public static final short EXTRAS_LENGTH_OFFSET = 4;
@@ -24,12 +31,15 @@ public enum MessageUtil {
     public static final short OPAQUE_OFFSET = 12;
     public static final short CAS_OFFSET = 16;
 
+    public static final short FLEX_FRAMING_EXTRAS_LENGTH_OFFSET = 2;
+    public static final short FLEX_KEY_LENGTH_OFFSET = 3;
+
     public static final byte VERSION_OPCODE = 0x0b;
     public static final byte HELO_OPCODE = 0x1f;
     public static final byte SASL_LIST_MECHS_OPCODE = 0x20;
     public static final byte SASL_AUTH_OPCODE = 0x21;
     public static final byte SASL_STEP_OPCODE = 0x22;
-    public static final byte GET_SEQNOS_OPCODE = 0x48;
+    public static final byte GET_ALL_VB_SEQNOS_OPCODE = 0x48;
     public static final byte OPEN_CONNECTION_OPCODE = 0x50;
     public static final byte DCP_ADD_STREAM_OPCODE = 0x51;
     public static final byte DCP_STREAM_CLOSE_OPCODE = 0x52;
@@ -63,13 +73,37 @@ public enum MessageUtil {
     public static final short REQ_SYSTEM_EVENT = MAGIC_REQ << 8 | DCP_SYSTEM_EVENT_OPCODE & 0xff;
     public static final short REQ_SET_VBUCKET_STATE = MAGIC_REQ << 8 | DCP_SET_VBUCKET_STATE_OPCODE & 0xff;
     public static final short REQ_SNAPSHOT_MARKER = MAGIC_REQ << 8 | DCP_SNAPSHOT_MARKER_OPCODE & 0xff;
+    public static final short REQ_DCP_NOOP = MAGIC_REQ << 8 | DCP_NOOP_OPCODE & 0xff;
+
+    public static final short FLEX_REQ_DCP_MUTATION = MAGIC_REQ_FLEX << 8 | DCP_MUTATION_OPCODE & 0xff;
+    public static final short FLEX_REQ_DCP_DELETION = MAGIC_REQ_FLEX << 8 | DCP_DELETION_OPCODE & 0xff;
+    public static final short FLEX_REQ_DCP_EXPIRATION = MAGIC_REQ_FLEX << 8 | DCP_EXPIRATION_OPCODE & 0xff;
+    public static final short FLEX_REQ_STREAM_END = MAGIC_REQ_FLEX << 8 | DCP_STREAM_END_OPCODE & 0xff;
+    public static final short FLEX_REQ_SEQNO_ADVANCED = MAGIC_REQ_FLEX << 8 | DCP_SEQNO_ADVANCED_OPCODE & 0xff;
+    public static final short FLEX_REQ_OSO_SNAPSHOT_MARKER =
+            MAGIC_REQ_FLEX << 8 | DCP_OSO_SNAPSHOT_MARKER_OPCODE & 0xff;
+    public static final short FLEX_REQ_SYSTEM_EVENT = MAGIC_REQ_FLEX << 8 | DCP_SYSTEM_EVENT_OPCODE & 0xff;
+    public static final short FLEX_REQ_SET_VBUCKET_STATE = MAGIC_REQ_FLEX << 8 | DCP_SET_VBUCKET_STATE_OPCODE & 0xff;
+    public static final short FLEX_REQ_SNAPSHOT_MARKER = MAGIC_REQ_FLEX << 8 | DCP_SNAPSHOT_MARKER_OPCODE & 0xff;
+
     public static final short RES_GET_COLLECTIONS_MANIFEST = MAGIC_RES << 8 | GET_COLLECTIONS_MANIFEST_OPCODE & 0xff;
     public static final short RES_STREAM_REQUEST = MAGIC_RES << 8 | DCP_STREAM_REQUEST_OPCODE & 0xff;
-    public static final short RES_GET_SEQNOS = MAGIC_RES << 8 | GET_SEQNOS_OPCODE & 0xff;
+    public static final short RES_GET_SEQNOS = MAGIC_RES << 8 | GET_ALL_VB_SEQNOS_OPCODE & 0xff;
     public static final short RES_STREAM_CLOSE = MAGIC_RES << 8 | DCP_STREAM_CLOSE_OPCODE & 0xff;
     public static final short RES_FAILOVER_LOG = MAGIC_RES << 8 | DCP_FAILOVER_LOG_OPCODE & 0xff;
 
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+
+    private static final byte FRAMING_EXTRA_ID_DCP_STREAM_ID = 2;
+
+    /**
+     * the stream id to use when the buffer does not contain a flex frame (i.e. pre-7.0 server)
+     */
+    public static final int NO_FLEX_FRAMING_STREAM_ID = 1;
+
+    private MessageUtil() {
+        throw new AssertionError("do not instantiate");
+    }
 
     /**
      * Returns true if message can be processed and false if more data is needed.
@@ -94,13 +128,22 @@ public enum MessageUtil {
         StringBuilder sb = new StringBuilder();
 
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
-        short keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
+        short keyLength;
+        short framingExtrasLength = 0;
         int bodyLength = buffer.getInt(BODY_LENGTH_OFFSET);
 
         sb.append("Field          (offset) (value)\n-----------------------------------\n");
         sb.append(String.format("Magic          (0)      0x%02x\n", buffer.getByte(0)));
         sb.append(String.format("Opcode         (1)      0x%02x\n", buffer.getByte(1)));
-        sb.append(String.format("Key Length     (2,3)    0x%04x\n", keyLength));
+        if ((buffer.getByte(0) & 0xf0) != 0) {
+            keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
+            sb.append(String.format("Key Length     (2,3)    0x%04x\n", keyLength));
+        } else {
+            framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+            keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
+            sb.append(String.format("Framing Extras (2)      0x%02x\n", framingExtrasLength));
+            sb.append(String.format("Key Length     (3)      0x%02x\n", keyLength));
+        }
         sb.append(String.format("Extras Length  (4)      0x%02x\n", extrasLength));
         sb.append(String.format("Data Type      (5)      0x%02x\n", buffer.getByte(5)));
         sb.append(String.format("VBucket        (6,7)    0x%04x\n", buffer.getShort(VBUCKET_OFFSET)));
@@ -108,17 +151,38 @@ public enum MessageUtil {
         sb.append(String.format("Opaque         (12-15)  0x%08x\n", buffer.getInt(OPAQUE_OFFSET)));
         sb.append(String.format("CAS            (16-23)  0x%016x\n", buffer.getLong(CAS_OFFSET)));
 
+        if (framingExtrasLength > 0) {
+            // TODO: attempt to parse & humanize known framing extras (i.e. STREAM_ID) instead of hex dump
+            byte[] chunk = new byte[8];
+            for (int framingRemaining = framingExtrasLength; framingRemaining > 0; framingRemaining -= 8) {
+                int framingExtrasOffset = framingRemaining - framingExtrasLength;
+                int chunkLen = Math.min(8, framingRemaining);
+                int startingByte = HEADER_SIZE + framingExtrasOffset;
+                int endingByte = HEADER_SIZE + framingExtrasOffset + chunkLen;
+                buffer.getBytes(startingByte, chunk, 0, chunkLen);
+                sb.append(String.format("Framing Extras (%d-%d)  0x", startingByte, endingByte));
+                if (chunkLen == 8) {
+                    sb.append(String.format("%016x", buffer.getLong(startingByte)));
+                } else {
+                    for (int i = 0; i < chunkLen; i++) {
+                        sb.append(String.format("%02x", buffer.getByte(startingByte + i)));
+                    }
+                }
+                sb.append('\n');
+            }
+        }
+
         if (extrasLength > 0) {
-            sb.append("+ Extras with " + extrasLength + " bytes\n");
+            sb.append("+ Extras with ").append(extrasLength).append(" bytes\n");
         }
 
         if (keyLength > 0) {
-            sb.append("+ Key with " + keyLength + " bytes\n");
+            sb.append("+ Key with ").append(keyLength).append(" bytes\n");
         }
 
         int contentLength = bodyLength - extrasLength - keyLength;
         if (contentLength > 0) {
-            sb.append("+ Content with " + contentLength + " bytes\n");
+            sb.append("+ Content with ").append(contentLength).append(" bytes\n");
         }
 
         return sb.toString();
@@ -151,12 +215,22 @@ public enum MessageUtil {
         buffer.setByte(EXTRAS_LENGTH_OFFSET, newExtrasLength);
         buffer.setInt(BODY_LENGTH_OFFSET, newBodyLength);
 
-        buffer.setBytes(HEADER_SIZE, extras);
-        buffer.writerIndex(HEADER_SIZE + newBodyLength);
+        final int headerSize = getHeaderSize(buffer);
+        buffer.setBytes(headerSize, extras);
+        buffer.writerIndex(headerSize + newBodyLength);
+    }
+
+    /**
+     * Returns the complete header size, including any present flex framing in the message
+     * @param buffer the message (may use flex framing)
+     * @return the header size (inclusive of flex framing extras, if present)
+     */
+    public static int getHeaderSize(ByteBuf buffer) {
+        return HEADER_SIZE + buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
     }
 
     public static ByteBuf getExtras(ByteBuf buffer) {
-        return buffer.slice(HEADER_SIZE, buffer.getByte(EXTRAS_LENGTH_OFFSET));
+        return buffer.slice(getHeaderSize(buffer), buffer.getByte(EXTRAS_LENGTH_OFFSET));
     }
 
     public static void setVbucket(short vbucket, ByteBuf buffer) {
@@ -171,26 +245,28 @@ public enum MessageUtil {
      * Helper method to set the key, update the key length and the content length.
      */
     public static void setKey(ByteBuf key, ByteBuf buffer) {
-        short oldKeyLength = buffer.getShort(KEY_LENGTH_OFFSET);
+        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        final int extrasOffset = HEADER_SIZE + framingExtrasLength;
+        short oldKeyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
         short newKeyLength = (short) key.readableBytes();
         int oldBodyLength = buffer.getInt(BODY_LENGTH_OFFSET);
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
         int newBodyLength = oldBodyLength - oldKeyLength + newKeyLength;
-
-        buffer.setShort(KEY_LENGTH_OFFSET, newKeyLength);
+        if (oldKeyLength != newKeyLength && oldBodyLength - extrasLength - framingExtrasLength != 0) {
+            throw new IllegalStateException("NYI: cannot change key length with body present!");
+        }
+        buffer.setByte(FLEX_KEY_LENGTH_OFFSET, newKeyLength);
         buffer.setInt(BODY_LENGTH_OFFSET, newBodyLength);
 
-        buffer.setBytes(HEADER_SIZE + extrasLength, key);
-        buffer.writerIndex(HEADER_SIZE + newBodyLength);
-
-        // todo: make sure stuff is still in order if content is there and its sliced in
-        // todo: what if old key with different size is there
+        buffer.setBytes(extrasOffset + extrasLength, key);
+        buffer.writerIndex(extrasOffset + newBodyLength);
     }
 
     public static ByteBuf getKey(ByteBuf buffer, boolean isCollectionEnabled) {
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
-        short keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
-        ByteBuf keyWithPrefix = buffer.slice(HEADER_SIZE + extrasLength, keyLength);
+        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
+        ByteBuf keyWithPrefix = buffer.slice(HEADER_SIZE + framingExtrasLength + extrasLength, keyLength);
         if (!isCollectionEnabled) {
             return keyWithPrefix; //if collection is not enabled, then key does not contain cid prefix
         }
@@ -210,25 +286,29 @@ public enum MessageUtil {
      * Sets the content payload of the buffer, updating the content length as well.
      */
     public static void setContent(ByteBuf content, ByteBuf buffer) {
-        short keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
+        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
-        int bodyLength = keyLength + extrasLength + content.readableBytes();
+        // The size of the value is total body length - key length - extras length - framing extras
+        int bodyLength = framingExtrasLength + extrasLength + keyLength + content.readableBytes();
 
         buffer.setInt(BODY_LENGTH_OFFSET, bodyLength);
         if (buffer.ensureWritable(content.readableBytes(), false) == 1) {
             buffer.capacity(buffer.capacity() + content.readableBytes() - buffer.writableBytes());
         }
-        buffer.setBytes(HEADER_SIZE + extrasLength + keyLength, content);
-        buffer.writerIndex(HEADER_SIZE + bodyLength);
+        buffer.setBytes(HEADER_SIZE + framingExtrasLength + extrasLength + keyLength, content);
+        buffer.writerIndex(HEADER_SIZE + framingExtrasLength + bodyLength);
 
         // todo: what if old body with different size is there?
     }
 
     public static ByteBuf getContent(ByteBuf buffer) {
-        short keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
+        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
-        int contentLength = buffer.getInt(BODY_LENGTH_OFFSET) - keyLength - extrasLength;
-        return buffer.slice(HEADER_SIZE + keyLength + extrasLength, contentLength);
+        // The size of the value is total body length - key length - extras length - framing extras
+        int contentLength = buffer.getInt(BODY_LENGTH_OFFSET) - keyLength - extrasLength - framingExtrasLength;
+        return buffer.slice(HEADER_SIZE + framingExtrasLength + extrasLength + keyLength, contentLength);
     }
 
     public static short getStatus(ByteBuf buffer) {
@@ -237,6 +317,10 @@ public enum MessageUtil {
 
     public static void setOpaque(int opaque, ByteBuf buffer) {
         buffer.setInt(OPAQUE_OFFSET, opaque);
+    }
+
+    public static void setOpaqueLo(short flags, ByteBuf buffer) {
+        buffer.setShort(OPAQUE_OFFSET + 2, flags);
     }
 
     public static int getOpaque(ByteBuf buffer) {
@@ -297,10 +381,11 @@ public enum MessageUtil {
      * The returned buffer shares its reference count with the given buffer.
      */
     public static ByteBuf getRawContent(ByteBuf buffer) {
-        short keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
+        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
         int contentLength = buffer.getInt(BODY_LENGTH_OFFSET) - keyLength - extrasLength;
-        return buffer.slice(HEADER_SIZE + keyLength + extrasLength, contentLength);
+        return buffer.slice(HEADER_SIZE + framingExtrasLength + keyLength + extrasLength, contentLength);
     }
 
     /**
@@ -319,5 +404,88 @@ public enum MessageUtil {
         }
 
         return ByteBufUtil.getBytes(rawContent);
+    }
+
+    // http://src.couchbase.org/source/xref/trunk/kv_engine/docs/BinaryProtocol.md
+    //
+    // #### Request header with "flexible framing extras"
+    //
+    //    Some commands may accept extra attributes which may be set in the
+    //    flexible framing extras section in the request packet. Such packets
+    //    is identified by using a different magic (0x08 intead of 0x80).
+    //    If enabled the header looks like:
+    //
+    //    Byte/     0       |       1       |       2       |       3       |
+    //            /              |               |               |               |
+    //            |0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|0 1 2 3 4 5 6 7|
+    //            +---------------+---------------+---------------+---------------+
+    //            0| Magic (0x08)  | Opcode        | Framing extras| Key Length    |
+    //            +---------------+---------------+---------------+---------------+
+    //            4| Extras length | Data type     | vbucket id                    |
+    //            +---------------+---------------+---------------+---------------+
+    //            8| Total body length                                             |
+    //            +---------------+---------------+---------------+---------------+
+    //            12| Opaque                                                        |
+    //            +---------------+---------------+---------------+---------------+
+    //            16| CAS                                                           |
+    //            |                                                               |
+    //            +---------------+---------------+---------------+---------------+
+    //    Total 24 bytes
+    //
+    //    Following the header you'd now find the section containing the framing
+    //    extras (the size is specified in byte 2). Following the framing extras you'll
+    //    find the extras, then the key and finally the value. The size of the value
+    //    is total body length - key length - extras length - framing extras.
+    //
+    //    The framing extras is encoded as a series of variable-length `FrameInfo` objects.
+    //
+    //        Each `FrameInfo` consists of:
+    //
+    //            * 4 bits: *Object Identifier*. Encodes first 15 object IDs directly; with the 16th value (15) used
+    //                       as an escape to support an additional 256 IDs by combining the value of the next byte:
+    //                * `0..14`: Identifier for this element.
+    //                * `15`: Escape: ID is 15 + value of next byte.
+    //            * 4 bits: *Object Length*. Encodes sizes 0..14 directly; value 15 is
+    //                       used to encode sizes above 14 by combining the value of a following
+    //                       byte:
+    //                * `0..14`: Size in bytes of the element data.
+    //            * `15`: Escape: Size is 15 + value of next byte (after any object ID
+    //                    escape bytes).
+    //            * N Bytes: *Object data*.
+    //
+    public static int streamId(ByteBuf buffer) {
+        short framingExtrasLen = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        if (framingExtrasLen == 0) {
+            return NO_FLEX_FRAMING_STREAM_ID;
+        }
+        ByteBuf framingExtra = buffer.slice(HEADER_SIZE, framingExtrasLen);
+        while (framingExtra.readableBytes() > 0) {
+            byte b = framingExtra.readByte();
+            switch (b >> 4) {
+                case FRAMING_EXTRA_ID_DCP_STREAM_ID:
+                    // TODO: remove sanity check
+                    if ((b & 0xf) != 2) {
+                        throw new IllegalStateException("malformed dcp stream id in framing extras");
+                    }
+                    return framingExtra.readUnsignedShort();
+                default:
+                    // ignore unknown framing extra
+                    if ((b & 0xf) < 15) {
+                        framingExtra.skipBytes(b & 0xf);
+                    } else {
+                        framingExtra.skipBytes(15 + framingExtra.readByte());
+                    }
+            }
+        }
+        throw new IllegalStateException("did not find stream id in framing extras!");
+    }
+
+    public static StreamState streamState(ByteBuf buf, DcpChannel channel) {
+        return streamState(buf, channel.getSessionState());
+    }
+
+    public static StreamState streamState(ByteBuf buf, SessionState sessionState) {
+        int streamId = streamId(buf);
+        return sessionState.streamState(streamId);
     }
 }

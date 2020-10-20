@@ -8,7 +8,7 @@ import static com.couchbase.client.dcp.message.MessageUtil.DCP_FAILOVER_LOG_OPCO
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
-import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.state.SessionPartitionState;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public enum DcpFailoverLogResponse {
@@ -57,17 +57,17 @@ public enum DcpFailoverLogResponse {
         return sb.append("]]").toString();
     }
 
-    public static void fill(final ByteBuf buffer, PartitionState ps) {
-        ps.clearFailoverLog();
+    public static void fill(final ByteBuf buffer, SessionPartitionState ss) {
+        ss.clearFailoverLog();
         int numEntries = numLogEntries(buffer);
         if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
             LOGGER.log(CouchbaseLogLevel.TRACE,
-                    "Failover log response for vbucket " + ps.vbid() + " contains " + numEntries + " entries");
+                    "Failover log response for vbucket " + ss.vbid() + " contains " + numEntries + " entries");
         }
         for (int i = numEntries - 1; i >= 0; i--) {
             long seq = seqnoEntry(buffer, i);
             long uuid = vbuuidEntry(buffer, i);
-            ps.addToFailoverLog(seq, uuid);
+            ss.addToFailoverLog(seq, uuid);
         }
     }
 }

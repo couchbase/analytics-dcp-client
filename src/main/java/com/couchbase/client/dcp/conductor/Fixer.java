@@ -5,6 +5,7 @@ import java.util.Deque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -21,7 +22,9 @@ import com.couchbase.client.dcp.events.DeadConnectionDetection;
 import com.couchbase.client.dcp.events.OpenStreamResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.StreamEndReason;
-import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.state.SessionState;
+import com.couchbase.client.dcp.state.StreamPartitionState;
+import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 
 public class Fixer implements Runnable, SystemEventHandler {
@@ -174,8 +177,11 @@ public class Fixer implements Runnable, SystemEventHandler {
                                     int index = config.nodeIndexForMaster(response.getPartitionState().vbid(), false);
                                     NodeInfo node = config.nodeAtIndex(index);
                                     conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
-                                    PartitionState state = response.getPartitionState();
-                                    state.prepareNextStreamRequest();
+                                    StreamPartitionState state = response.getPartitionState();
+                                    final SessionState sessionState = conductor.getSessionState();
+                                    StreamState streamState = sessionState
+                                            .streamState(response.getPartitionState().getStreamRequest().getStreamId());
+                                    state.prepareNextStreamRequest(sessionState, streamState);
                                     conductor.startStreamForPartition(state.getStreamRequest());
                                 }
                             } catch (InterruptedException e) {
@@ -237,7 +243,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                 // get the new master for the partition and resume from there
                 refreshConfig();
                 CouchbaseBucketConfig config = conductor.config();
-                PartitionState state = streamEndEvent.getState();
+                StreamPartitionState state = streamEndEvent.getState();
                 short index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
                 if (index >= 0) {
                     NodeInfo node = config.nodeAtIndex(index);
@@ -258,11 +264,12 @@ public class Fixer implements Runnable, SystemEventHandler {
                     if (streamEndEvent.isFailoverLogsRequested()) {
                         channel.getFailoverLog(streamEndEvent.partition());
                     }
+                    final SessionState sessionState = conductor.getSessionState();
                     if (streamEndEvent.isSeqRequested()) {
-                        channel.getSeqnos();
+                        channel.getSeqnos(streamEndEvent.getStreamState());
                     }
                     streamEndEvent.reset();
-                    state.prepareNextStreamRequest();
+                    state.prepareNextStreamRequest(sessionState, streamEndEvent.getStreamState());
                     conductor.startStreamForPartition(state.getStreamRequest());
                 } else {
                     LOGGER.info(this + " vbucket " + streamEndEvent.partition() + " has no master at the moment");
@@ -388,28 +395,29 @@ public class Fixer implements Runnable, SystemEventHandler {
     }
 
     private void queueOpenStreams(DcpChannel channel, int numPartitions) {
+        // TODO: streamid revisit logging
         boolean infoEnabled = LOGGER.isInfoEnabled();
-        int run = 0;
-        StringBuilder affectedVBuckets = null;
-        if (infoEnabled) {
-            affectedVBuckets = new StringBuilder();
-        }
+        MutableInt run = new MutableInt();
+        final StringBuilder affectedVBuckets = infoEnabled ? new StringBuilder() : null;
         for (short vb = 0; vb < numPartitions; vb++) {
-            if (channel.streamIsOpen(vb)) {
-                if (infoEnabled && run++ == 0) {
-                    affectedVBuckets.append(vb);
+            short vbid = vb;
+            conductor.getSessionState().streamStream().forEach(ss -> {
+                if (channel.openStreams(vbid).contains(ss.streamId())) {
+                    if (infoEnabled && run.getAndIncrement() == 0) {
+                        affectedVBuckets.append(vbid);
+                    }
+                    putPartitionInQueue(channel, ss, vbid);
+                } else if (infoEnabled && run.getValue() > 0) {
+                    if (run.getValue() > 1) {
+                        affectedVBuckets.append('-').append(vbid - 1);
+                    }
+                    affectedVBuckets.append(',');
+                    run.setValue(0);
                 }
-                putPartitionInQueue(channel, vb);
-            } else if (infoEnabled && run > 0) {
-                if (run > 1) {
-                    affectedVBuckets.append('-').append(vb - 1);
-                }
-                affectedVBuckets.append(',');
-                run = 0;
-            }
+            });
         }
         if (infoEnabled && affectedVBuckets.length() > 1) {
-            if (run > 1) {
+            if (run.getValue() > 1) {
                 affectedVBuckets.append('-').append(numPartitions - 1);
             } else {
                 affectedVBuckets.deleteCharAt(affectedVBuckets.length() - 1);
@@ -419,13 +427,13 @@ public class Fixer implements Runnable, SystemEventHandler {
         }
     }
 
-    private void putPartitionInQueue(DcpChannel channel, short vb) {
-        PartitionState state = conductor.getSessionState().get(vb);
-        state.setState(PartitionState.DISCONNECTED);
+    private void putPartitionInQueue(DcpChannel channel, StreamState ss, short vb) {
+        StreamPartitionState state = ss.get(vb);
+        state.setState(StreamPartitionState.DISCONNECTED);
         StreamEndEvent endEvent = state.getEndEvent();
         endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
         endEvent.setFailoverLogsRequested(channel.getFailoverLogRequests()[vb]);
-        endEvent.setSeqRequested(!channel.isStateFetched());
+        endEvent.setSeqRequested(!channel.isStateFetched(ss.streamId()));
         conductor.getEnv().eventBus().publish(endEvent);
     }
 

@@ -7,14 +7,14 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.state.SessionPartitionState;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 public class FailoverLogUpdateEvent implements DcpEvent {
     private static final Logger LOGGER = LogManager.getLogger();
-    private final PartitionState partitionState;
+    private final SessionPartitionState partitionState;
 
-    public FailoverLogUpdateEvent(PartitionState partitionState) {
+    public FailoverLogUpdateEvent(SessionPartitionState partitionState) {
         this.partitionState = partitionState;
     }
 
@@ -23,7 +23,7 @@ public class FailoverLogUpdateEvent implements DcpEvent {
         return Type.FAILOVER_LOG_RESPONSE;
     }
 
-    public PartitionState getPartitionState() {
+    public SessionPartitionState getPartitionState() {
         return partitionState;
     }
 

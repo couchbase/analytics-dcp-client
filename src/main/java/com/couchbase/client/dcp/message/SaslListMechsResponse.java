@@ -27,7 +27,7 @@ public enum SaslListMechsResponse {
      */
     public static String[] supportedMechs(final ByteBuf buffer) {
         int bodyLength = buffer.getInt(MessageUtil.BODY_LENGTH_OFFSET);
-        ByteBuf contentSlice = buffer.slice(MessageUtil.HEADER_SIZE, bodyLength);
+        ByteBuf contentSlice = buffer.slice(MessageUtil.getHeaderSize(buffer), bodyLength);
         String content = contentSlice.toString(CharsetUtil.UTF_8);
         if (content == null) {
             return new String[] {};

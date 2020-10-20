@@ -25,10 +25,15 @@ import com.couchbase.client.dcp.message.DcpSystemEvent;
 import com.couchbase.client.dcp.message.DcpSystemEventMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.StreamEndReason;
-import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.state.SessionPartitionState;
+import com.couchbase.client.dcp.state.SessionState;
+import com.couchbase.client.dcp.state.StreamPartitionState;
+import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.Unpooled;
+
+import it.unimi.dsi.fastutil.ints.IntSet;
 
 public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private static final CouchbaseLogger LOGGER =
@@ -41,38 +46,38 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     @Override
     public void onEvent(DcpAckHandle ackHandle, ByteBuf buf) {
-        switch (buf.getShort(0)) {
-            case MessageUtil.RES_STREAM_REQUEST:
+        switch (buf.getByte(1)) {
+            case MessageUtil.DCP_STREAM_REQUEST_OPCODE:
                 handleOpenStreamResponse(buf);
                 break;
-            case MessageUtil.RES_FAILOVER_LOG:
+            case MessageUtil.DCP_FAILOVER_LOG_OPCODE:
                 handleFailoverLogResponse(buf);
                 break;
-            case MessageUtil.REQ_STREAM_END:
+            case MessageUtil.DCP_STREAM_END_OPCODE:
                 handleDcpStreamEndMessage(buf);
                 break;
-            case MessageUtil.RES_STREAM_CLOSE:
+            case MessageUtil.DCP_STREAM_CLOSE_OPCODE:
                 handleDcpCloseStreamResponse(buf);
                 break;
-            case MessageUtil.RES_GET_SEQNOS:
+            case MessageUtil.GET_ALL_VB_SEQNOS_OPCODE:
                 handleDcpGetPartitionSeqnosResponse(buf);
                 break;
-            case MessageUtil.REQ_SNAPSHOT_MARKER:
+            case MessageUtil.DCP_SNAPSHOT_MARKER_OPCODE:
                 handleDcpSnapshotMarker(buf);
                 break;
-            case MessageUtil.REQ_SET_VBUCKET_STATE:
+            case MessageUtil.DCP_SET_VBUCKET_STATE_OPCODE:
                 handleDcpStateVbucketStateMessage(buf);
                 break;
-            case MessageUtil.REQ_SEQNO_ADVANCED:
+            case MessageUtil.DCP_SEQNO_ADVANCED_OPCODE:
                 handleSeqnoAdvanced(buf);
                 break;
-            case MessageUtil.REQ_SYSTEM_EVENT:
+            case MessageUtil.DCP_SYSTEM_EVENT_OPCODE:
                 handleSystemEvent(buf);
                 break;
-            case MessageUtil.REQ_OSO_SNAPSHOT_MARKER:
+            case MessageUtil.DCP_OSO_SNAPSHOT_MARKER_OPCODE:
                 handleOsoSnapshotMarker(buf);
                 break;
-            case MessageUtil.RES_GET_COLLECTIONS_MANIFEST:
+            case MessageUtil.GET_COLLECTIONS_MANIFEST_OPCODE:
                 handleCollectionsManifest(buf);
                 break;
             default:
@@ -89,32 +94,35 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         short vbucket = DcpSnapshotMarkerRequest.partition(buf);
         long start = DcpSnapshotMarkerRequest.startSeqno(buf);
         long end = DcpSnapshotMarkerRequest.endSeqno(buf);
-        PartitionState ps = channel.getSessionState().get(vbucket);
+        StreamPartitionState ps = MessageUtil.streamState(buf, channel).get(vbucket);
         ps.useStreamRequest();
         ps.setSnapshotStartSeqno(start);
         ps.setSnapshotEndSeqno(end);
     }
 
     private void handleOpenStreamResponse(ByteBuf buf) {
-        short vbid = (short) MessageUtil.getOpaque(buf);
-        PartitionState partitionState = channel.getSessionState().get(vbid);
+        final int opaque = MessageUtil.getOpaque(buf);
+        short vbid = (short) (opaque & 0xffff);
+        int streamId = opaque >> 16;
+        final StreamState ss = channel.getSessionState().streamState(streamId);
+        StreamPartitionState partitionState = ss.get(vbid);
         OpenStreamResponse response = partitionState.getOpenStreamResponse();
         short status = MessageUtil.getStatus(buf);
         if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
-            LOGGER.trace("OpenStream {} (0x{}) for vbucket {}", MemcachedStatus.toString(status),
-                    Integer.toHexString(status), vbid);
+            LOGGER.trace("OpenStream {} (0x{}) for vbucket {} on stream {}", MemcachedStatus.toString(status),
+                    Integer.toHexString(status), vbid, ss.streamId());
         }
         if (status == MemcachedStatus.SUCCESS) {
             synchronized (channel) {
-                if (!channel.openStreams()[vbid]) {
-                    if (channel.getSessionState().get(vbid).getState() == PartitionState.DISCONNECTED
-                            || channel.getSessionState().get(vbid).getState() == PartitionState.DISCONNECTING) {
+                if (channel.openStreams()[vbid] == null || !channel.openStreams()[vbid].contains(ss.streamId())) {
+                    if (ss.get(vbid).getState() == StreamPartitionState.DISCONNECTED
+                            || ss.get(vbid).getState() == StreamPartitionState.DISCONNECTING) {
                         LOGGER.info("Stream stop was requested before the stream open response is received");
                     } else {
                         throw new IllegalStateException("OpenStreamResponse and a request couldn't be found");
                     }
                 } else {
-                    partitionState.setState(PartitionState.CONNECTED);
+                    partitionState.setState(StreamPartitionState.CONNECTED);
                     updateFailoverLog(buf, vbid);
                 }
             }
@@ -123,8 +131,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             if (status == MemcachedStatus.ROLLBACK) {
                 response.setRollbackSeq(DcpOpenStreamResponse.rollbackSeqno(buf));
             }
-            channel.openStreams()[vbid] = false;
-            partitionState.setState(PartitionState.DISCONNECTED);
+            clearOpen(ss, vbid);
+            partitionState.setState(StreamPartitionState.DISCONNECTED);
         }
         response.setChannel(channel);
         response.setStatus(status);
@@ -145,9 +153,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 LOGGER.warn("FailoverLog unexpected response: {} (0x{}) for vbucket {}",
                         MemcachedStatus.toString(status), Integer.toHexString(status), vbid);
             }
-            PartitionState ps = channel.getSessionState().get(vbid);
-            ps.failoverRequestFailed(new Exception("Failover response " + MemcachedStatus.toString(status) + "(0x"
-                    + Integer.toHexString(status) + ")"));
+            channel.getSessionState().get(vbid).failoverLogsRequestFailed(new Exception("Failover response "
+                    + MemcachedStatus.toString(status) + "(0x" + Integer.toHexString(status) + ")"));
         }
     }
 
@@ -163,7 +170,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         ByteBuf copiedBuf = MessageUtil.getContent(buf).copy().writeShort(vbid);
         MessageUtil.setContent(copiedBuf, failoverLog);
         copiedBuf.release();
-        PartitionState ps = channel.getSessionState().get(vbid);
+        final SessionState ss = channel.getSessionState();
+        final SessionPartitionState ps = ss.get(vbid);
         DcpFailoverLogResponse.fill(failoverLog, ps);
         ps.failoverUpdated();
         channel.getEnv().eventBus().publish(ps.getFailoverLogUpdateEvent());
@@ -172,27 +180,28 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleDcpGetPartitionSeqnosResponse(ByteBuf buf) {
         // get status
         short status = MessageUtil.getStatus(buf);
+        int streamId = MessageUtil.getOpaque(buf);
+
         if (status == MemcachedStatus.SUCCESS) {
             ByteBuf content = MessageUtil.getContent(buf);
-            int size = content.readableBytes() / 10;
-            for (int i = 0; i < size; i++) {
-                int offset = i * 10;
+            int size = content.readableBytes();
+            for (int offset = 0; offset < size; offset += 10) {
                 short vbid = content.getShort(offset);
                 long seq = content.getLong(offset + Short.BYTES);
-                channel.getSessionState().get(vbid).setCurrentVBucketSeqnoInMaster(seq);
+                channel.getSessionState().streamState(streamId).setCurrentVBucketSeqnoInMaster(vbid, seq);
             }
         } else {
             // TODO: find a way to get partitions associated with this node and report failure.
             // Currently, we rely on timeout
         }
-        channel.stateFetched();
+        channel.stateFetched(streamId);
     }
 
     private void handleDcpStreamEndMessage(ByteBuf buf) {
         short vbid = DcpStreamEndMessage.vbucket(buf);
-        channel.openStreams()[vbid] = false;
+        clearOpen(MessageUtil.streamState(buf, channel), vbid);
         StreamEndReason reason = DcpStreamEndMessage.reason(buf);
-        PartitionState state = channel.getSessionState().get(vbid);
+        StreamPartitionState state = MessageUtil.streamState(buf, channel).get(vbid);
         StreamEndEvent endEvent = state.getEndEvent();
         endEvent.setReason(reason);
         if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
@@ -203,10 +212,17 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         }
     }
 
+    private void clearOpen(StreamState ss, short vbid) {
+        final IntSet openStreams = channel.openStreams()[vbid];
+        if (openStreams != null) {
+            openStreams.remove(ss.streamId());
+        }
+    }
+
     private void handleDcpCloseStreamResponse(ByteBuf buf) {
         short vbid = (short) MessageUtil.getOpaque(buf);
-        channel.openStreams()[vbid] = false;
-        channel.getSessionState().get(vbid).setState(PartitionState.DISCONNECTED);
+        clearOpen(MessageUtil.streamState(buf, channel), vbid);
+        MessageUtil.streamState(buf, channel).get(vbid).setState(StreamPartitionState.DISCONNECTED);
         if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
             LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getAddress(), vbid);
         }
@@ -215,18 +231,22 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleSeqnoAdvanced(ByteBuf buf) {
         short vbid = MessageUtil.getVbucket(buf);
         long seqno = DcpSeqnoAdvancedMessage.getSeqno(buf);
-        LOGGER.debug("Seqno for vbucket {} advanced to {}", vbid, seqno);
-        channel.getSessionState().get(vbid).advanceSeqno(seqno);
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("Seqno for vbucket {} advanced to {}", vbid, seqno);
+        }
+        MessageUtil.streamState(buf, channel).get(vbid).advanceSeqno(seqno);
     }
 
     private void handleSystemEvent(ByteBuf buf) {
         short vbid = MessageUtil.getVbucket(buf);
         long seqno = DcpSystemEventMessage.seqno(buf);
         DcpSystemEvent event = DcpSystemEvent.parse(buf);
-        PartitionState ps = channel.getSessionState().get(event.getVbucket());
-        LOGGER.info("received {}", event);
+        StreamPartitionState ps = MessageUtil.streamState(buf, channel).get(event.getVbucket());
+        LOGGER.trace("received {}", event);
         if (event.getType() != DcpSystemEvent.Type.UNKNOWN) {
-            LOGGER.debug("Seqno for vbucket {} advanced to system event", vbid, seqno);
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("Seqno for vbucket {} advanced to {} on system event", vbid, seqno);
+            }
             ps.setSeqno(seqno);
             ps.setCollectionsManifest(event.apply(ps.getCollectionsManifest()));
         }
@@ -241,13 +261,13 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                     DcpOsoSnapshotMarkerMessage.toString(buf));
             return;
         }
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Received {}", DcpOsoSnapshotMarkerMessage.toString(buf));
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("Received {}", DcpOsoSnapshotMarkerMessage.toString(buf));
         }
         if (begin) {
-            channel.getSessionState().get(vbid).beginOutOfOrder();
+            MessageUtil.streamState(buf, channel).get(vbid).beginOutOfOrder();
         } else {
-            long maxSeqNo = channel.getSessionState().get(vbid).endOutOfOrder();
+            long maxSeqNo = MessageUtil.streamState(buf, channel).get(vbid).endOutOfOrder();
             // we store the max sequence number in the message as it may be needed by other event
             DcpOsoSnapshotMarkerMessage.setMaxSeqNo(maxSeqNo, buf);
         }
@@ -255,8 +275,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     private void handleCollectionsManifest(ByteBuf buf) {
         byte[] manifestJsonBytes = MessageUtil.getContentAsByteArray(buf);
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Got collections manifest: {}", new String(manifestJsonBytes, UTF_8));
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("Got collections manifest: {}", new String(manifestJsonBytes, UTF_8));
         }
         try {
             channel.getSessionState().onCollectionsManifest(CollectionsManifest.fromJson(manifestJsonBytes));

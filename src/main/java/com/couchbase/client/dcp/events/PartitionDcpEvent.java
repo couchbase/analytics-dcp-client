@@ -1,9 +1,9 @@
 package com.couchbase.client.dcp.events;
 
-import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.state.StreamPartitionState;
 
 public interface PartitionDcpEvent extends DcpEvent {
 
-    PartitionState getPartitionState();
+    StreamPartitionState getPartitionState();
 
 }

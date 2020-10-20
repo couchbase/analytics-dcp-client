@@ -25,7 +25,6 @@ import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 
-import it.unimi.dsi.fastutil.ints.IntList;
 import rx.Completable;
 import rx.Observable;
 
@@ -76,11 +75,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      * The name of the bucket.
      */
     private final String bucket;
-
-    /**
-     * The list of collections (in uids) for this channel
-     */
-    private final IntList cids;
 
     /**
      * DCP control params, optional.
@@ -174,7 +168,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private ClientEnvironment(final Builder builder) {
         connectionNameGenerator = builder.connectionNameGenerator;
         bucket = builder.bucket;
-        cids = builder.cids;
         credentialsProvider = builder.credentialsProvider;
         dcpControl = builder.dcpControl;
         eventLoopGroup = builder.eventLoopGroup;
@@ -256,10 +249,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      */
     public String bucket() {
         return bucket;
-    }
-
-    public IntList cids() {
-        return cids;
     }
 
     public String uuid() {
@@ -429,7 +418,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private FlowControlCallback flowControlCallback;
         private String uuid;
         private boolean dynamicConfigurationNodes = true;
-        private IntList cids;
+
         /*
          * Config Provider
          */
@@ -462,11 +451,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
         public Builder setBucket(String bucket) {
             this.bucket = bucket;
-            return this;
-        }
-
-        public Builder setCids(IntList cids) {
-            this.cids = cids;
             return this;
         }
 

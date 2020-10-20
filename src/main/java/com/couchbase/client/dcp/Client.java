@@ -1,7 +1,9 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2020 Couchbase, Inc.
  */
 package com.couchbase.client.dcp;
+
+import static com.couchbase.client.dcp.util.MathUtil.maxUnsigned;
 
 import java.net.InetSocketAddress;
 import java.security.KeyStore;
@@ -9,7 +11,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import com.couchbase.client.core.config.BucketCapabilities;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
@@ -29,17 +30,24 @@ import com.couchbase.client.dcp.message.DcpExpirationMessage;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
+import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.RollbackMessage;
-import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
+import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamRequest;
+import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntLists;
+import it.unimi.dsi.fastutil.shorts.ShortArrayList;
+import it.unimi.dsi.fastutil.shorts.ShortList;
 
 /**
  * This {@link Client} provides the main API to configure and use the DCP client.
@@ -80,9 +88,8 @@ public class Client {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
         env = ClientEnvironment.builder().setConnectionNameGenerator(builder.connectionNameGenerator())
-                .setBucket(builder.bucket()).setCids(builder.cids())
-                .setCredentialsProvider(builder.credentialsProvider()).setDcpControl(builder.dcpControl())
-                .setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
+                .setBucket(builder.bucket()).setCredentialsProvider(builder.credentialsProvider())
+                .setDcpControl(builder.dcpControl()).setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
                 .setBufferAckWatermark(builder.bufferAckWatermark()).setBufferPooling(builder.poolBuffers())
                 .setConfigProviderAttemptTimeout(builder.configProviderAttemptTimeout())
                 .setConfigProviderReconnectDelay(builder.configProviderReconnectDelay())
@@ -118,15 +125,33 @@ public class Client {
     }
 
     /**
-     * Get the current sequence numbers from all partitions.
+     * Requests and waits the current sequence numbers from all partitions.
      *
-     * Each element emitted into the observable has two elements. The first element is the partition and
-     * the second element is its sequence number.
-     *
-     * @throws InterruptedException
+     * @throws Throwable exception which occurred while awaiting for sequence numbers
+     * @param streamId
      */
-    public void getSequenceNumbers() throws Throwable {
-        conductor.getSeqnos();
+    public void getSequenceNumbers(int streamId) throws Throwable {
+        conductor.requestSeqnos(streamId);
+        conductor.waitForSeqnos(streamId);
+    }
+
+    /**
+     * Requests the current sequence numbers from all partitions for the specified stream
+     *
+     * @param streamId
+     */
+    public void requestSequenceNumbers(int streamId) {
+        conductor.requestSeqnos(streamId);
+    }
+
+    /**
+     * Waits for requested current sequence numbers from all partitions for the specified stream to arrive
+     *
+     * @throws Throwable exception which occurred while awaiting for sequence numbers
+     * @param streamId
+     */
+    public void waitForSequenceNumbers(int streamId) throws Throwable {
+        conductor.waitForSeqnos(streamId);
     }
 
     /**
@@ -198,11 +223,11 @@ public class Client {
         env.setDataEventHandler((ackHandle, event) -> {
             if (DcpMutationMessage.is(event)) {
                 short partition = DcpMutationMessage.partition(event);
-                PartitionState ps = sessionState().get(partition);
+                StreamPartitionState ps = MessageUtil.streamState(event, sessionState()).get(partition);
                 ps.setSeqno(DcpMutationMessage.bySeqno(event));
             } else if (DcpDeletionMessage.is(event)) {
                 short partition = DcpDeletionMessage.partition(event);
-                PartitionState ps = sessionState().get(partition);
+                StreamPartitionState ps = MessageUtil.streamState(event, sessionState()).get(partition);
                 ps.setSeqno(DcpDeletionMessage.bySeqno(event));
             }
             dataEventHandler.onEvent(ackHandle, event);
@@ -253,40 +278,45 @@ public class Client {
      *
      * If no ids are provided, all initialized partitions will be started.
      *
+     *
+     * @param streamId
      * @param vbids
      *            the partition ids (0-indexed) to start streaming for.
      * @throws InterruptedException
      */
-    public void startStreaming(short... vbids) throws Throwable {
+    public void startStreaming(int streamId, short... vbids) throws Throwable {
+        final StreamState streamState = sessionState().streamState(streamId);
         validateStream();
         int numPartitions = numPartitions();
-        final List<PartitionState> partitionStates = partitionsForVbids(numPartitions, vbids);
-        ensureInitialized(partitionStates);
-        LOGGER.debug("Stream start against {} partitions: {}", partitionStates.size(), partitionStates);
-        for (PartitionState ps : partitionStates) {
-            StreamRequest request = ps.getStreamRequest();
+
+        vbids = partitionsForVbids(numPartitions, vbids);
+        ensureInitialized(streamState, vbids);
+        LOGGER.debug("Stream {} start against {} partitions: {}", streamId, vbids.length, Arrays.toString(vbids));
+        for (short vbid : vbids) {
+            StreamRequest request = streamState.get(vbid).getStreamRequest();
             conductor.startStreamForPartition(request);
         }
     }
 
-    private void ensureInitialized(List<PartitionState> partitionStates) throws Throwable {
-        List<PartitionState> nonInitialized = new ArrayList<>();
-        for (PartitionState ps : partitionStates) {
+    private void ensureInitialized(StreamState streamState, short[] vbids) throws Throwable {
+        ShortList nonInitialized = new ShortArrayList();
+        for (short vbid : vbids) {
+            final StreamPartitionState ps = streamState.get(vbid);
             if (ps.getStreamRequest() == null) {
-                if (!ps.hasFailoverLogs()) {
-                    ps.prepareNextStreamRequest();
+                if (!sessionState().get(vbid).hasFailoverLogs()) {
+                    ps.prepareNextStreamRequest(sessionState(), streamState);
                 } else {
-                    conductor.requestFailoverLog(ps);
-                    nonInitialized.add(ps);
+                    conductor.requestFailoverLog(vbid);
+                    nonInitialized.add(vbid);
                 }
             }
         }
         if (nonInitialized.isEmpty()) {
             return;
         }
-        for (PartitionState ps : nonInitialized) {
-            conductor.waitForFailoverLog(ps);
-            ps.prepareNextStreamRequest();
+        for (short vbid : nonInitialized) {
+            conductor.waitForFailoverLog(vbid);
+            streamState.get(vbid).prepareNextStreamRequest(sessionState(), streamState);
         }
     }
 
@@ -300,30 +330,6 @@ public class Client {
     }
 
     /**
-     * Stop DCP streams for the given partition IDs (vbids).
-     *
-     * If no ids are provided, all partitions will be stopped. Note that you can also use this to "pause" streams
-     * if {@link #startStreaming(short...)} is called later - since the session state is persisted and streaming
-     * will resume from the current position.
-     *
-     * @param vbids
-     *            the partition ids (0-indexed) to stop streaming for.
-     * @throws InterruptedException
-     */
-    public void stopStreaming(short... vbids) throws InterruptedException {
-        List<PartitionState> partitionStates = partitionsForVbids(numPartitions(), vbids);
-        LOGGER.debug("Requesting stream stop against {} partitions: {}", partitionStates.size(), partitionStates);
-        for (PartitionState ps : partitionStates) {
-            conductor.requestStopStreamForPartition(ps);
-        }
-        LOGGER.debug("Waiting for streaming to stop");
-        for (PartitionState ps : partitionStates) {
-            conductor.waitForStopStreamForPartition(ps);
-        }
-        LOGGER.debug("Streaming stopped");
-    }
-
-    /**
      * Helper method to turn the array of vbids into a list.
      *
      * @param numPartitions
@@ -332,22 +338,16 @@ public class Client {
      *            the potentially empty array of selected vbids.
      * @return a sorted list of partitions to use.
      */
-    private List<PartitionState> partitionsForVbids(int numPartitions, short... vbids) {
-        SessionState state = sessionState();
-        List<PartitionState> states;
+    private short[] partitionsForVbids(int numPartitions, short... vbids) {
         if (vbids.length > 0) {
-            states = new ArrayList<>(vbids.length);
             Arrays.sort(vbids);
-            for (short sh : vbids) {
-                states.add(state.get(sh));
-            }
         } else {
-            states = new ArrayList<>(numPartitions);
+            vbids = new short[numPartitions];
             for (short i = 0; i < numPartitions; i++) {
-                states.add(state.get(i));
+                vbids[i] = i;
             }
         }
-        return states;
+        return vbids;
     }
 
     /**
@@ -361,19 +361,18 @@ public class Client {
      * @throws Throwable
      */
     public void failoverLogs(short... vbids) throws Throwable {
-        List<PartitionState> partitionStates = partitionsForVbids(numPartitions(), vbids);
+        vbids = partitionsForVbids(numPartitions(), vbids);
         if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Asking for failover logs on partitions [{}]",
-                    partitionStates.stream().map(PartitionState::vbid).collect(Collectors.toList()));
+            LOGGER.debug("Asking for failover logs on partitions {}", Arrays.toString(vbids));
         }
-        for (PartitionState ps : partitionStates) {
-            conductor.requestFailoverLog(ps);
+        for (short vbid : vbids) {
+            conductor.requestFailoverLog(vbid);
         }
         LOGGER.debug("Waiting to receive failover logs");
-        for (PartitionState ps : partitionStates) {
-            conductor.waitForFailoverLog(ps);
+        for (short vbid : vbids) {
+            conductor.waitForFailoverLog(vbid);
         }
-        LOGGER.debug("Received failover logs: {}", partitionStates);
+        LOGGER.debug("Received failover logs");
     }
 
     public void getFailoverLogs() throws Throwable {
@@ -390,17 +389,6 @@ public class Client {
      */
     public int numPartitions() {
         return conductor.numberOfPartitions();
-    }
-
-    /**
-     * Returns true if the stream for the given partition id is currently open.
-     *
-     * @param vbid
-     *            the partition id.
-     * @return true if it is open, false otherwise.
-     */
-    public boolean streamIsOpen(short vbid) {
-        return conductor.streamIsOpen(vbid);
     }
 
     public CouchbaseBucketConfig config() {
@@ -442,9 +430,9 @@ public class Client {
         return env;
     }
 
-    public PartitionState getState(short vbid) {
+    public StreamPartitionState getState(int streamId, short vbid) {
         SessionState ss = conductor.getSessionState();
-        return (ss == null) ? null : ss.get(vbid);
+        return (ss == null) ? null : ss.streamState(streamId).get(vbid);
     }
 
     public boolean isConnected() {
@@ -583,11 +571,6 @@ public class Client {
          */
         public Builder bucket(final String bucket) {
             this.bucket = bucket;
-            return this;
-        }
-
-        public Builder cids(final IntList cids) {
-            this.cids = cids;
             return this;
         }
 
@@ -926,17 +909,25 @@ public class Client {
         }
     }
 
-    public long[] getStreamedSequenceNumbers() {
+    /**
+     * Returns a map of stream ids to array of streamed sequence numbers indexed by vbucket
+     */
+    public Int2ObjectMap<long[]> getStreamedSequenceNumbers() {
         CouchbaseBucketConfig lastConfig = conductor.config();
-        if (lastConfig == null) {
-            return null;
+        final SessionState sessionState = sessionState();
+        if (lastConfig == null || sessionState == null) {
+            return Int2ObjectMaps.emptyMap();
         }
-        long[] currentSequences = new long[numPartitions()];
+        Int2ObjectMap<long[]> result = new Int2ObjectOpenHashMap<>();
         short[] vbuckets = vbuckets();
-        for (short next : vbuckets) {
-            PartitionState ps = getState(next);
-            currentSequences[next] = ps == null ? 0 : Long.max(0L, ps.getSeqno());
-        }
-        return currentSequences;
+        sessionState.streamStream().forEach(stream -> {
+            long[] currentSequences = new long[numPartitions()];
+            for (short next : vbuckets) {
+                StreamPartitionState ps = stream.get(next);
+                currentSequences[next] = ps == null ? 0 : maxUnsigned(0L, ps.getSeqno());
+            }
+            result.put(stream.streamId(), currentSequences);
+        });
+        return result;
     }
 }

@@ -6,20 +6,14 @@ package com.couchbase.client.dcp.state;
 import static com.couchbase.client.dcp.util.MathUtil.maxUnsigned;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
-import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.dcp.events.FailoverLogUpdateEvent;
 import com.couchbase.client.dcp.events.OpenStreamResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.CollectionsManifest;
@@ -28,7 +22,7 @@ import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 /**
  * Represents the individual current session state for a given partition.
  */
-public class PartitionState {
+public class StreamPartitionState {
     private static final Logger LOGGER = LogManager.getLogger();
     public static final long INVALID = -1L;
     public static final byte DISCONNECTED = 0x00;
@@ -38,14 +32,11 @@ public class PartitionState {
     public static final long RECOVERING = 0x05;
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    /**
-     * Stores the failover log for this partition.
-     */
-    private final List<FailoverLogEntry> failoverLog;
-
     private volatile long currentVBucketSeqnoInMaster = INVALID;
 
     private final short vbid;
+
+    private final SessionPartitionState sessionState;
 
     /**
      * Current Sequence Number
@@ -54,23 +45,11 @@ public class PartitionState {
 
     private volatile long streamEndSeq = 0;
 
-    private volatile long uuid = 0;
-
     private volatile long snapshotStartSeqno = 0;
 
     private volatile long snapshotEndSeqno = 0;
 
     private volatile byte state;
-
-    private volatile boolean failoverUpdated;
-
-    private volatile boolean currentSeqUpdated;
-
-    private volatile boolean clientDisconnected;
-
-    private volatile Throwable failoverLogRequestFailure;
-
-    private volatile Throwable seqsRequestFailure;
 
     private volatile boolean osoSnapshot;
 
@@ -80,8 +59,6 @@ public class PartitionState {
 
     private final StreamEndEvent endEvent;
 
-    private final FailoverLogUpdateEvent failoverLogUpdateEvent;
-
     private final OpenStreamResponse openStreamResponse;
 
     private volatile CollectionsManifest manifest;
@@ -89,15 +66,12 @@ public class PartitionState {
     /**
      * Initialize a new partition state.
      */
-    public PartitionState(short vbid) {
+    public StreamPartitionState(short vbid, StreamState stream) {
         this.vbid = vbid;
-        failoverLog = new ArrayList<>();
-        setState(DISCONNECTED);
-        failoverUpdated = false;
-        currentSeqUpdated = false;
-        endEvent = new StreamEndEvent(this);
-        failoverLogUpdateEvent = new FailoverLogUpdateEvent(this);
-        openStreamResponse = new OpenStreamResponse(this);
+        state = DISCONNECTED;
+        endEvent = new StreamEndEvent(this, stream);
+        openStreamResponse = new OpenStreamResponse(this, stream.streamId());
+        sessionState = stream.session().get(vbid);
     }
 
     public long getSnapshotStartSeqno() {
@@ -114,7 +88,7 @@ public class PartitionState {
 
     public void setSnapshotEndSeqno(long snapshotEndSeqno) {
         this.snapshotEndSeqno = snapshotEndSeqno;
-        currentVBucketSeqnoInMaster = Long.max(currentVBucketSeqnoInMaster, snapshotEndSeqno);
+        currentVBucketSeqnoInMaster = maxUnsigned(currentVBucketSeqnoInMaster, snapshotEndSeqno);
     }
 
     /**
@@ -122,27 +96,23 @@ public class PartitionState {
      * index of more recent history entry > index of less recent history entry
      */
     public List<FailoverLogEntry> getFailoverLog() {
-        return failoverLog;
+        return sessionState.getFailoverLog();
     }
 
     public boolean hasFailoverLogs() {
-        return !failoverLog.isEmpty();
+        return sessionState.hasFailoverLogs();
     }
 
-    /**
-     * Add a new seqno/uuid combination to the failover log.
-     *
-     * @param seqno
-     *            the sequence number.
-     * @param vbuuid
-     *            the uuid for the sequence.
-     */
-    public void addToFailoverLog(long seqno, long vbuuid) {
-        if (LOGGER.isTraceEnabled()) {
-            LOGGER.log(Level.TRACE, "Adding failover log entry: (" + vbuuid + "-" + seqno + ") for vbucket " + vbid);
-        }
-        failoverLog.add(new FailoverLogEntry(seqno, vbuuid));
-        uuid = vbuuid;
+    public FailoverLogEntry getFailoverLog(int index) {
+        return sessionState.getFailoverLog(index);
+    }
+
+    public int getFailoverLogSize() {
+        return sessionState.getFailoverLogSize();
+    }
+
+    public long getUuid() {
+        return sessionState.uuid();
     }
 
     /**
@@ -163,6 +133,9 @@ public class PartitionState {
             if (Long.compareUnsigned(seqno, this.seqno) <= 0) {
                 LOGGER.warn("new seqno received (0x{}) <= the previous seqno(0x{}) for vbid: {}",
                         Long.toUnsignedString(seqno, 16), Long.toUnsignedString(this.seqno, 16), vbid);
+            }
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("setting seqno to {} for vbid {} on setSeqno", seqno, vbid);
             }
             this.seqno = seqno;
         }
@@ -207,14 +180,14 @@ public class PartitionState {
 
     public void setStreamRequest(StreamRequest streamRequest) {
         this.streamRequest = streamRequest;
+        LOGGER.trace("setting seqno to {} for vbid {} on setStreamRequest", seqno, vbid);
         seqno = streamRequest.getStartSeqno();
         streamEndSeq = streamRequest.getEndSeqno();
-        uuid = streamRequest.getVbucketUuid();
         snapshotStartSeqno = streamRequest.getSnapshotStartSeqno();
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
     }
 
-    public void prepareNextStreamRequest() {
+    public void prepareNextStreamRequest(SessionState sessionState, StreamState streamState) {
         if (streamRequest == null) {
             if (snapshotStartSeqno > seqno) {
                 snapshotStartSeqno = seqno;
@@ -222,8 +195,9 @@ public class PartitionState {
             if (SessionState.NO_END_SEQNO != streamEndSeq && Long.compareUnsigned(streamEndSeq, seqno) < 0) {
                 streamEndSeq = snapshotEndSeqno;
             }
-            this.streamRequest = new StreamRequest(vbid, seqno, streamEndSeq, uuid, snapshotStartSeqno,
-                    snapshotEndSeqno, manifest.getUid());
+            this.streamRequest =
+                    new StreamRequest(vbid, seqno, streamEndSeq, sessionState.get(vbid).uuid(), snapshotStartSeqno,
+                            snapshotEndSeqno, manifest.getUid(), streamState.streamId(), streamState.collectionId());
         }
     }
 
@@ -235,10 +209,8 @@ public class PartitionState {
         return currentVBucketSeqnoInMaster;
     }
 
-    public synchronized void setCurrentVBucketSeqnoInMaster(long currentVBucketSeqnoInMaster) {
+    public void setCurrentVBucketSeqnoInMaster(long currentVBucketSeqnoInMaster) {
         this.currentVBucketSeqnoInMaster = currentVBucketSeqnoInMaster;
-        currentSeqUpdated = true;
-        notifyAll();
     }
 
     public void useStreamRequest() {
@@ -259,116 +231,19 @@ public class PartitionState {
         Map<String, Object> tree = new HashMap<>();
         tree.put("vbid", vbid);
         tree.put("maxSeq", currentVBucketSeqnoInMaster);
-        tree.put("uuid", uuid);
         tree.put("seqno", seqno);
         tree.put("state", state);
-        tree.put("failoverLog", failoverLog);
         tree.put("osoSnapshot", osoSnapshot);
         tree.put("osoMaxSeq", osoMaxSeqno);
         return tree;
-    }
-
-    public synchronized void failoverUpdated() {
-        LOGGER.trace("Failover log updated for {}", vbid);
-        failoverUpdated = true;
-        notifyAll();
-    }
-
-    public void failoverRequest() {
-        LOGGER.trace("Failover log requested for {}", vbid);
-        failoverUpdated = false;
-        failoverLogRequestFailure = null;
-    }
-
-    public void currentSeqRequest() {
-        currentSeqUpdated = false;
-        seqsRequestFailure = null;
-    }
-
-    public synchronized void waitTillFailoverUpdated(long timeout) throws Throwable {
-        Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
-        LOGGER.trace("Waiting until failover log updated for {}", vbid);
-        while (!clientDisconnected && failoverLogRequestFailure == null && !failoverUpdated && !span.elapsed()) {
-            span.wait(this);
-        }
-        if (clientDisconnected) {
-            throw new CancellationException("Client disconnected while waiting for reply");
-        }
-        if (failoverLogRequestFailure != null) {
-            throw failoverLogRequestFailure;
-        }
-        if (!failoverUpdated) {
-            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining failover logs for " + vbid);
-        }
-    }
-
-    public synchronized void waitTillCurrentSeqUpdated(long timeout) throws Throwable {
-        Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
-        LOGGER.trace("Waiting until current seq updated for {}", vbid);
-        while (!clientDisconnected && seqsRequestFailure == null && !currentSeqUpdated && !span.elapsed()) {
-            span.wait(this);
-        }
-        if (clientDisconnected) {
-            throw new CancellationException("Client disconnected while waiting for reply");
-        }
-        if (seqsRequestFailure != null) {
-            throw failoverLogRequestFailure;
-        }
-        if (!currentSeqUpdated) {
-            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining current seq for " + vbid);
-        }
     }
 
     public StreamEndEvent getEndEvent() {
         return endEvent;
     }
 
-    public FailoverLogUpdateEvent getFailoverLogUpdateEvent() {
-        return failoverLogUpdateEvent;
-    }
-
     public OpenStreamResponse getOpenStreamResponse() {
         return openStreamResponse;
-    }
-
-    public long getUuid() {
-        return uuid;
-    }
-
-    public int getFailoverLogSize() {
-        return failoverLog.size();
-    }
-
-    public FailoverLogEntry getFailoverLog(int i) {
-        return failoverLog.get(i);
-    }
-
-    public synchronized void failoverRequestFailed(Throwable th) {
-        failoverLogRequestFailure = th;
-        notifyAll();
-    }
-
-    public synchronized void seqsRequestFailed(Throwable th) {
-        seqsRequestFailure = th;
-        notifyAll();
-    }
-
-    public synchronized void clientDisconnected() {
-        clientDisconnected = true;
-        notifyAll();
-    }
-
-    public synchronized void clientConnected() {
-        clientDisconnected = false;
-        notifyAll();
-    }
-
-    public boolean isClientDisconnected() {
-        return clientDisconnected;
-    }
-
-    public void clearFailoverLog() {
-        failoverLog.clear();
     }
 
     public void beginOutOfOrder() {

@@ -3,6 +3,9 @@
  */
 package com.couchbase.client.dcp.state;
 
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 public class StreamRequest {
     private final short partition;
     private final long startSeqno;
@@ -11,9 +14,11 @@ public class StreamRequest {
     private final long snapshotStartSeqno;
     private final long snapshotEndSeqno;
     private final long manifestUid;
+    private final int streamId;
+    private final int[] cids;
 
     public StreamRequest(short partition, long startSeqno, long endSeqno, long vbucketUuid, long snapshotStartSeq,
-            long snapshotEndSeq, long manifestUid) {
+            long snapshotEndSeq, long manifestUid, int streamId, int... cids) {
         this.partition = partition;
         this.startSeqno = startSeqno;
         this.endSeqno = endSeqno;
@@ -21,6 +26,8 @@ public class StreamRequest {
         this.snapshotStartSeqno = snapshotStartSeq;
         this.snapshotEndSeqno = snapshotEndSeq;
         this.manifestUid = manifestUid;
+        this.streamId = streamId;
+        this.cids = cids;
     }
 
     public long getStartSeqno() {
@@ -51,10 +58,20 @@ public class StreamRequest {
         return manifestUid;
     }
 
+    public int getStreamId() {
+        return streamId;
+    }
+
+    public int[] getCids() {
+        return cids;
+    }
+
     @Override
     public String toString() {
         return "partition = " + partition + " startSeqno = " + startSeqno + " endSeqno = " + endSeqno
                 + " vbucketUuid = " + vbucketUuid + " snapshotStartSeqno = " + snapshotStartSeqno
-                + " snapshotEndSeqno = " + snapshotEndSeqno + " manifestUid = " + manifestUid;
+                + " snapshotEndSeqno = " + snapshotEndSeqno + " manifestUid = " + manifestUid + " streamId = "
+                + streamId + " cids = "
+                + IntStream.of(cids).mapToObj(cid -> Integer.toUnsignedString(cid, 16)).collect(Collectors.toList());
     }
 }

@@ -14,7 +14,9 @@ public enum DcpExpirationMessage {
     ;
 
     public static boolean is(final ByteBuf buffer) {
-        return buffer.getByte(0) == MessageUtil.MAGIC_REQ && buffer.getByte(1) == DCP_EXPIRATION_OPCODE;
+        final byte magic = buffer.getByte(0);
+        return buffer.getByte(1) == DCP_EXPIRATION_OPCODE
+                && (magic == MessageUtil.MAGIC_REQ || magic == MessageUtil.MAGIC_REQ_FLEX);
     }
 
     public static ByteBuf key(final ByteBuf buffer, boolean isCollectionEnabled) {
@@ -38,11 +40,11 @@ public enum DcpExpirationMessage {
     }
 
     public static long bySeqno(final ByteBuf buffer) {
-        return buffer.getLong(MessageUtil.HEADER_SIZE);
+        return buffer.getLong(MessageUtil.getHeaderSize(buffer));
     }
 
     public static long revisionSeqno(final ByteBuf buffer) {
-        return buffer.getLong(MessageUtil.HEADER_SIZE + 8);
+        return buffer.getLong(MessageUtil.getHeaderSize(buffer) + 8);
     }
 
     public static String toString(final ByteBuf buffer, boolean isCollectionEnabled) {

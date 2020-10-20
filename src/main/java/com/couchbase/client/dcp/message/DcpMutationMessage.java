@@ -14,7 +14,9 @@ public enum DcpMutationMessage {
     ;
 
     public static boolean is(final ByteBuf buffer) {
-        return buffer.getByte(0) == MessageUtil.MAGIC_REQ && buffer.getByte(1) == DCP_MUTATION_OPCODE;
+        final byte magic = buffer.getByte(0);
+        return buffer.getByte(1) == DCP_MUTATION_OPCODE
+                && (magic == MessageUtil.MAGIC_REQ || magic == MessageUtil.MAGIC_REQ_FLEX);
     }
 
     public static int cid(final ByteBuf buffer) {
@@ -52,23 +54,23 @@ public enum DcpMutationMessage {
     }
 
     public static long bySeqno(final ByteBuf buffer) {
-        return buffer.getLong(MessageUtil.HEADER_SIZE);
+        return buffer.getLong(MessageUtil.getHeaderSize(buffer));
     }
 
     public static long revisionSeqno(final ByteBuf buffer) {
-        return buffer.getLong(MessageUtil.HEADER_SIZE + 8);
+        return buffer.getLong(MessageUtil.getHeaderSize(buffer) + 8);
     }
 
     public static int flags(final ByteBuf buffer) {
-        return buffer.getInt(MessageUtil.HEADER_SIZE + 16);
+        return buffer.getInt(MessageUtil.getHeaderSize(buffer) + 16);
     }
 
     public static int expiry(final ByteBuf buffer) {
-        return buffer.getInt(MessageUtil.HEADER_SIZE + 20);
+        return buffer.getInt(MessageUtil.getHeaderSize(buffer) + 20);
     }
 
     public static int lockTime(final ByteBuf buffer) {
-        return buffer.getInt(MessageUtil.HEADER_SIZE + 24);
+        return buffer.getInt(MessageUtil.getHeaderSize(buffer) + 24);
     }
 
     public static String toString(final ByteBuf buffer, boolean collections) {

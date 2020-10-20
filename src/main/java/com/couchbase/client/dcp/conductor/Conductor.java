@@ -26,9 +26,9 @@ import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.message.CollectionsManifest;
-import com.couchbase.client.dcp.state.PartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamRequest;
+import com.couchbase.client.dcp.state.StreamState;
 
 public class Conductor {
 
@@ -125,37 +125,32 @@ public class Conductor {
         return configProvider.config().numberOfPartitions();
     }
 
-    public void getSeqnos() throws Throwable {
+    public void waitForSeqnos(int streamId) throws Throwable {
+        sessionState.streamState(streamId).waitTillCurrentSeqUpdated(env.partitionRequestsTimeout());
+    }
+
+    public void requestSeqnos(int streamId) {
         short[] vbuckets = env.vbuckets();
-        LOGGER.debug("Getting sequence numbers for {} vbuckets", vbuckets.length);
-        // set request to all
-        for (short vbucket : vbuckets) {
-            sessionState.get(vbucket).currentSeqRequest();
-        }
+        final StreamState streamState = sessionState.streamState(streamId);
+        LOGGER.debug("Getting sequence numbers for {} vbuckets for cid 0x{} on stream {}", vbuckets.length,
+                Integer.toUnsignedString(streamState.collectionId()), streamId);
+        streamState.currentSeqRequest(vbuckets.length);
         synchronized (channels) {
             for (DcpChannel channel : channels.values()) {
-                getSeqnosForChannel(channel);
+                channel.getSeqnos(streamState);
             }
         }
-        for (short vbucket : vbuckets) {
-            sessionState.get(vbucket).waitTillCurrentSeqUpdated(env.partitionRequestsTimeout());
-        }
     }
 
-    private void getSeqnosForChannel(final DcpChannel dcpChannel) {
-        dcpChannel.getSeqnos();
-    }
-
-    public void requestFailoverLog(PartitionState ps) {
-        ps.failoverRequest();
+    public void requestFailoverLog(short vbid) {
+        sessionState.get(vbid).failoverRequest();
         synchronized (channels) {
-            short vbid = ps.vbid();
             masterChannelByPartition(vbid).getFailoverLog(vbid);
         }
     }
 
-    public void waitForFailoverLog(PartitionState ps) throws Throwable {
-        ps.waitTillFailoverUpdated(env.partitionRequestsTimeout());
+    public void waitForFailoverLog(short vbid) throws Throwable {
+        sessionState.waitTillFailoverUpdated(vbid, env.partitionRequestsTimeout());
     }
 
     public void startStreamForPartition(StreamRequest request) {
@@ -163,27 +158,7 @@ public class Conductor {
             DcpChannel channel = masterChannelByPartition(request.getPartition());
             channel.openStream(request.getPartition(), request.getVbucketUuid(), request.getStartSeqno(),
                     request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno(),
-                    request.getManifestUid());
-        }
-    }
-
-    public void requestStopStreamForPartition(final PartitionState ps) throws InterruptedException {
-        short partition = ps.vbid();
-        synchronized (channels) {
-            DcpChannel channel = masterChannelByPartition(partition);
-            if (channel.streamIsOpen(partition)) {
-                channel.closeStream(partition);
-            }
-        }
-    }
-
-    public void waitForStopStreamForPartition(final PartitionState ps) throws InterruptedException {
-        ps.wait(PartitionState.DISCONNECTED);
-    }
-
-    public boolean streamIsOpen(final short partition) {
-        synchronized (channels) {
-            return masterChannelByPartition(partition).streamIsOpen(partition);
+                    request.getManifestUid(), request.getStreamId(), request.getCids());
         }
     }
 

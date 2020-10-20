@@ -23,11 +23,12 @@ public class DcpOsoSnapshotMarkerMessage {
     }
 
     public static void setMaxSeqNo(long maxSeqNo, final ByteBuf buffer) {
-        // we stash the max sequence number observed in the oso snapshot in the unused CAS field
+        // the analytics DCP client stashes the max sequence number observed in the oso snapshot in the unused CAS field
         MessageUtil.setCas(maxSeqNo, buffer);
     }
 
     public static long maxSeqNo(final ByteBuf buffer) {
+        // the analytics DCP client stashes the max sequence number observed in the oso snapshot in the unused CAS field
         return MessageUtil.getCas(buffer);
     }
 

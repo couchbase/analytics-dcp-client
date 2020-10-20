@@ -4,20 +4,23 @@
 package com.couchbase.client.dcp.events;
 
 import com.couchbase.client.dcp.message.StreamEndReason;
-import com.couchbase.client.dcp.state.PartitionState;
+import com.couchbase.client.dcp.state.StreamPartitionState;
+import com.couchbase.client.dcp.state.StreamState;
 
 /**
  * Event published when stream has stopped activity.
  */
 public class StreamEndEvent implements PartitionDcpEvent {
-    private final PartitionState state;
+    private final StreamPartitionState state;
+    private final StreamState stream;
     private StreamEndReason reason;
     private boolean failoverLogsRequested;
     private boolean seqRequested;
     private int attempts = 0;
 
-    public StreamEndEvent(PartitionState state) {
+    public StreamEndEvent(StreamPartitionState state, StreamState stream) {
         this.state = state;
+        this.stream = stream;
         reason = StreamEndReason.UNKNOWN;
     }
 
@@ -45,12 +48,17 @@ public class StreamEndEvent implements PartitionDcpEvent {
         this.reason = reason;
     }
 
-    @Override
-    public String toString() {
-        return "StreamEndEvent{" + "partition=" + state.vbid() + " reason=" + reason + '}';
+    public StreamState getStreamState() {
+        return stream;
     }
 
-    public PartitionState getState() {
+    @Override
+    public String toString() {
+        return "StreamEndEvent{" + "streamId=" + stream.streamId() + " partition=" + state.vbid() + " reason=" + reason
+                + '}';
+    }
+
+    public StreamPartitionState getState() {
         return state;
     }
 
@@ -79,7 +87,7 @@ public class StreamEndEvent implements PartitionDcpEvent {
     }
 
     @Override
-    public PartitionState getPartitionState() {
+    public StreamPartitionState getPartitionState() {
         return state;
     }
 }

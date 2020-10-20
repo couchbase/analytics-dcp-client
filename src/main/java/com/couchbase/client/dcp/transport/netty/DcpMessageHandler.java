@@ -3,20 +3,7 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
-import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_DELETION;
-import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_EXPIRATION;
-import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_MUTATION;
-import static com.couchbase.client.dcp.message.MessageUtil.REQ_OSO_SNAPSHOT_MARKER;
-import static com.couchbase.client.dcp.message.MessageUtil.REQ_SEQNO_ADVANCED;
-import static com.couchbase.client.dcp.message.MessageUtil.REQ_SET_VBUCKET_STATE;
-import static com.couchbase.client.dcp.message.MessageUtil.REQ_SNAPSHOT_MARKER;
-import static com.couchbase.client.dcp.message.MessageUtil.REQ_STREAM_END;
-import static com.couchbase.client.dcp.message.MessageUtil.REQ_SYSTEM_EVENT;
-import static com.couchbase.client.dcp.message.MessageUtil.RES_FAILOVER_LOG;
-import static com.couchbase.client.dcp.message.MessageUtil.RES_GET_COLLECTIONS_MANIFEST;
-import static com.couchbase.client.dcp.message.MessageUtil.RES_GET_SEQNOS;
-import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_CLOSE;
-import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_REQUEST;
+import static com.couchbase.client.dcp.message.MessageUtil.*;
 
 import java.io.IOException;
 
@@ -30,7 +17,6 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.message.DcpBufferAckRequest;
-import com.couchbase.client.dcp.message.DcpNoopRequest;
 import com.couchbase.client.dcp.message.DcpNoopResponse;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
@@ -113,113 +99,104 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     }
 
     /**
-     * Dispatch every incoming message to either the data or the control feeds.
+     * Dispatch every incoming message to the appropriate feed based on opcode.
      */
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
         dcpChannel.newMessageRecieved();
         ByteBuf message = (ByteBuf) msg;
-        if (isDataMessage(message)) {
-            dataEventHandler.onEvent(this, message);
-        } else if (isControlMessage(message)) {
-            controlEventHandler.onEvent(this, message);
-        } else {
-            // We handle the message here and we're responsible for releasing it
-            try {
-                if (DcpNoopRequest.is(message)) {
-                    ByteBuf buffer = ctx.alloc().buffer();
-                    DcpNoopResponse.init(buffer);
-                    MessageUtil.setOpaque(MessageUtil.getOpaque(message), buffer);
-                    LOGGER.info("Sending back a NoOp response" + dcpChannel + ". Current ack counter = " + ackCounter);
-                    ctx.writeAndFlush(buffer);
-                } else {
-                    LOGGER.warn("Unknown DCP Message, ignoring. \n{}", MessageUtil.humanize(message));
-                }
-            } finally {
-                ReferenceCountUtil.release(message);
-            }
-        }
-    }
+        switch (message.getShort(0)) {
+            case REQ_DCP_MUTATION:
+            case REQ_DCP_DELETION:
+            case REQ_DCP_EXPIRATION:
+            case FLEX_REQ_DCP_MUTATION:
+            case FLEX_REQ_DCP_DELETION:
+            case FLEX_REQ_DCP_EXPIRATION:
+                dataEventHandler.onEvent(this, message);
+                break;
 
-    /**
-     * Helper method to check if the given byte buffer is a control message.
-     *
-     * @param msg
-     *            the message to check.
-     * @return true if it is, false otherwise.
-     */
-    private static boolean isControlMessage(final ByteBuf msg) {
-        switch (msg.getShort(0)) {
             case REQ_STREAM_END:
             case REQ_SNAPSHOT_MARKER:
             case REQ_SET_VBUCKET_STATE:
             case REQ_OSO_SNAPSHOT_MARKER:
             case REQ_SYSTEM_EVENT:
             case REQ_SEQNO_ADVANCED:
+            case FLEX_REQ_STREAM_END:
+            case FLEX_REQ_SNAPSHOT_MARKER:
+            case FLEX_REQ_SET_VBUCKET_STATE:
+            case FLEX_REQ_OSO_SNAPSHOT_MARKER:
+            case FLEX_REQ_SYSTEM_EVENT:
+            case FLEX_REQ_SEQNO_ADVANCED:
             case RES_STREAM_REQUEST:
             case RES_FAILOVER_LOG:
             case RES_STREAM_CLOSE:
             case RES_GET_SEQNOS:
             case RES_GET_COLLECTIONS_MANIFEST:
-                return true;
-            default:
-                return false;
-        }
-    }
+                controlEventHandler.onEvent(this, message);
+                break;
 
-    /**
-     * Helper method to check if the given byte buffer is a data message.
-     *
-     * @param msg
-     *            the message to check.
-     * @return true if it is, false otherwise.
-     */
-    private static boolean isDataMessage(final ByteBuf msg) {
-        switch (msg.getShort(0)) {
-            case REQ_DCP_MUTATION:
-            case REQ_DCP_DELETION:
-            case REQ_DCP_EXPIRATION:
-                return true;
+            case REQ_DCP_NOOP:
+                // We handle the message here and we're responsible for releasing it
+                try {
+                    ByteBuf buffer = ctx.alloc().buffer();
+                    DcpNoopResponse.init(buffer);
+                    MessageUtil.setOpaque(MessageUtil.getOpaque(message), buffer);
+                    LOGGER.info("Sending back a NoOp response" + dcpChannel + ". Current ack counter = " + ackCounter);
+                    ctx.writeAndFlush(buffer);
+                } finally {
+                    ReferenceCountUtil.release(message);
+                }
+                break;
+
             default:
-                return false;
+                try {
+                    // TODO(mblow): consider only logging WARN once per opcode [per client/channel/jvm], to prevent log
+                    //              blowout
+                    LOGGER.warn("Unknown DCP Message, ignoring. \n{}", MessageUtil.humanize(message));
+                } finally {
+                    ReferenceCountUtil.release(message);
+                }
+
         }
     }
 
     @Override
-    public synchronized void ack(ByteBuf message) {
+    public void ack(ByteBuf message) {
         if (!ackEnabled) {
             return;
         }
-        switch (message.getShort(0)) {
-            case REQ_SET_VBUCKET_STATE:
-            case REQ_SNAPSHOT_MARKER:
-            case REQ_STREAM_END:
-            case RES_STREAM_CLOSE:
-            case REQ_DCP_MUTATION:
-            case REQ_DCP_DELETION:
-            case REQ_DCP_EXPIRATION:
-            case REQ_OSO_SNAPSHOT_MARKER:
-                ackCounter += message.readableBytes();
-                boolean trace = LOGGER.isTraceEnabled();
-                if (trace) {
-                    LOGGER.trace("BufferAckCounter is now {}", ackCounter);
-                }
-                if (ackCounter >= ackWatermark) {
-                    env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
+        switch (message.getByte(1)) {
+            case DCP_SET_VBUCKET_STATE_OPCODE:
+            case DCP_SNAPSHOT_MARKER_OPCODE:
+            case DCP_STREAM_END_OPCODE:
+            case DCP_STREAM_CLOSE_OPCODE:
+            case DCP_MUTATION_OPCODE:
+            case DCP_DELETION_OPCODE:
+            case DCP_EXPIRATION_OPCODE:
+            case DCP_OSO_SNAPSHOT_MARKER_OPCODE:
+                synchronized (this) {
+                    ackCounter += message.readableBytes();
+                    boolean trace = LOGGER.isTraceEnabled();
                     if (trace) {
-                        LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.",
+                        LOGGER.trace("BufferAckCounter is now {}", ackCounter);
+                    }
+                    if (ackCounter >= ackWatermark) {
+                        env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
+                        if (trace) {
+                            LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.",
+                                    channel.remoteAddress());
+                        }
+                        ByteBuf buffer = channel.alloc().buffer();
+                        DcpBufferAckRequest.init(buffer);
+                        DcpBufferAckRequest.ackBytes(buffer, ackCounter);
+                        ChannelFuture future = channel.writeAndFlush(buffer);
+                        future.addListener(ackListener);
+                        ackCounter = 0;
+                    }
+                    if (trace) {
+                        LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
                                 channel.remoteAddress());
                     }
-                    ByteBuf buffer = channel.alloc().buffer();
-                    DcpBufferAckRequest.init(buffer);
-                    DcpBufferAckRequest.ackBytes(buffer, ackCounter);
-                    ChannelFuture future = channel.writeAndFlush(buffer);
-                    future.addListener(ackListener);
-                    ackCounter = 0;
-                }
-                if (trace) {
-                    LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
-                            channel.remoteAddress());
                 }
                 break;
             default:

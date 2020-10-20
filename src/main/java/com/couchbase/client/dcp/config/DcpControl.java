@@ -126,10 +126,28 @@ public class DcpControl implements Iterable<Map.Entry<String, String>> {
          */
         SUPPORTS_CURSOR_DROPPING("supports_cursor_dropping"),
         /**
+         * Tells the server that the client would like to create multiple DCP streams for a
+         * vbucket. Once enabled the client must provide a stream-id value to all
+         * stream-requests. **Note** that once enabled on a producer, it cannot be disabled.
+         */
+        ENABLE_STREAM_ID("enable_stream_id"),
+        /**
          * Tells the server that the client supports out of order DCP. The server may, if
          * possible send DCP messages in a different order than sequence number order.
          */
-        ENABLE_OUT_OF_ORDER_SNAPSHOTS("enable_out_of_order_snapshots");
+        ENABLE_OUT_OF_ORDER_SNAPSHOTS("enable_out_of_order_snapshots"),
+        /**
+         * Tells the server what order the client would like to receive backfills in. This
+         * option is available only from Couchbase 6.6.
+         *
+         * Possible values are:
+         *         round-robin - vBuckets should be backfilled in round-robin order, reading
+         *                       a chunk of data from each in turn (default).
+         *         sequential - vBuckets should be backfilled sequentially - all data from
+         *                      the first vBucket should be read from disk before advancing to
+         *                      the next vBucket.
+         */
+        BACKFILL_ORDER("backfill_order");
 
         private String value;
 
