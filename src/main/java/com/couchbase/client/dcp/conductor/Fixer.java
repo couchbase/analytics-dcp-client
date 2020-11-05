@@ -74,7 +74,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             start();
             DeadConnectionDetection detection = new DeadConnectionDetection(conductor);
             DcpEvent next = inbox.take();
-            while (next == null || next != POISON_PILL) {
+            while (next != POISON_PILL) {
                 if (next != null) {
                     handle(next);
                 } else {
@@ -281,7 +281,10 @@ public class Fixer implements Runnable, SystemEventHandler {
                 LOGGER.warn(this + " need more analytics ingestion nodes. we are slow for the producer node");
                 break;
             case LOST_PRIVILEGES:
-                LOGGER.warn(this + " we have lost privileges");
+                LOGGER.info(this + " we have lost privileges");
+                break;
+            case FILTER_EMPTY:
+                LOGGER.info(this + " filter empty (last collection associated with stream was dropped)");
                 break;
             default:
                 LOGGER.error(this + " unexpected event type " + streamEndEvent);

@@ -26,6 +26,7 @@ public class MemcachedStatus {
     public static final short INTERNAL_ERROR = 0x84;
     public static final short BUSY = 0x85;
     public static final short TEMP_FAILURE = 0x86;
+    public static final short UNKNOWN_COLLECTION = 0x88;
     public static final short SUBDOC_NOT_FOUND = 0xc0;
     public static final short SUBDOC_NOT_COLLECTION = 0xc1;
     public static final short SUBDOC_INCORRECT_SYNTAX = 0xc2;
@@ -45,6 +46,10 @@ public class MemcachedStatus {
     }
 
     public static String toString(short response) {
+        return "0x" + Integer.toHexString(response) + ": " + description(response);
+    }
+
+    private static String description(short response) {
         switch (response) {
             case SUCCESS:
                 return "No error";
@@ -90,6 +95,8 @@ public class MemcachedStatus {
                 return "Busy";
             case TEMP_FAILURE:
                 return "Temporary failure";
+            case UNKNOWN_COLLECTION:
+                return "Unknown collection";
             case SUBDOC_NOT_FOUND:
                 return "(Subdoc) The provided path does not exist in the document";
             case SUBDOC_NOT_COLLECTION:
@@ -121,5 +128,13 @@ public class MemcachedStatus {
             default:
                 return "Unknown response status";
         }
+    }
+
+    /**
+     * indicates if {@link #description(short)} result of the supplied status code is contained within
+     * the supplied throwable's {@link Throwable#getMessage()}
+     */
+    public static boolean messageContains(Throwable th, short status) {
+        return th.getMessage() != null && th.getMessage().contains(description(status));
     }
 }

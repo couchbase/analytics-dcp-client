@@ -4,6 +4,8 @@
 package com.couchbase.client.dcp.transport.netty;
 
 import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.dcp.error.AuthorizationException;
+import com.couchbase.client.dcp.error.BucketNotFoundException;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
 import com.couchbase.client.deps.io.netty.handler.codec.base64.Base64;
@@ -58,11 +60,11 @@ class StartStreamHandler extends ConnectInterceptingHandler<HttpResponse> {
             CouchbaseException exception;
             switch (statusCode) {
                 case 401:
-                    exception = new CouchbaseException(
+                    exception = new AuthorizationException(
                             "Unauthorized - Incorrect credentials or bucket " + bucket + " does not exist");
                     break;
                 case 404:
-                    exception = new CouchbaseException("Bucket " + bucket + " does not exist");
+                    exception = new BucketNotFoundException("Bucket " + bucket + " does not exist");
                     break;
                 default:
                     exception = new CouchbaseException("Unknown error code during connect: " + msg.getStatus());

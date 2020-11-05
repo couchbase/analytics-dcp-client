@@ -38,7 +38,7 @@ public class StreamState {
      */
     private final List<StreamPartitionState> partitionStates;
 
-    private volatile CountDownLatch currentSeqLatch;
+    private volatile CountDownLatch currentSeqLatch = new CountDownLatch(0);
 
     private volatile Throwable seqsRequestFailure;
 
@@ -117,7 +117,7 @@ public class StreamState {
         seqsRequestFailure = null;
     }
 
-    public synchronized void waitTillCurrentSeqUpdated(long timeout) throws Throwable {
+    public void waitTillCurrentSeqUpdated(long timeout) throws Throwable {
         Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
         LOGGER.debug("Waiting until current seq updated for all vbuckets");
         if (!currentSeqLatch.await(span.getSpanNanos(), TimeUnit.NANOSECONDS)) {

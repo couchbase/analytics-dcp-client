@@ -7,6 +7,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.IOException;
 
+import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
@@ -191,8 +192,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 channel.getSessionState().streamState(streamId).setCurrentVBucketSeqnoInMaster(vbid, seq);
             }
         } else {
-            // TODO: find a way to get partitions associated with this node and report failure.
-            // Currently, we rely on timeout
+            channel.getSessionState().streamState(streamId)
+                    .seqsRequestFailed(new CouchbaseException(MemcachedStatus.toString(status)));
         }
         channel.stateFetched(streamId);
     }

@@ -70,7 +70,8 @@ public class SessionState {
     public String toString() {
         return "SessionState{" + "numPartitions=" + numPartitions + ", uuid='" + uuid + '\'' + ", streams="
                 + Stream.of(streams)
-                        .map(ss -> "{ streamId : " + ss.streamId() + ", collectiomId : " + ss.collectionId() + " }")
+                        .map(ss -> "{ streamId : " + ss.streamId() + ", collectionId : 0x"
+                                + Integer.toHexString(ss.collectionId()) + " }")
                         .collect(Collectors.joining(", "))
                 + '}';
     }
@@ -102,7 +103,7 @@ public class SessionState {
             throws InterruptedException, TimeoutException {
         if (collectionsManifest == null) {
             Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
-            LOGGER.debug("Waiting until manifest is updated");
+            LOGGER.debug("Waiting until manifest is received");
             while (collectionsManifest == null && collectionsManifestFailure == null && !span.elapsed() && connected) {
                 span.wait(this);
             }

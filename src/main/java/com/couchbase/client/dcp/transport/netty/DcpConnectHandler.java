@@ -99,9 +99,8 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
                     break;
             }
         } else {
-            originalPromise().setFailure(
-                    new IllegalStateException("Could not open DCP Connection: Failed in the " + toString(step)
-                            + " step, response status is " + status + ": " + MemcachedStatus.toString(status)));
+            originalPromise().setFailure(new IllegalStateException("Could not open DCP Connection: Failed in the "
+                    + toString(step) + " step, response status is " + MemcachedStatus.toString(status)));
         }
     }
 

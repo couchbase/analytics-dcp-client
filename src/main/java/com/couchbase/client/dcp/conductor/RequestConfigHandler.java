@@ -12,6 +12,7 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
+import com.couchbase.client.dcp.error.AuthorizationException;
 import com.couchbase.client.dcp.error.BucketNotFoundException;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
@@ -87,7 +88,7 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
             CouchbaseException exception;
             switch (statusCode) {
                 case 401:
-                    exception = new CouchbaseException(
+                    exception = new AuthorizationException(
                             "Unauthorized - Incorrect credentials or bucket " + bucket + " does not exist");
                     break;
                 case 404:

@@ -5,9 +5,10 @@ package com.couchbase.client.dcp.util.retry;
 
 import org.apache.hyracks.api.util.ExceptionUtils;
 
-import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.dcp.conductor.MasterDcpChannelNotFoundException;
+import com.couchbase.client.dcp.error.AuthorizationException;
 import com.couchbase.client.dcp.error.BucketNotFoundException;
+import com.couchbase.client.dcp.util.MemcachedStatus;
 
 public class RetryUtil {
     private RetryUtil() {
@@ -17,8 +18,8 @@ public class RetryUtil {
     public static boolean shouldRetry(Throwable th) {
         Throwable root = ExceptionUtils.getRootCause(th);
         return !((root instanceof BucketNotFoundException) || (root instanceof MasterDcpChannelNotFoundException)
-                || (root instanceof CouchbaseException && root.getMessage() != null
-                        && root.getMessage().contains("Unauthorized"))
-                || (root.getMessage() != null && root.getMessage().contains("36: No access")));
+                || (root instanceof AuthorizationException)
+                || MemcachedStatus.messageContains(root, MemcachedStatus.UNKNOWN_COLLECTION)
+                || MemcachedStatus.messageContains(root, MemcachedStatus.NO_ACCESS));
     }
 }
