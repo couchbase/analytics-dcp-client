@@ -206,19 +206,15 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         if (!ackEnabled) {
             return;
         }
-        int fixup = 0;
         switch (message.getByte(1)) {
             case DCP_OSO_SNAPSHOT_MARKER_OPCODE:
-                // TODO: workaround for MB-42506 (remove once MB-42506 is fixed)
-                fixup = -MessageUtil.getFramingExtrasSize(message);
-                // fall-through
             case DCP_MUTATION_OPCODE:
             case DCP_DELETION_OPCODE:
             case DCP_EXPIRATION_OPCODE:
             case DCP_SNAPSHOT_MARKER_OPCODE:
             case DCP_SET_VBUCKET_STATE_OPCODE:
             case DCP_STREAM_END_OPCODE:
-                final int ackBytes = message.readableBytes() + fixup;
+                final int ackBytes = message.readableBytes();
                 synchronized (this) {
                     ackCounter += ackBytes;
                     if (LOGGER.isTraceEnabled()) {
