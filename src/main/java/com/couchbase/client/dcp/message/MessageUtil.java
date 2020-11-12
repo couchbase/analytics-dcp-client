@@ -139,7 +139,7 @@ public class MessageUtil {
             keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
             sb.append(String.format("Key Length     (2,3)    0x%04x\n", keyLength));
         } else {
-            framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+            framingExtrasLength = getFramingExtrasSize(buffer);
             keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
             sb.append(String.format("Framing Extras (2)      0x%02x\n", framingExtrasLength));
             sb.append(String.format("Key Length     (3)      0x%02x\n", keyLength));
@@ -226,7 +226,11 @@ public class MessageUtil {
      * @return the header size (inclusive of flex framing extras, if present)
      */
     public static int getHeaderSize(ByteBuf buffer) {
-        return HEADER_SIZE + buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        return HEADER_SIZE + getFramingExtrasSize(buffer);
+    }
+
+    public static short getFramingExtrasSize(ByteBuf buffer) {
+        return buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
     }
 
     public static ByteBuf getExtras(ByteBuf buffer) {
@@ -245,7 +249,7 @@ public class MessageUtil {
      * Helper method to set the key, update the key length and the content length.
      */
     public static void setKey(ByteBuf key, ByteBuf buffer) {
-        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short framingExtrasLength = getFramingExtrasSize(buffer);
         final int extrasOffset = HEADER_SIZE + framingExtrasLength;
         short oldKeyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
         short newKeyLength = (short) key.readableBytes();
@@ -264,7 +268,7 @@ public class MessageUtil {
 
     public static ByteBuf getKey(ByteBuf buffer, boolean isCollectionEnabled) {
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
-        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short framingExtrasLength = getFramingExtrasSize(buffer);
         short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
         ByteBuf keyWithPrefix = buffer.slice(HEADER_SIZE + framingExtrasLength + extrasLength, keyLength);
         if (!isCollectionEnabled) {
@@ -286,7 +290,7 @@ public class MessageUtil {
      * Sets the content payload of the buffer, updating the content length as well.
      */
     public static void setContent(ByteBuf content, ByteBuf buffer) {
-        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short framingExtrasLength = getFramingExtrasSize(buffer);
         short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
         // The size of the value is total body length - key length - extras length - framing extras
@@ -303,7 +307,7 @@ public class MessageUtil {
     }
 
     public static ByteBuf getContent(ByteBuf buffer) {
-        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short framingExtrasLength = getFramingExtrasSize(buffer);
         short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
         // The size of the value is total body length - key length - extras length - framing extras
@@ -381,7 +385,7 @@ public class MessageUtil {
      * The returned buffer shares its reference count with the given buffer.
      */
     public static ByteBuf getRawContent(ByteBuf buffer) {
-        short framingExtrasLength = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short framingExtrasLength = getFramingExtrasSize(buffer);
         short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
         byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
         int contentLength = buffer.getInt(BODY_LENGTH_OFFSET) - keyLength - extrasLength;
@@ -454,7 +458,7 @@ public class MessageUtil {
     //            * N Bytes: *Object data*.
     //
     public static int streamId(ByteBuf buffer) {
-        short framingExtrasLen = buffer.getUnsignedByte(FLEX_FRAMING_EXTRAS_LENGTH_OFFSET);
+        short framingExtrasLen = getFramingExtrasSize(buffer);
         if (framingExtrasLen == 0) {
             return NO_FLEX_FRAMING_STREAM_ID;
         }

@@ -3,7 +3,37 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
-import static com.couchbase.client.dcp.message.MessageUtil.*;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_DELETION_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_EXPIRATION_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_MUTATION_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_OSO_SNAPSHOT_MARKER_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_SET_VBUCKET_STATE_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_SNAPSHOT_MARKER_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_STREAM_END_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_DELETION;
+import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_EXPIRATION;
+import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_MUTATION;
+import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_OSO_SNAPSHOT_MARKER;
+import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_SEQNO_ADVANCED;
+import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_SET_VBUCKET_STATE;
+import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_SNAPSHOT_MARKER;
+import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_STREAM_END;
+import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_SYSTEM_EVENT;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_DELETION;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_EXPIRATION;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_MUTATION;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_NOOP;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_OSO_SNAPSHOT_MARKER;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_SEQNO_ADVANCED;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_SET_VBUCKET_STATE;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_SNAPSHOT_MARKER;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_STREAM_END;
+import static com.couchbase.client.dcp.message.MessageUtil.REQ_SYSTEM_EVENT;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_FAILOVER_LOG;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_GET_COLLECTIONS_MANIFEST;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_GET_SEQNOS;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_CLOSE;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_REQUEST;
 
 import java.io.IOException;
 
@@ -160,42 +190,51 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         }
     }
 
+    /**
+     * Handles ACK of the supplied message to the DCP producer.  Note that this does not necessarily immediately
+     * notify the producer, instead as the consumer we keep track of ACK bytes only notifying the producer once
+     * we reach the configured watermark, which is a percentage of the configured connection buffer size.
+     *
+     * Per https://github.com/couchbase/kv_engine/blob/master/docs/dcp/documentation/flow-control.md#buffering-messages,
+     * only Mutation, Deletion, Expiration, Snapshot Markers, OSO Snapshot Markers, Set VBucket State, and Stream End
+     * messages should be buffered, so only these messages are ACK'd.
+     *
+     * @param message the DCP message to ACK, if applicable based on type
+     */
     @Override
     public void ack(ByteBuf message) {
         if (!ackEnabled) {
             return;
         }
+        int fixup = 0;
         switch (message.getByte(1)) {
-            case DCP_SET_VBUCKET_STATE_OPCODE:
-            case DCP_SNAPSHOT_MARKER_OPCODE:
-            case DCP_STREAM_END_OPCODE:
-            case DCP_STREAM_CLOSE_OPCODE:
+            case DCP_OSO_SNAPSHOT_MARKER_OPCODE:
+                // TODO: workaround for MB-42506 (remove once MB-42506 is fixed)
+                fixup = -MessageUtil.getFramingExtrasSize(message);
+                // fall-through
             case DCP_MUTATION_OPCODE:
             case DCP_DELETION_OPCODE:
             case DCP_EXPIRATION_OPCODE:
-            case DCP_OSO_SNAPSHOT_MARKER_OPCODE:
+            case DCP_SNAPSHOT_MARKER_OPCODE:
+            case DCP_SET_VBUCKET_STATE_OPCODE:
+            case DCP_STREAM_END_OPCODE:
+                final int ackBytes = message.readableBytes() + fixup;
                 synchronized (this) {
-                    ackCounter += message.readableBytes();
-                    boolean trace = LOGGER.isTraceEnabled();
-                    if (trace) {
-                        LOGGER.trace("BufferAckCounter is now {}", ackCounter);
+                    ackCounter += ackBytes;
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("BufferAckCounter is now {} after including {} for opcode 0x{}", ackCounter,
+                                ackBytes, Integer.toUnsignedString(message.getUnsignedByte(1), 16));
                     }
                     if (ackCounter >= ackWatermark) {
                         env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
-                        if (trace) {
-                            LOGGER.trace("BufferAckWatermark reached on {}, acking now against the server.",
-                                    channel.remoteAddress());
-                        }
+                        LOGGER.debug("BufferAckWatermark ({}) reached on {}, acking {} bytes now with the server",
+                                ackWatermark, channel.remoteAddress(), ackCounter);
                         ByteBuf buffer = channel.alloc().buffer();
                         DcpBufferAckRequest.init(buffer);
                         DcpBufferAckRequest.ackBytes(buffer, ackCounter);
                         ChannelFuture future = channel.writeAndFlush(buffer);
                         future.addListener(ackListener);
                         ackCounter = 0;
-                    }
-                    if (trace) {
-                        LOGGER.trace("Acknowledging {} bytes against connection {}.", message.readableBytes(),
-                                channel.remoteAddress());
                     }
                 }
                 break;
