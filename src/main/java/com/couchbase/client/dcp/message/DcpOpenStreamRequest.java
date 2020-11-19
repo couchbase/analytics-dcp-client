@@ -61,8 +61,8 @@ public enum DcpOpenStreamRequest {
 
     }
 
-    public static void opaque(final ByteBuf buffer, int opaque) {
-        MessageUtil.setOpaque(opaque, buffer);
+    public static void vbucketStreamId(ByteBuf buffer, short vbid, int streamId) {
+        MessageUtil.setOpaque(streamId << 16 | vbid, buffer);
     }
 
     public static void setValue(final ByteBuf value, final ByteBuf buffer) {

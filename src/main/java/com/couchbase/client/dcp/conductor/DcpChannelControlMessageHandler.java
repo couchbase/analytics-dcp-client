@@ -78,7 +78,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             case MessageUtil.DCP_OSO_SNAPSHOT_MARKER_OPCODE:
                 handleOsoSnapshotMarker(buf);
                 break;
-            case MessageUtil.GET_COLLECTIONS_MANIFEST_OPCODE:
+            case MessageUtil.DCP_COLLECTIONS_MANIFEST_OPCODE:
                 handleCollectionsManifest(buf);
                 break;
             default:
@@ -102,9 +102,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleOpenStreamResponse(ByteBuf buf) {
-        final int opaque = MessageUtil.getOpaque(buf);
-        short vbid = (short) (opaque & 0xffff);
-        int streamId = opaque >> 16;
+        short vbid = DcpOpenStreamResponse.vbucket(buf);
+        int streamId = DcpOpenStreamResponse.streamId(buf);
         final StreamState ss = channel.getSessionState().streamState(streamId);
         StreamPartitionState partitionState = ss.get(vbid);
         OpenStreamResponse response = partitionState.getOpenStreamResponse();

@@ -29,13 +29,15 @@ import static com.couchbase.client.dcp.message.MessageUtil.REQ_SET_VBUCKET_STATE
 import static com.couchbase.client.dcp.message.MessageUtil.REQ_SNAPSHOT_MARKER;
 import static com.couchbase.client.dcp.message.MessageUtil.REQ_STREAM_END;
 import static com.couchbase.client.dcp.message.MessageUtil.REQ_SYSTEM_EVENT;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_DCP_COLLECTIONS_MANIFEST;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_FAILOVER_LOG;
-import static com.couchbase.client.dcp.message.MessageUtil.RES_GET_COLLECTIONS_MANIFEST;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_GET_SEQNOS;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_CLOSE;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_REQUEST;
 
 import java.io.IOException;
+
+import org.apache.hyracks.util.LogRedactionUtil;
 
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
 import com.couchbase.client.core.logging.CouchbaseLogger;
@@ -47,8 +49,11 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.message.DcpBufferAckRequest;
+import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpNoopResponse;
+import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
 import com.couchbase.client.dcp.message.MessageUtil;
+import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.Channel;
 import com.couchbase.client.deps.io.netty.channel.ChannelDuplexHandler;
@@ -135,6 +140,9 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
         dcpChannel.newMessageRecieved();
         ByteBuf message = (ByteBuf) msg;
+        if (LOGGER.isTraceEnabled()) {
+            trace(message);
+        }
         switch (message.getShort(0)) {
             case REQ_DCP_MUTATION:
             case REQ_DCP_DELETION:
@@ -161,7 +169,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case RES_FAILOVER_LOG:
             case RES_STREAM_CLOSE:
             case RES_GET_SEQNOS:
-            case RES_GET_COLLECTIONS_MANIFEST:
+            case RES_DCP_COLLECTIONS_MANIFEST:
                 controlEventHandler.onEvent(this, message);
                 break;
 
@@ -187,6 +195,62 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                     ReferenceCountUtil.release(message);
                 }
 
+        }
+    }
+
+    private void trace(final ByteBuf message) {
+        switch (message.getShort(0)) {
+            case FLEX_REQ_DCP_MUTATION:
+            case FLEX_REQ_DCP_DELETION:
+            case FLEX_REQ_DCP_EXPIRATION:
+                LOGGER.trace("{} sid {} vbid {} seq {} cid 0x{} key {}", MessageUtil.humanizeOpcode(message),
+                        MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message),
+                        DcpMutationMessage.bySeqno(message), Integer.toUnsignedString(MessageUtil.getCid(message), 16),
+                        LogRedactionUtil
+                                .userData(MessageUtil.getKeyAsString(message, dcpChannel.isCollectionCapable())));
+                break;
+            case REQ_DCP_MUTATION:
+            case REQ_DCP_DELETION:
+            case REQ_DCP_EXPIRATION:
+                LOGGER.trace("{} vbid {} seq {} cid 0x{} key {}", MessageUtil.humanizeOpcode(message),
+                        MessageUtil.getVbucket(message), DcpMutationMessage.bySeqno(message),
+                        Integer.toUnsignedString(MessageUtil.getCid(message), 16), LogRedactionUtil
+                                .userData(MessageUtil.getKeyAsString(message, dcpChannel.isCollectionCapable())));
+                break;
+            case FLEX_REQ_STREAM_END:
+            case FLEX_REQ_SNAPSHOT_MARKER:
+            case FLEX_REQ_SET_VBUCKET_STATE:
+            case FLEX_REQ_OSO_SNAPSHOT_MARKER:
+            case FLEX_REQ_SYSTEM_EVENT:
+            case FLEX_REQ_SEQNO_ADVANCED:
+                LOGGER.trace("{} sid {} vbid {}", MessageUtil.humanizeOpcode(message),
+                        MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message));
+                break;
+            case RES_STREAM_REQUEST:
+                LOGGER.trace("{} sid {} vbid {} status {}", MessageUtil.humanizeOpcode(message),
+                        DcpOpenStreamResponse.streamId(message), DcpOpenStreamResponse.vbucket(message),
+                        MemcachedStatus.toString(MessageUtil.getStatus(message)));
+                break;
+            case REQ_STREAM_END:
+            case REQ_SNAPSHOT_MARKER:
+            case REQ_SET_VBUCKET_STATE:
+            case REQ_OSO_SNAPSHOT_MARKER:
+            case REQ_SYSTEM_EVENT:
+            case REQ_SEQNO_ADVANCED:
+            case RES_STREAM_CLOSE:
+            case RES_GET_SEQNOS:
+            case RES_DCP_COLLECTIONS_MANIFEST:
+                LOGGER.trace("{} vbid {}", MessageUtil.humanizeOpcode(message), MessageUtil.getVbucket(message));
+                break;
+            case RES_FAILOVER_LOG:
+                LOGGER.trace("{} vbid {} status {}", MessageUtil.humanizeOpcode(message),
+                        MessageUtil.getOpaque(message), MemcachedStatus.toString(MessageUtil.getStatus(message)));
+                break;
+            case REQ_DCP_NOOP:
+                LOGGER.trace("{}", MessageUtil.humanizeOpcode(message));
+                break;
+            default:
+                // no-op
         }
     }
 

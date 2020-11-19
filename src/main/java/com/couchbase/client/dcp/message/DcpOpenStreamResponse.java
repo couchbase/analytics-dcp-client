@@ -5,6 +5,7 @@ package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_STREAM_REQUEST_OPCODE;
 
+import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public enum DcpOpenStreamResponse {
@@ -15,11 +16,15 @@ public enum DcpOpenStreamResponse {
     }
 
     public static short vbucket(ByteBuf buffer) {
-        return MessageUtil.getVbucket(buffer);
+        return (short) (MessageUtil.getOpaque(buffer) & 0xffff);
+    }
+
+    public static int streamId(ByteBuf buffer) {
+        return MessageUtil.getOpaque(buffer) >> 16;
     }
 
     public static long rollbackSeqno(ByteBuf buffer) {
-        if (MessageUtil.getStatus(buffer) == 0x23) {
+        if (MessageUtil.getStatus(buffer) == MemcachedStatus.ROLLBACK) {
             return MessageUtil.getContent(buffer).getLong(0);
         } else {
             throw new IllegalStateException("Rollback sequence number accessible only for ROLLBACK (0x23) status code");

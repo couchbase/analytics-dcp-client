@@ -72,10 +72,10 @@ public class DcpChannel {
     private Int2BooleanMap stateFetched = new Int2BooleanOpenHashMap();
     private volatile long lastConnectionTime = System.currentTimeMillis();
     private boolean channelDroppedReported = false;
-    private boolean isCollectionCapable;
+    private final boolean collectionCapable;
 
     public DcpChannel(InetSocketAddress inetAddress, String hostname, final ClientEnvironment env,
-            final SessionState sessionState, int numOfPartitions, boolean isCollectionCapable) {
+            final SessionState sessionState, int numOfPartitions, boolean collectionCapable) {
         setState(State.DISCONNECTED);
         this.inetAddress = inetAddress;
         this.hostname = hostname;
@@ -86,7 +86,7 @@ public class DcpChannel {
         this.openStreams = new IntSet[numOfPartitions];
         this.closeListener = new DcpChannelCloseListener(this);
         this.deadConnectionDetectionInterval = env.getDeadConnectionDetectionInterval();
-        this.isCollectionCapable = isCollectionCapable;
+        this.collectionCapable = collectionCapable;
     }
 
     public void connect() throws Throwable {
@@ -184,6 +184,10 @@ public class DcpChannel {
         channel.closeFuture().addListener(closeListener);
     }
 
+    public boolean isCollectionCapable() {
+        return collectionCapable;
+    }
+
     public State getState() {
         return state;
     }
@@ -253,14 +257,14 @@ public class DcpChannel {
         openStreams[vbid].add(streamId);
         ByteBuf buffer = Unpooled.buffer();
         DcpOpenStreamRequest.init(buffer, vbid);
-        DcpOpenStreamRequest.opaque(buffer, streamId << 16 | vbid);
+        DcpOpenStreamRequest.vbucketStreamId(buffer, vbid, streamId);
         DcpOpenStreamRequest.vbuuid(buffer, vbuuid);
         DcpOpenStreamRequest.startSeqno(buffer, startSeqno);
         DcpOpenStreamRequest.endSeqno(buffer, endSeqno);
         DcpOpenStreamRequest.snapshotStartSeqno(buffer, snapshotStartSeqno);
         DcpOpenStreamRequest.snapshotEndSeqno(buffer, snapshotEndSeqno);
 
-        if (isCollectionCapable) {
+        if (collectionCapable) {
             ObjectMapper om = new ObjectMapper();
             ObjectNode json = om.createObjectNode();
             ArrayNode an = json.putArray("collections");
@@ -317,7 +321,7 @@ public class DcpChannel {
         }
         ByteBuf buffer = Unpooled.buffer();
         DcpGetPartitionSeqnosRequest.init(buffer);
-        if (isCollectionCapable) {
+        if (collectionCapable) {
             DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE, streamState.collectionId());
         } else {
             DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE);

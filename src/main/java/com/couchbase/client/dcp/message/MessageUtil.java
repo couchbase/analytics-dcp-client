@@ -61,7 +61,7 @@ public class MessageUtil {
     public static final byte SELECT_BUCKET_OPCODE = (byte) 0x89;
     public static final byte OBSERVE_SEQNO_OPCODE = (byte) 0x91;
     public static final byte GET_CLUSTER_CONFIG_OPCODE = (byte) 0xb5;
-    public static final byte GET_COLLECTIONS_MANIFEST_OPCODE = (byte) 0xba;
+    public static final byte DCP_COLLECTIONS_MANIFEST_OPCODE = (byte) 0xba;
     public static final byte INTERNAL_ROLLBACK_OPCODE = 0x01;
 
     public static final short REQ_DCP_MUTATION = MAGIC_REQ << 8 | DCP_MUTATION_OPCODE & 0xff;
@@ -86,7 +86,7 @@ public class MessageUtil {
     public static final short FLEX_REQ_SET_VBUCKET_STATE = MAGIC_REQ_FLEX << 8 | DCP_SET_VBUCKET_STATE_OPCODE & 0xff;
     public static final short FLEX_REQ_SNAPSHOT_MARKER = MAGIC_REQ_FLEX << 8 | DCP_SNAPSHOT_MARKER_OPCODE & 0xff;
 
-    public static final short RES_GET_COLLECTIONS_MANIFEST = MAGIC_RES << 8 | GET_COLLECTIONS_MANIFEST_OPCODE & 0xff;
+    public static final short RES_DCP_COLLECTIONS_MANIFEST = MAGIC_RES << 8 | DCP_COLLECTIONS_MANIFEST_OPCODE & 0xff;
     public static final short RES_STREAM_REQUEST = MAGIC_RES << 8 | DCP_STREAM_REQUEST_OPCODE & 0xff;
     public static final short RES_GET_SEQNOS = MAGIC_RES << 8 | GET_ALL_VB_SEQNOS_OPCODE & 0xff;
     public static final short RES_STREAM_CLOSE = MAGIC_RES << 8 | DCP_STREAM_CLOSE_OPCODE & 0xff;
@@ -116,6 +116,73 @@ public class MessageUtil {
         return readable >= (HEADER_SIZE + buffer.getInt(BODY_LENGTH_OFFSET));
     }
 
+    public static String humanizeOpcode(final ByteBuf buffer) {
+        return humanizeOpcode(buffer.getByte(1));
+    }
+
+    public static String humanizeOpcode(final byte opcode) {
+        switch (opcode) {
+            case VERSION_OPCODE:
+                return "VERSION";
+            case HELO_OPCODE:
+                return "HELO";
+            case SASL_LIST_MECHS_OPCODE:
+                return "SASL_LIST_MECHS";
+            case SASL_AUTH_OPCODE:
+                return "SASL_AUTH";
+            case SASL_STEP_OPCODE:
+                return "SASL_STEP";
+            case GET_ALL_VB_SEQNOS_OPCODE:
+                return "GET_ALL_VB_SEQNOS";
+            case OPEN_CONNECTION_OPCODE:
+                return "OPEN_CONNECTION";
+            case DCP_ADD_STREAM_OPCODE:
+                return "DCP_ADD_STREAM";
+            case DCP_STREAM_CLOSE_OPCODE:
+                return "DCP_STREAM_CLOSE";
+            case DCP_STREAM_REQUEST_OPCODE:
+                return "DCP_STREAM_REQUEST";
+            case DCP_FAILOVER_LOG_OPCODE:
+                return "DCP_FAILOVER_LOG";
+            case DCP_STREAM_END_OPCODE:
+                return "DCP_STREAM_END";
+            case DCP_SNAPSHOT_MARKER_OPCODE:
+                return "DCP_SNAPSHOT_MARKER";
+            case DCP_MUTATION_OPCODE:
+                return "DCP_MUTATION";
+            case DCP_DELETION_OPCODE:
+                return "DCP_DELETION";
+            case DCP_EXPIRATION_OPCODE:
+                return "DCP_EXPIRATION";
+            case DCP_FLUSH_OPCODE:
+                return "DCP_FLUSH";
+            case DCP_SET_VBUCKET_STATE_OPCODE:
+                return "DCP_SET_VBUCKET_STATE";
+            case DCP_NOOP_OPCODE:
+                return "DCP_NOOP";
+            case DCP_BUFFER_ACK_OPCODE:
+                return "DCP_BUFFER_ACK";
+            case DCP_CONTROL_OPCODE:
+                return "DCP_CONTROL";
+            case DCP_SYSTEM_EVENT_OPCODE:
+                return "DCP_SYSTEM_EVENT";
+            case DCP_SEQNO_ADVANCED_OPCODE:
+                return "DCP_SEQNO_ADVANCED";
+            case DCP_OSO_SNAPSHOT_MARKER_OPCODE:
+                return "DCP_OSO_SNAPSHOT_MARKER";
+            case SELECT_BUCKET_OPCODE:
+                return "SELECT_BUCKET";
+            case OBSERVE_SEQNO_OPCODE:
+                return "OBSERVE_SEQNO";
+            case GET_CLUSTER_CONFIG_OPCODE:
+                return "GET_CLUSTER_CONFIG";
+            case DCP_COLLECTIONS_MANIFEST_OPCODE:
+                return "DCP_COLLECTIONS_MANIFEST";
+            default:
+                return "<<UNKNOWN OPCODE>>";
+        }
+    }
+
     /**
      * Dumps the given ByteBuf in the "wire format".
      *
@@ -133,23 +200,24 @@ public class MessageUtil {
         int bodyLength = buffer.getInt(BODY_LENGTH_OFFSET);
 
         sb.append("Field          (offset) (value)\n-----------------------------------\n");
-        sb.append(String.format("Magic          (0)      0x%02x\n", buffer.getByte(0)));
-        sb.append(String.format("Opcode         (1)      0x%02x\n", buffer.getByte(1)));
+        sb.append(String.format("Magic          (0)      0x%02x%n", buffer.getByte(0)));
+        sb.append(String.format("Opcode         (1)      0x%02x\t%s%n", buffer.getByte(1),
+                humanizeOpcode(buffer.getByte(1))));
         if ((buffer.getByte(0) & 0xf0) != 0) {
             keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
-            sb.append(String.format("Key Length     (2,3)    0x%04x\n", keyLength));
+            sb.append(String.format("Key Length     (2,3)    0x%04x%n", keyLength));
         } else {
             framingExtrasLength = getFramingExtrasSize(buffer);
             keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
-            sb.append(String.format("Framing Extras (2)      0x%02x\n", framingExtrasLength));
-            sb.append(String.format("Key Length     (3)      0x%02x\n", keyLength));
+            sb.append(String.format("Framing Extras (2)      0x%02x%n", framingExtrasLength));
+            sb.append(String.format("Key Length     (3)      0x%02x%n", keyLength));
         }
-        sb.append(String.format("Extras Length  (4)      0x%02x\n", extrasLength));
-        sb.append(String.format("Data Type      (5)      0x%02x\n", buffer.getByte(5)));
-        sb.append(String.format("VBucket        (6,7)    0x%04x\n", buffer.getShort(VBUCKET_OFFSET)));
-        sb.append(String.format("Total Body     (8-11)   0x%08x\n", bodyLength));
-        sb.append(String.format("Opaque         (12-15)  0x%08x\n", buffer.getInt(OPAQUE_OFFSET)));
-        sb.append(String.format("CAS            (16-23)  0x%016x\n", buffer.getLong(CAS_OFFSET)));
+        sb.append(String.format("Extras Length  (4)      0x%02x%n", extrasLength));
+        sb.append(String.format("Data Type      (5)      0x%02x%n", buffer.getByte(5)));
+        sb.append(String.format("VBucket        (6,7)    0x%04x%n", buffer.getShort(VBUCKET_OFFSET)));
+        sb.append(String.format("Total Body     (8-11)   0x%08x%n", bodyLength));
+        sb.append(String.format("Opaque         (12-15)  0x%08x%n", buffer.getInt(OPAQUE_OFFSET)));
+        sb.append(String.format("CAS            (16-23)  0x%016x%n", buffer.getLong(CAS_OFFSET)));
 
         if (framingExtrasLength > 0) {
             // TODO: attempt to parse & humanize known framing extras (i.e. STREAM_ID) instead of hex dump
@@ -410,6 +478,10 @@ public class MessageUtil {
         return ByteBufUtil.getBytes(rawContent);
     }
 
+    public static int streamId(ByteBuf buffer) {
+        return streamId(buffer, NO_FLEX_FRAMING_STREAM_ID);
+    }
+
     // http://src.couchbase.org/source/xref/trunk/kv_engine/docs/BinaryProtocol.md
     //
     // #### Request header with "flexible framing extras"
@@ -457,10 +529,10 @@ public class MessageUtil {
     //                    escape bytes).
     //            * N Bytes: *Object data*.
     //
-    public static int streamId(ByteBuf buffer) {
+    public static int streamId(ByteBuf buffer, int defaultId) {
         short framingExtrasLen = getFramingExtrasSize(buffer);
         if (framingExtrasLen == 0) {
-            return NO_FLEX_FRAMING_STREAM_ID;
+            return defaultId;
         }
         ByteBuf framingExtra = buffer.slice(HEADER_SIZE, framingExtrasLen);
         while (framingExtra.readableBytes() > 0) {

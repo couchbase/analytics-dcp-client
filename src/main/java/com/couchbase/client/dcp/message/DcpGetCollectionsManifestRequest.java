@@ -3,7 +3,7 @@
  */
 package com.couchbase.client.dcp.message;
 
-import static com.couchbase.client.dcp.message.MessageUtil.GET_COLLECTIONS_MANIFEST_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_COLLECTIONS_MANIFEST_OPCODE;
 
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
@@ -14,7 +14,7 @@ public enum DcpGetCollectionsManifestRequest {
      * If the given buffer is a {@link DcpGetCollectionsManifestRequest} message.
      */
     public static boolean is(final ByteBuf buffer) {
-        return buffer.getByte(0) == MessageUtil.MAGIC_REQ && buffer.getByte(1) == GET_COLLECTIONS_MANIFEST_OPCODE;
+        return buffer.getByte(0) == MessageUtil.MAGIC_REQ && buffer.getByte(1) == DCP_COLLECTIONS_MANIFEST_OPCODE;
     }
 
     /**
@@ -24,7 +24,7 @@ public enum DcpGetCollectionsManifestRequest {
      * If no setters are used this message is effectively a backfill for the given vbucket.
      */
     public static void init(final ByteBuf buffer) {
-        MessageUtil.initRequest(GET_COLLECTIONS_MANIFEST_OPCODE, buffer);
+        MessageUtil.initRequest(DCP_COLLECTIONS_MANIFEST_OPCODE, buffer);
     }
 
     public static void opaque(final ByteBuf buffer, int opaque) {
