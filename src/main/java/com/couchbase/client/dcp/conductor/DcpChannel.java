@@ -245,7 +245,7 @@ public class DcpChannel {
             env.eventBus().publish(endEvent);
             return;
         }
-        LOGGER.trace(
+        LOGGER.debug(
                 "Opening stream {} against {} with vbid {} vbuuid {} startSeqno {} "
                         + "endSeqno {} snapshotStartSeqno {} snapshotEndSeqno {} manifestUid {}",
                 streamId, channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno,
@@ -270,7 +270,7 @@ public class DcpChannel {
             ArrayNode an = json.putArray("collections");
             IntStream.of(cids).mapToObj(uid -> Integer.toUnsignedString(uid, 16)).forEach(an::add);
             if (manifestUid != 0) {
-                json.put("uid", Long.toUnsignedString(manifestUid));
+                json.put("uid", Long.toUnsignedString(manifestUid, 16));
             }
             if (streamId > 0) {
                 json.put("sid", streamId);

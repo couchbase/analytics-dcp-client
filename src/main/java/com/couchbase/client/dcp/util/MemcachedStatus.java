@@ -27,6 +27,7 @@ public class MemcachedStatus {
     public static final short BUSY = 0x85;
     public static final short TEMP_FAILURE = 0x86;
     public static final short UNKNOWN_COLLECTION = 0x88;
+    public static final short MANIFEST_IS_AHEAD = 0x8b;
     public static final short SUBDOC_NOT_FOUND = 0xc0;
     public static final short SUBDOC_NOT_COLLECTION = 0xc1;
     public static final short SUBDOC_INCORRECT_SYNTAX = 0xc2;
@@ -97,6 +98,8 @@ public class MemcachedStatus {
                 return "Temporary failure";
             case UNKNOWN_COLLECTION:
                 return "Unknown collection";
+            case MANIFEST_IS_AHEAD:
+                return "Manifest is ahead";
             case SUBDOC_NOT_FOUND:
                 return "(Subdoc) The provided path does not exist in the document";
             case SUBDOC_NOT_COLLECTION:

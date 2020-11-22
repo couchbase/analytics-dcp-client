@@ -161,6 +161,19 @@ public class Fixer implements Runnable, SystemEventHandler {
                         LOGGER.info("Handling {}", event);
                         // abort all, close the channels
                         conductor.disconnect(true);
+                    } else if (response.getStatus() == MemcachedStatus.MANIFEST_IS_AHEAD) {
+                        if (response.delay().elapsed()) {
+                            LOGGER.info("Handling {}", event);
+                            try {
+                                restartStream(response);
+                            } catch (Throwable th) {
+                                LOGGER.warn("Failure during attempt to handle {} event",
+                                        MemcachedStatus.toString(response.getStatus()), th);
+                                addToBacklog(response);
+                            }
+                        } else {
+                            addToBacklog(response);
+                        }
                     } else {
                         // Refresh the config, find the assigned kv node
                         // (could still be the same one), and re-attempt connection
@@ -177,12 +190,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                                     int index = config.nodeIndexForMaster(response.getPartitionState().vbid(), false);
                                     NodeInfo node = config.nodeAtIndex(index);
                                     conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
-                                    StreamPartitionState state = response.getPartitionState();
-                                    final SessionState sessionState = conductor.getSessionState();
-                                    StreamState streamState = sessionState
-                                            .streamState(response.getPartitionState().getStreamRequest().getStreamId());
-                                    state.prepareNextStreamRequest(sessionState, streamState);
-                                    conductor.startStreamForPartition(state.getStreamRequest());
+                                    restartStream(response);
                                 }
                             } catch (InterruptedException e) {
                                 LOGGER.warn("Interrupted while handling not my vbucket event", e);
@@ -214,6 +222,17 @@ public class Fixer implements Runnable, SystemEventHandler {
             conductor.disconnect(true);
             failure.setCause(th);
             conductor.getEnv().eventBus().publish(failure);
+        }
+    }
+
+    private void restartStream(OpenStreamResponse response) {
+        synchronized (conductor.getChannels()) {
+            StreamPartitionState partitionState = response.getPartitionState();
+            final SessionState sessionState = conductor.getSessionState();
+            final int streamId = partitionState.getStreamRequest().getStreamId();
+            StreamState streamState = sessionState.streamState(streamId);
+            partitionState.prepareNextStreamRequest(sessionState, streamState);
+            conductor.startStreamForPartition(partitionState.getStreamRequest());
         }
     }
 
