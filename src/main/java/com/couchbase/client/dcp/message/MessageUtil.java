@@ -121,6 +121,10 @@ public class MessageUtil {
     }
 
     public static String humanizeOpcode(final byte opcode) {
+        return String.format("%s (0x%02x)", opcodeName(opcode), opcode);
+    }
+
+    public static String opcodeName(final byte opcode) {
         switch (opcode) {
             case VERSION_OPCODE:
                 return "VERSION";

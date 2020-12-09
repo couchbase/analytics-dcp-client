@@ -282,8 +282,8 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                 synchronized (this) {
                     ackCounter += ackBytes;
                     if (LOGGER.isTraceEnabled()) {
-                        LOGGER.trace("BufferAckCounter is now {} after including {} for opcode 0x{}", ackCounter,
-                                ackBytes, Integer.toUnsignedString(message.getUnsignedByte(1), 16));
+                        LOGGER.trace("BufferAckCounter is now {} after += {} for opcode {}", ackCounter, ackBytes,
+                                MessageUtil.humanizeOpcode(message));
                     }
                     if (ackCounter >= ackWatermark) {
                         env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
@@ -300,6 +300,10 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                 break;
             default:
                 // no-op for non-ACKable messages
+                if (LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("skipping ACK on non-ACKable message bytes {} opcode {}", message.readableBytes(),
+                            MessageUtil.humanizeOpcode(message));
+                }
         }
     }
 

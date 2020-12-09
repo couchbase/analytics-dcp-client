@@ -322,8 +322,6 @@ public class Client {
 
     public CollectionsManifest getCollectionsManifest() throws Throwable {
         if (!config().capabilities().contains(BucketCapabilities.COLLECTIONS)) {
-            // TODO (mblow): should we throw a specific exception here instead of just failing to resolve the
-            // collection later?
             return CollectionsManifest.DEFAULT;
         }
         return conductor.getCollectionsManifest();
