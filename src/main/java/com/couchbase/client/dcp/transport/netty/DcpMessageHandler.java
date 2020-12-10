@@ -7,9 +7,11 @@ import static com.couchbase.client.dcp.message.MessageUtil.DCP_DELETION_OPCODE;
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_EXPIRATION_OPCODE;
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_MUTATION_OPCODE;
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_OSO_SNAPSHOT_MARKER_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_SEQNO_ADVANCED_OPCODE;
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_SET_VBUCKET_STATE_OPCODE;
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_SNAPSHOT_MARKER_OPCODE;
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_STREAM_END_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_SYSTEM_EVENT_OPCODE;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_DELETION;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_EXPIRATION;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_MUTATION;
@@ -278,6 +280,8 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case DCP_SNAPSHOT_MARKER_OPCODE:
             case DCP_SET_VBUCKET_STATE_OPCODE:
             case DCP_STREAM_END_OPCODE:
+            case DCP_SYSTEM_EVENT_OPCODE:
+            case DCP_SEQNO_ADVANCED_OPCODE:
                 final int ackBytes = message.readableBytes();
                 synchronized (this) {
                     ackCounter += ackBytes;
