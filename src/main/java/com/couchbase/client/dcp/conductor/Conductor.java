@@ -288,7 +288,6 @@ public class Conductor {
             add(node, config, env.dcpChannelAttemptTimeout(), env.dcpChannelTotalTimeout(),
                     env.dcpChannelsReconnectDelay());
         }
-        getCollectionsManifest();
     }
 
     public CollectionsManifest getCollectionsManifest() throws InterruptedException, TimeoutException {

@@ -243,13 +243,10 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         DcpSystemEvent event = DcpSystemEvent.parse(buf);
         StreamPartitionState ps = MessageUtil.streamState(buf, channel).get(event.getVbucket());
         LOGGER.trace("received {}", event);
-        if (event.getType() != DcpSystemEvent.Type.UNKNOWN) {
-            if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("Seqno for vbucket {} advanced to {} on system event", vbid, seqno);
-            }
-            ps.setSeqno(seqno);
-            ps.setCollectionsManifest(event.apply(ps.getCollectionsManifest()));
+        if (LOGGER.isTraceEnabled()) {
+            LOGGER.trace("Seqno for vbucket {} advanced to {} on system event", vbid, seqno);
         }
+        ps.onSystemEvent(event);
     }
 
     private void handleOsoSnapshotMarker(ByteBuf buf) {

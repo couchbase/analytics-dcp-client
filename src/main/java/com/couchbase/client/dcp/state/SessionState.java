@@ -120,7 +120,6 @@ public class SessionState {
     public synchronized void onCollectionsManifest(CollectionsManifest collectionsManifest) {
         this.collectionsManifest = collectionsManifest;
         this.collectionsManifestFailure = null;
-        streamStream().forEach(ss -> ss.initCollectionManifest(collectionsManifest));
         notifyAll();
     }
 
@@ -156,5 +155,4 @@ public class SessionState {
     public void waitTillFailoverUpdated(short vbid, long partitionRequestsTimeout) throws Throwable {
         get(vbid).waitTillFailoverUpdated(this, partitionRequestsTimeout);
     }
-
 }

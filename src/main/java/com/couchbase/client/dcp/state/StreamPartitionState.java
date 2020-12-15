@@ -16,7 +16,7 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.dcp.events.OpenStreamResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
-import com.couchbase.client.dcp.message.CollectionsManifest;
+import com.couchbase.client.dcp.message.DcpSystemEvent;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -57,11 +57,11 @@ public class StreamPartitionState {
 
     private StreamRequest streamRequest;
 
+    private long manifestUid;
+
     private final StreamEndEvent endEvent;
 
     private final OpenStreamResponse openStreamResponse;
-
-    private volatile CollectionsManifest manifest;
 
     /**
      * Initialize a new partition state.
@@ -185,6 +185,7 @@ public class StreamPartitionState {
         streamEndSeq = streamRequest.getEndSeqno();
         snapshotStartSeqno = streamRequest.getSnapshotStartSeqno();
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
+        manifestUid = streamRequest.getManifestUid();
     }
 
     public void prepareNextStreamRequest(SessionState sessionState, StreamState streamState) {
@@ -197,7 +198,7 @@ public class StreamPartitionState {
             }
             this.streamRequest =
                     new StreamRequest(vbid, seqno, streamEndSeq, sessionState.get(vbid).uuid(), snapshotStartSeqno,
-                            snapshotEndSeqno, manifest.getUid(), streamState.streamId(), streamState.collectionId());
+                            snapshotEndSeqno, manifestUid, streamState.streamId(), streamState.collectionId());
         }
     }
 
@@ -264,11 +265,8 @@ public class StreamPartitionState {
         return osoSnapshot;
     }
 
-    public CollectionsManifest getCollectionsManifest() {
-        return manifest;
-    }
-
-    public void setCollectionsManifest(CollectionsManifest manifest) {
-        this.manifest = manifest;
+    public void onSystemEvent(DcpSystemEvent event) {
+        setSeqno(event.getSeqno());
+        manifestUid = event.getManifestUid();
     }
 }

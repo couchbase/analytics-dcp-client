@@ -15,8 +15,6 @@ import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.dcp.message.CollectionsManifest;
-
 /**
  * Holds the state information for the current session (all partitions involved).
  */
@@ -100,12 +98,6 @@ public class StreamState {
     @Override
     public String toString() {
         return "StreamState{" + "streamId=" + streamId + ", partitionStates=" + partitionStates + '}';
-    }
-
-    public void initCollectionManifest(CollectionsManifest collectionsManifest) {
-        for (StreamPartitionState ps : partitionStates) {
-            ps.setCollectionsManifest(collectionsManifest);
-        }
     }
 
     public int streamId() {
