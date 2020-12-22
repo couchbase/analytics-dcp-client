@@ -8,7 +8,6 @@ import static org.apache.hyracks.util.Span.ELAPSED;
 
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -31,14 +30,12 @@ public class StreamPartitionState {
     public static final byte CONNECTING = 0x02;
     public static final byte CONNECTED = 0x03;
     public static final byte DISCONNECTING = 0x04;
-    public static final long RECOVERING = 0x05;
+    public static final byte CONNECTED_OSO = 0x05;
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private volatile long currentVBucketSeqnoInMaster = INVALID;
 
     private final short vbid;
-
-    private final SessionPartitionState sessionState;
 
     /**
      * Current Sequence Number
@@ -53,8 +50,6 @@ public class StreamPartitionState {
 
     private volatile byte state;
 
-    private volatile boolean osoSnapshot;
-
     private volatile long osoMaxSeqno = 0;
 
     private StreamRequest streamRequest;
@@ -66,10 +61,9 @@ public class StreamPartitionState {
     /**
      * Initialize a new partition state.
      */
-    public StreamPartitionState(short vbid, StreamState stream) {
+    public StreamPartitionState(short vbid) {
         this.vbid = vbid;
         state = DISCONNECTED;
-        sessionState = stream.session().get(vbid);
     }
 
     public long getSnapshotStartSeqno() {
@@ -90,30 +84,6 @@ public class StreamPartitionState {
     }
 
     /**
-     * Returns the full failover log stored, in sorted order.
-     * index of more recent history entry > index of less recent history entry
-     */
-    public List<FailoverLogEntry> getFailoverLog() {
-        return sessionState.getFailoverLog();
-    }
-
-    public boolean hasFailoverLogs() {
-        return sessionState.hasFailoverLogs();
-    }
-
-    public FailoverLogEntry getFailoverLog(int index) {
-        return sessionState.getFailoverLog(index);
-    }
-
-    public int getFailoverLogSize() {
-        return sessionState.getFailoverLogSize();
-    }
-
-    public long getUuid() {
-        return sessionState.uuid();
-    }
-
-    /**
      * Returns the current sequence number.
      */
     public long getSeqno() {
@@ -124,7 +94,7 @@ public class StreamPartitionState {
      * Allows to set the current sequence number.
      */
     public void setSeqno(long seqno) {
-        if (osoSnapshot) {
+        if (state == CONNECTED_OSO) {
             //noinspection NonAtomicOperationOnVolatileField
             osoMaxSeqno = maxUnsigned(seqno, osoMaxSeqno);
         } else {
@@ -232,13 +202,12 @@ public class StreamPartitionState {
         tree.put("maxSeq", currentVBucketSeqnoInMaster);
         tree.put("seqno", seqno);
         tree.put("state", state);
-        tree.put("osoSnapshot", osoSnapshot);
         tree.put("osoMaxSeq", osoMaxSeqno);
         return tree;
     }
 
     public void beginOutOfOrder() {
-        osoSnapshot = true;
+        state = CONNECTED_OSO;
         osoMaxSeqno = 0;
     }
 
@@ -246,13 +215,13 @@ public class StreamPartitionState {
         // On disconnect after successfully receiving the OSO end, reconnect
         // with a stream-request where start=X, snap.start=X, snap.end=X
         useStreamRequest();
-        osoSnapshot = false;
+        state = CONNECTED;
         advanceSeqno(osoMaxSeqno);
         return osoMaxSeqno;
     }
 
     public boolean isOsoSnapshot() {
-        return osoSnapshot;
+        return state == CONNECTED_OSO;
     }
 
     public void onSystemEvent(DcpSystemEvent event) {

@@ -41,9 +41,6 @@ import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
 
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntLists;
 import it.unimi.dsi.fastutil.shorts.ShortArrayList;
@@ -908,24 +905,22 @@ public class Client {
     }
 
     /**
-     * Returns a map of stream ids to array of streamed sequence numbers indexed by vbucket
+     * Returns an array of streamed sequence numbers indexed by vbucket for the supplied stream id
+     * @param streamId the stream id for which to provide streamed sequence numbers
      */
-    public Int2ObjectMap<long[]> getStreamedSequenceNumbers() {
+    public long[] getStreamedSequenceNumbers(int streamId) {
         CouchbaseBucketConfig lastConfig = conductor.config();
         final SessionState sessionState = sessionState();
         if (lastConfig == null || sessionState == null) {
-            return Int2ObjectMaps.emptyMap();
+            return new long[0];
         }
-        Int2ObjectMap<long[]> result = new Int2ObjectOpenHashMap<>();
         short[] vbuckets = vbuckets();
-        sessionState.streamStream().forEach(stream -> {
-            long[] currentSequences = new long[numPartitions()];
-            for (short next : vbuckets) {
-                StreamPartitionState ps = stream.get(next);
-                currentSequences[next] = ps == null ? 0 : maxUnsigned(0L, ps.getSeqno());
-            }
-            result.put(stream.streamId(), currentSequences);
-        });
-        return result;
+        long[] currentSequences = new long[numPartitions()];
+        final StreamState streamState = sessionState.streamState(streamId);
+        for (short next : vbuckets) {
+            StreamPartitionState ps = streamState.get(next);
+            currentSequences[next] = ps == null ? 0 : maxUnsigned(0L, ps.getSeqno());
+        }
+        return currentSequences;
     }
 }

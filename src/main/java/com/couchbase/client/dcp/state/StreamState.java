@@ -53,7 +53,7 @@ public class StreamState {
                     + sessionState.getNumOfPartitions() + "supplied as initializer.");
         }
         for (short vbid = 0; vbid < sessionState.getNumOfPartitions(); vbid++) {
-            StreamPartitionState partitionState = new StreamPartitionState(vbid, this);
+            StreamPartitionState partitionState = new StreamPartitionState(vbid);
             partitionStates.add(partitionState);
         }
     }
