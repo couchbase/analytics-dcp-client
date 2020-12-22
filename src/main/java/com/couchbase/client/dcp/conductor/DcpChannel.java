@@ -229,16 +229,15 @@ public class DcpChannel {
 
     public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,
             final long snapshotStartSeqno, final long snapshotEndSeqno, long manifestUid, int streamId, int[] cids) {
-        StreamPartitionState partitionState = sessionState.streamState(streamId).get(vbid);
+        final StreamState streamState = sessionState.streamState(streamId);
+        StreamPartitionState partitionState = streamState.get(vbid);
         if (getState() != State.CONNECTED) {
-            StreamEndEvent endEvent = partitionState.getEndEvent();
-            endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
+            StreamEndEvent endEvent = new StreamEndEvent(partitionState, streamState, StreamEndReason.CHANNEL_DROPPED);
             LOGGER.warn("Attempt to open stream on disconnected channel");
             env.eventBus().publish(endEvent);
             return;
         } else if (startSeqno == endSeqno) {
-            StreamEndEvent endEvent = partitionState.getEndEvent();
-            endEvent.setReason(StreamEndReason.OK);
+            StreamEndEvent endEvent = new StreamEndEvent(partitionState, streamState, StreamEndReason.OK);
             LOGGER.warn(
                     "Attempt to open stream {} against {} with vbid {} with no requested sequences (start == end) {}",
                     streamId, channel.remoteAddress(), vbid, startSeqno);

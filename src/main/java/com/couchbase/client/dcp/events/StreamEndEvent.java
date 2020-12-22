@@ -18,10 +18,10 @@ public class StreamEndEvent implements PartitionDcpEvent {
     private boolean seqRequested;
     private int attempts = 0;
 
-    public StreamEndEvent(StreamPartitionState state, StreamState stream) {
+    public StreamEndEvent(StreamPartitionState state, StreamState stream, StreamEndReason reason) {
         this.state = state;
         this.stream = stream;
-        reason = StreamEndReason.UNKNOWN;
+        this.reason = reason;
     }
 
     @Override

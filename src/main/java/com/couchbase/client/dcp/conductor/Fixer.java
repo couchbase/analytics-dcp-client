@@ -39,7 +39,7 @@ public class Fixer implements Runnable, SystemEventHandler {
     private static final int MAX_REATTEMPTS = 100;
     private final Conductor conductor;
     private final UnexpectedFailureEvent failure = new UnexpectedFailureEvent();
-    private Span nextFailed = DcpEvent.ELAPSED;
+    private Span nextFailed = Span.ELAPSED;
     private volatile boolean running;
 
     // unbounded
@@ -110,7 +110,7 @@ public class Fixer implements Runnable, SystemEventHandler {
         if (backlog.isEmpty() || !nextFailed.elapsed()) {
             return;
         }
-        nextFailed = DcpEvent.ELAPSED;
+        nextFailed = Span.ELAPSED;
         // we don't want to process entries we push back onto the backlog; remember the size
         int size = backlog.size();
         for (int i = 0; i < size; i++) {
@@ -155,13 +155,14 @@ public class Fixer implements Runnable, SystemEventHandler {
                     LOGGER.info("Handling {}", event);
                     fixDroppedChannel((ChannelDroppedEvent) event);
                     break;
+                case OPEN_STREAM_ROLLBACK_RESPONSE:
+                    LOGGER.info("Handling {}", event);
+                    // abort all, close the channels
+                    conductor.disconnect(true);
+                    break;
                 case OPEN_STREAM_RESPONSE:
                     OpenStreamResponse response = (OpenStreamResponse) event;
-                    if (response.getStatus() == MemcachedStatus.ROLLBACK) {
-                        LOGGER.info("Handling {}", event);
-                        // abort all, close the channels
-                        conductor.disconnect(true);
-                    } else if (response.getStatus() == MemcachedStatus.MANIFEST_IS_AHEAD) {
+                    if (response.getStatus() == MemcachedStatus.MANIFEST_IS_AHEAD) {
                         if (response.delay().elapsed()) {
                             LOGGER.info("Handling {}", event);
                             try {
@@ -452,8 +453,7 @@ public class Fixer implements Runnable, SystemEventHandler {
     private void putPartitionInQueue(DcpChannel channel, StreamState ss, short vb) {
         StreamPartitionState state = ss.get(vb);
         state.setState(StreamPartitionState.DISCONNECTED);
-        StreamEndEvent endEvent = state.getEndEvent();
-        endEvent.setReason(StreamEndReason.CHANNEL_DROPPED);
+        StreamEndEvent endEvent = new StreamEndEvent(state, ss, StreamEndReason.CHANNEL_DROPPED);
         endEvent.setFailoverLogsRequested(channel.getFailoverLogRequests()[vb]);
         endEvent.setSeqRequested(!channel.isStateFetched(ss.streamId()));
         conductor.getEnv().eventBus().publish(endEvent);
@@ -462,13 +462,14 @@ public class Fixer implements Runnable, SystemEventHandler {
     @Override
     public void onEvent(DcpEvent event) {
         if (running) {
-            if (event.getType() == DcpEvent.Type.OPEN_STREAM_RESPONSE) {
+            if (event.getType() == DcpEvent.Type.OPEN_STREAM_ROLLBACK_RESPONSE) {
+                inbox.clear();
+            } else if (event.getType() == DcpEvent.Type.OPEN_STREAM_RESPONSE) {
                 OpenStreamResponse response = (OpenStreamResponse) event;
-                if (response.getStatus() == MemcachedStatus.ROLLBACK) {
-                    inbox.clear();
-                } else if (response.getStatus() == MemcachedStatus.SUCCESS) {
+                if (response.getStatus() == MemcachedStatus.SUCCESS) {
                     return;
                 }
+                // TODO(mblow): what should we be doing for non-rollback open stream failures??
             }
             inbox.offer(event); // NOSONAR: This will always succeed as the inbox is unbounded
             if (!running) {

@@ -14,6 +14,7 @@ import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DcpAckHandle;
 import com.couchbase.client.dcp.events.OpenStreamResponse;
+import com.couchbase.client.dcp.events.OpenStreamRollbackResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
@@ -106,13 +107,14 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         int streamId = DcpOpenStreamResponse.streamId(buf);
         final StreamState ss = channel.getSessionState().streamState(streamId);
         StreamPartitionState partitionState = ss.get(vbid);
-        OpenStreamResponse response = partitionState.getOpenStreamResponse();
         short status = MessageUtil.getStatus(buf);
+        OpenStreamResponse response;
         if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
             LOGGER.trace("OpenStream {} (0x{}) for vbucket {} on stream {}", MemcachedStatus.toString(status),
                     Integer.toHexString(status), vbid, ss.streamId());
         }
         if (status == MemcachedStatus.SUCCESS) {
+            response = new OpenStreamResponse(partitionState, status);
             synchronized (channel) {
                 if (channel.openStreams()[vbid] == null || !channel.openStreams()[vbid].contains(ss.streamId())) {
                     if (ss.get(vbid).getState() == StreamPartitionState.DISCONNECTED
@@ -129,13 +131,13 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         } else {
             // Failure
             if (status == MemcachedStatus.ROLLBACK) {
-                response.setRollbackSeq(DcpOpenStreamResponse.rollbackSeqno(buf));
+                response = new OpenStreamRollbackResponse(partitionState, DcpOpenStreamResponse.rollbackSeqno(buf));
+            } else {
+                response = new OpenStreamResponse(partitionState, status);
             }
             clearOpen(ss, vbid);
             partitionState.setState(StreamPartitionState.DISCONNECTED);
         }
-        response.setChannel(channel);
-        response.setStatus(status);
         channel.getEnv().eventBus().publish(response);
     }
 
@@ -199,11 +201,11 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     private void handleDcpStreamEndMessage(ByteBuf buf) {
         short vbid = DcpStreamEndMessage.vbucket(buf);
-        clearOpen(MessageUtil.streamState(buf, channel), vbid);
+        final StreamState streamState = MessageUtil.streamState(buf, channel);
+        clearOpen(streamState, vbid);
         StreamEndReason reason = DcpStreamEndMessage.reason(buf);
-        StreamPartitionState state = MessageUtil.streamState(buf, channel).get(vbid);
-        StreamEndEvent endEvent = state.getEndEvent();
-        endEvent.setReason(reason);
+        StreamPartitionState state = streamState.get(vbid);
+        StreamEndEvent endEvent = new StreamEndEvent(state, streamState, reason);
         if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
             LOGGER.debug("Server closed Stream on vbid {} with reason {}", vbid, reason);
         }

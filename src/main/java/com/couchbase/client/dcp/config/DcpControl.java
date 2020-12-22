@@ -115,8 +115,15 @@ public class DcpControl implements Iterable<Map.Entry<String, String>> {
         /**
          * Compresses values using snappy compression before sending them. This parameter
          * is available starting in Couchbase 4.5.
+         * @deprecated use {@link #FORCE_VALUE_COMPRESSION} as replacement
          */
-        ENABLE_VALUE_COMPRESSION("enable_value_compression"),
+        @Deprecated ENABLE_VALUE_COMPRESSION("enable_value_compression"),
+        /**
+         * Compresses values using snappy compression before sending them. Clients need
+         * to negotiate for snappy using HELO as a prerequisite to using this parameter.
+         * This parameter is available starting in Couchbase 5.5.
+         */
+        FORCE_VALUE_COMPRESSION("force_value_compression"),
         /**
          * Tells the server that the client can tolerate the server dropping the connection.
          * The server will only do this if the client cannot read data from the stream fast

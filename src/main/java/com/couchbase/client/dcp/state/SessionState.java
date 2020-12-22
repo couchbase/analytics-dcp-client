@@ -68,12 +68,11 @@ public class SessionState {
 
     @Override
     public String toString() {
-        return "SessionState{" + "numPartitions=" + numPartitions + ", uuid='" + uuid + '\'' + ", streams="
+        return "SessionState{" + "numPartitions=" + numPartitions + ", uuid='" + uuid + '\'' + ", streams=["
                 + Stream.of(streams)
-                        .map(ss -> "{ streamId : " + ss.streamId() + ", collectionId : 0x"
-                                + Integer.toHexString(ss.collectionId()) + " }")
+                        .map(ss -> '"' + ss.streamId() + ":0x" + Integer.toHexString(ss.collectionId()) + '"')
                         .collect(Collectors.joining(", "))
-                + '}';
+                + "]}";
     }
 
     public void setConnected(String uuid) {

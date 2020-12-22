@@ -4,19 +4,21 @@
 package com.couchbase.client.dcp.state;
 
 import static com.couchbase.client.dcp.util.MathUtil.maxUnsigned;
+import static org.apache.hyracks.util.Span.ELAPSED;
 
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
+import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.dcp.events.OpenStreamResponse;
-import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpSystemEvent;
+import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -59,9 +61,7 @@ public class StreamPartitionState {
 
     private long manifestUid;
 
-    private final StreamEndEvent endEvent;
-
-    private final OpenStreamResponse openStreamResponse;
+    private Span delay;
 
     /**
      * Initialize a new partition state.
@@ -69,8 +69,6 @@ public class StreamPartitionState {
     public StreamPartitionState(short vbid, StreamState stream) {
         this.vbid = vbid;
         state = DISCONNECTED;
-        endEvent = new StreamEndEvent(this, stream);
-        openStreamResponse = new OpenStreamResponse(this, stream.streamId());
         sessionState = stream.session().get(vbid);
     }
 
@@ -239,14 +237,6 @@ public class StreamPartitionState {
         return tree;
     }
 
-    public StreamEndEvent getEndEvent() {
-        return endEvent;
-    }
-
-    public OpenStreamResponse getOpenStreamResponse() {
-        return openStreamResponse;
-    }
-
     public void beginOutOfOrder() {
         osoSnapshot = true;
         osoMaxSeqno = 0;
@@ -268,5 +258,24 @@ public class StreamPartitionState {
     public void onSystemEvent(DcpSystemEvent event) {
         setSeqno(event.getSeqno());
         manifestUid = event.getManifestUid();
+    }
+
+    public void calculateNextDelay(short status) {
+        if (status == MemcachedStatus.SUCCESS) {
+            delay = ELAPSED;
+        } else {
+            if (delay.getSpanNanos() == 0) {
+                // start with 1s
+                delay = Span.start(1, TimeUnit.SECONDS);
+            } else {
+                // double the delay, capping at 64s
+                delay = Span.start(Long.min(delay.getSpanNanos() * 2, TimeUnit.SECONDS.toNanos(64)),
+                        TimeUnit.NANOSECONDS);
+            }
+        }
+    }
+
+    public Span getDelay() {
+        return delay;
     }
 }
