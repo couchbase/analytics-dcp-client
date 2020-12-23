@@ -7,6 +7,7 @@ package com.couchbase.client.dcp.message;
 import static java.util.Objects.requireNonNull;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -240,11 +241,18 @@ public class CollectionsManifest {
 
     @Override
     public String toString() {
+        return "CollectionsManifest{" + "uid=0x" + Long.toUnsignedString(uid, 16) + '}';
+    }
+
+    public String toDetailedString() {
         return "CollectionsManifest{" + "uid=0x" + Long.toUnsignedString(uid, 16) + ", scopes=" + scopesById.values()
                 + ", collections=" + collectionsById.values() + '}';
     }
 
     public static CollectionsManifest fromJson(byte[] jsonBytes) throws IOException {
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("fromJson: {}", new String(jsonBytes, StandardCharsets.UTF_8));
+        }
         ManifestJson manifestBinder = OBJECT_MAPPER.readValue(jsonBytes, ManifestJson.class);
         return manifestBinder.build(); // crazy inefficient, with all the map copying.
     }
