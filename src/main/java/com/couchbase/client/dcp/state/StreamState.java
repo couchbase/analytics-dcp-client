@@ -3,8 +3,7 @@
  */
 package com.couchbase.client.dcp.state;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -20,10 +19,6 @@ import org.apache.logging.log4j.Logger;
  */
 public class StreamState {
     private static final Logger LOGGER = LogManager.getLogger();
-    /**
-     * The maximum number of partitions that can be stored.
-     */
-    private static final int MAX_PARTITIONS = 1024;
 
     private final SessionState sessionState;
 
@@ -34,27 +29,28 @@ public class StreamState {
     /**
      * Contains states for each individual partition.
      */
-    private final List<StreamPartitionState> partitionStates;
+    private final StreamPartitionState[] partitionStates;
 
     private volatile CountDownLatch currentSeqLatch = new CountDownLatch(0);
 
     private volatile Throwable seqsRequestFailure;
 
     /**
-     * Initializes with an empty partition state for 1024 partitions.
+     * Initializes a StreamState
      */
-    public StreamState(int streamId, int cid, SessionState sessionState) {
+    public StreamState(int streamId, int cid, SessionState sessionState, short[] vbuckets) {
         this.streamId = streamId;
         this.cid = cid;
         this.sessionState = sessionState;
-        this.partitionStates = new ArrayList<>(MAX_PARTITIONS);
-        if (sessionState.getNumOfPartitions() > MAX_PARTITIONS) {
-            throw new IllegalArgumentException("Can only hold " + MAX_PARTITIONS + " partitions, "
-                    + sessionState.getNumOfPartitions() + "supplied as initializer.");
-        }
-        for (short vbid = 0; vbid < sessionState.getNumOfPartitions(); vbid++) {
-            StreamPartitionState partitionState = new StreamPartitionState(vbid);
-            partitionStates.add(partitionState);
+        this.partitionStates = new StreamPartitionState[sessionState.getNumOfPartitions()];
+        if (vbuckets.length > 0) {
+            for (short vbid : vbuckets) {
+                partitionStates[vbid] = new StreamPartitionState(vbid);
+            }
+        } else {
+            for (short vbid = 0; vbid < partitionStates.length; vbid++) {
+                partitionStates[vbid] = new StreamPartitionState(vbid);
+            }
         }
     }
 
@@ -71,7 +67,7 @@ public class StreamState {
      * @return the partition state for the given partition id.
      */
     public StreamPartitionState get(final int partition) {
-        return partitionStates.get(partition);
+        return partitionStates[partition];
     }
 
     /**
@@ -81,23 +77,23 @@ public class StreamState {
      * @param partitionState the partition state to override.
      */
     public void set(int partition, StreamPartitionState partitionState) {
-        partitionStates.set(partition, partitionState);
+        partitionStates[partition] = partitionState;
     }
 
     /**
      * Provides a stream over all partitions
      */
     public Stream<StreamPartitionState> partitionStream() {
-        return partitionStates.stream().filter(Objects::nonNull);
+        return Stream.of(partitionStates).filter(Objects::nonNull);
     }
 
     public int getNumOfPartitions() {
-        return partitionStates.size();
+        return partitionStates.length;
     }
 
     @Override
     public String toString() {
-        return "StreamState{" + "streamId=" + streamId + ", partitionStates=" + partitionStates + '}';
+        return "StreamState{" + "streamId=" + streamId + ", partitionStates=" + Arrays.toString(partitionStates) + '}';
     }
 
     public int streamId() {
@@ -130,8 +126,11 @@ public class StreamState {
     }
 
     public void setCurrentVBucketSeqnoInMaster(short vbid, long seqno) {
-        get(vbid).setCurrentVBucketSeqnoInMaster(seqno);
-        currentSeqLatch.countDown();
+        final StreamPartitionState ps = get(vbid);
+        if (ps != null) {
+            ps.setCurrentVBucketSeqnoInMaster(seqno);
+            currentSeqLatch.countDown();
+        }
     }
 
     public int collectionId() {

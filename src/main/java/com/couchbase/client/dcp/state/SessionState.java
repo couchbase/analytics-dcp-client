@@ -8,6 +8,7 @@ import static it.unimi.dsi.fastutil.objects.ObjectArrays.ensureCapacity;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -38,7 +39,7 @@ public class SessionState {
 
     private Throwable collectionsManifestFailure;
 
-    private final SessionPartitionState[] sessionPartitionState;
+    private final AtomicReferenceArray<SessionPartitionState> sessionPartitionState;
 
     private volatile StreamState[] streams = new StreamState[0];
 
@@ -47,10 +48,7 @@ public class SessionState {
      */
     public SessionState(int numPartitions, String uuid) {
         this.numPartitions = numPartitions;
-        this.sessionPartitionState = new SessionPartitionState[numPartitions];
-        for (int i = 0; i < numPartitions; i++) {
-            this.sessionPartitionState[i] = new SessionPartitionState((short) i);
-        }
+        this.sessionPartitionState = new AtomicReferenceArray<>(numPartitions);
         this.uuid = uuid;
         setConnected(uuid);
     }
@@ -136,8 +134,8 @@ public class SessionState {
         return streamId > streams.length ? null : streams[streamId - 1];
     }
 
-    public synchronized StreamState newStream(int streamId, int cid) {
-        final StreamState streamState = new StreamState(streamId, cid, this);
+    public synchronized StreamState newStream(int streamId, int cid, short... vbuckets) {
+        final StreamState streamState = new StreamState(streamId, cid, this, vbuckets);
         streams = ensureCapacity(streams, streamId);
         streams[streamId - 1] = streamState;
         return streamState;
@@ -148,7 +146,14 @@ public class SessionState {
     }
 
     public SessionPartitionState get(int vbid) {
-        return sessionPartitionState[vbid];
+        SessionPartitionState ps = sessionPartitionState.get(vbid);
+        if (ps == null) {
+            ps = new SessionPartitionState((short) vbid);
+            if (!sessionPartitionState.compareAndSet(vbid, null, ps)) {
+                ps = sessionPartitionState.get(vbid);
+            }
+        }
+        return ps;
     }
 
     public void waitTillFailoverUpdated(short vbid, long partitionRequestsTimeout) throws Throwable {
