@@ -3,15 +3,7 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
-import static com.couchbase.client.dcp.message.MessageUtil.DCP_DELETION_OPCODE;
-import static com.couchbase.client.dcp.message.MessageUtil.DCP_EXPIRATION_OPCODE;
-import static com.couchbase.client.dcp.message.MessageUtil.DCP_MUTATION_OPCODE;
-import static com.couchbase.client.dcp.message.MessageUtil.DCP_OSO_SNAPSHOT_MARKER_OPCODE;
-import static com.couchbase.client.dcp.message.MessageUtil.DCP_SEQNO_ADVANCED_OPCODE;
-import static com.couchbase.client.dcp.message.MessageUtil.DCP_SET_VBUCKET_STATE_OPCODE;
-import static com.couchbase.client.dcp.message.MessageUtil.DCP_SNAPSHOT_MARKER_OPCODE;
-import static com.couchbase.client.dcp.message.MessageUtil.DCP_STREAM_END_OPCODE;
-import static com.couchbase.client.dcp.message.MessageUtil.DCP_SYSTEM_EVENT_OPCODE;
+import static com.couchbase.client.dcp.message.MessageUtil.DCP_NOOP_OPCODE;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_DELETION;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_EXPIRATION;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_MUTATION;
@@ -21,6 +13,8 @@ import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_SET_VBUCKET_
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_SNAPSHOT_MARKER;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_STREAM_END;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_SYSTEM_EVENT;
+import static com.couchbase.client.dcp.message.MessageUtil.MAGIC_REQ;
+import static com.couchbase.client.dcp.message.MessageUtil.MAGIC_REQ_FLEX;
 import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_DELETION;
 import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_EXPIRATION;
 import static com.couchbase.client.dcp.message.MessageUtil.REQ_DCP_MUTATION;
@@ -261,9 +255,9 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
      * notify the producer, instead as the consumer we keep track of ACK bytes only notifying the producer once
      * we reach the configured watermark, which is a percentage of the configured connection buffer size.
      *
-     * Per https://github.com/couchbase/kv_engine/blob/master/docs/dcp/documentation/flow-control.md#buffering-messages,
-     * only Mutation, Deletion, Expiration, Snapshot Markers, OSO Snapshot Markers, Set VBucket State, and Stream End
-     * messages should be buffered, so only these messages are ACK'd.
+     * Per https://github.com/couchbase/kv_engine/blob/master/docs/dcp/documentation/flow-control.md#what-messages-must-be-acknowledged-by-dcp-clients,
+     * "Every DCP request message the server sends except for no-op requires acknowledgement", so only these messages
+     * are ACK'd.
      *
      * @param message the DCP message to ACK, if applicable based on type
      */
@@ -272,42 +266,37 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         if (!ackEnabled) {
             return;
         }
-        switch (message.getByte(1)) {
-            case DCP_OSO_SNAPSHOT_MARKER_OPCODE:
-            case DCP_MUTATION_OPCODE:
-            case DCP_DELETION_OPCODE:
-            case DCP_EXPIRATION_OPCODE:
-            case DCP_SNAPSHOT_MARKER_OPCODE:
-            case DCP_SET_VBUCKET_STATE_OPCODE:
-            case DCP_STREAM_END_OPCODE:
-            case DCP_SYSTEM_EVENT_OPCODE:
-            case DCP_SEQNO_ADVANCED_OPCODE:
-                final int ackBytes = message.readableBytes();
-                synchronized (this) {
-                    ackCounter += ackBytes;
-                    if (LOGGER.isTraceEnabled()) {
-                        LOGGER.trace("BufferAckCounter is now {} after += {} for opcode {}", ackCounter, ackBytes,
-                                MessageUtil.humanizeOpcode(message));
-                    }
-                    if (ackCounter >= ackWatermark) {
-                        env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
-                        LOGGER.debug("BufferAckWatermark ({}) reached on {}, acking {} bytes now with the server",
-                                ackWatermark, channel.remoteAddress(), ackCounter);
-                        ByteBuf buffer = channel.alloc().buffer();
-                        DcpBufferAckRequest.init(buffer);
-                        DcpBufferAckRequest.ackBytes(buffer, ackCounter);
-                        ChannelFuture future = channel.writeAndFlush(buffer);
-                        future.addListener(ackListener);
-                        ackCounter = 0;
-                    }
-                }
-                break;
-            default:
-                // no-op for non-ACKable messages
+        if (message.getByte(0) == MAGIC_REQ || message.getByte(0) == MAGIC_REQ_FLEX) {
+            final int ackBytes = message.readableBytes();
+            synchronized (this) {
+                ackCounter += ackBytes;
                 if (LOGGER.isTraceEnabled()) {
-                    LOGGER.trace("skipping ACK on non-ACKable message bytes {} opcode {}", message.readableBytes(),
+                    // we should never get called on a NOOP- sanity check that here if TRACE is enabled, since we
+                    // enable TRACE in many of regression tests, this should be adequate
+                    if (message.getByte(1) == DCP_NOOP_OPCODE) {
+                        throw new IllegalStateException("ack() called on NOOP");
+                    }
+                    LOGGER.trace("BufferAckCounter is now {} after += {} for opcode {}", ackCounter, ackBytes,
                             MessageUtil.humanizeOpcode(message));
                 }
+                if (ackCounter >= ackWatermark) {
+                    env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
+                    LOGGER.debug("BufferAckWatermark ({}) reached on {}, acking {} bytes now with the server",
+                            ackWatermark, channel.remoteAddress(), ackCounter);
+                    ByteBuf buffer = channel.alloc().buffer();
+                    DcpBufferAckRequest.init(buffer);
+                    DcpBufferAckRequest.ackBytes(buffer, ackCounter);
+                    ChannelFuture future = channel.writeAndFlush(buffer);
+                    future.addListener(ackListener);
+                    ackCounter = 0;
+                }
+            }
+        } else {
+            // no-op for non-ACKable messages
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("skipping ACK on non-ACKable message bytes {} opcode {}", message.readableBytes(),
+                        MessageUtil.humanizeOpcode(message));
+            }
         }
     }
 
