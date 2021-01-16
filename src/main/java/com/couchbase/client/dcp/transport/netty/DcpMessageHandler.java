@@ -32,6 +32,11 @@ import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_CLOSE;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_REQUEST;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.hyracks.util.LogRedactionUtil;
 
@@ -91,6 +96,9 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     private final DcpChannel dcpChannel;
     private final ChannelFutureListener ackListener;
 
+    private static final boolean ACK_SANITY = true; // TODO(mblow) MB-43719: disable, or enable only when TRACE
+    private static final Set<AckKey> globalPendingAck = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
     /**
      * Create a new message handler.
      *
@@ -148,6 +156,9 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case FLEX_REQ_DCP_MUTATION:
             case FLEX_REQ_DCP_DELETION:
             case FLEX_REQ_DCP_EXPIRATION:
+                if (ACK_SANITY && ackEnabled) {
+                    globalPendingAck.add(AckKey.from(message));
+                }
                 dataEventHandler.onEvent(this, message);
                 break;
 
@@ -163,6 +174,10 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case FLEX_REQ_OSO_SNAPSHOT_MARKER:
             case FLEX_REQ_SYSTEM_EVENT:
             case FLEX_REQ_SEQNO_ADVANCED:
+                if (ACK_SANITY && ackEnabled) {
+                    globalPendingAck.add(AckKey.from(message));
+                }
+                // fall-through
             case RES_STREAM_REQUEST:
             case RES_FAILOVER_LOG:
             case RES_STREAM_CLOSE:
@@ -272,16 +287,24 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         if (!ackEnabled) {
             return;
         }
-        if (message.getByte(0) == MAGIC_REQ || message.getByte(0) == MAGIC_REQ_FLEX) {
+        final byte magicByte = message.getByte(0);
+        if (magicByte == MAGIC_REQ || magicByte == MAGIC_REQ_FLEX) {
+            if (ACK_SANITY) {
+                if (!globalPendingAck.remove(AckKey.from(message))) {
+                    LOGGER.warn("acking non-pending message! {} release stack: {}", MessageUtil.humanize(message),
+                            Arrays.toString(new Throwable().getStackTrace()));
+                } else {
+                    LOGGER.debug("acking pending message {}", AckKey.from(message));
+                }
+            }
+            // we should never get called on a NOOP
+            if (message.getByte(1) == DCP_NOOP_OPCODE) {
+                throw new IllegalStateException("ack() called on NOOP");
+            }
             final int ackBytes = message.readableBytes();
             synchronized (this) {
                 ackCounter += ackBytes;
                 if (LOGGER.isTraceEnabled()) {
-                    // we should never get called on a NOOP- sanity check that here if TRACE is enabled, since we
-                    // enable TRACE in many of regression tests, this should be adequate
-                    if (message.getByte(1) == DCP_NOOP_OPCODE) {
-                        throw new IllegalStateException("ack() called on NOOP");
-                    }
                     LOGGER.trace("BufferAckCounter is now {} after += {} for opcode {}", ackCounter, ackBytes,
                             MessageUtil.humanizeOpcode(message));
                 }
@@ -296,12 +319,6 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                     future.addListener(ackListener);
                     ackCounter = 0;
                 }
-            }
-        } else {
-            // no-op for non-ACKable messages
-            if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("skipping ACK on non-ACKable message bytes {} opcode {}", message.readableBytes(),
-                        MessageUtil.humanizeOpcode(message));
             }
         }
     }
@@ -319,5 +336,57 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
 
     public DcpChannel getDcpChannel() {
         return dcpChannel;
+    }
+
+    public static boolean release(ByteBuf buffer) {
+        if (ACK_SANITY) {
+            try {
+                if (globalPendingAck.remove(AckKey.from(buffer))) {
+                    LOGGER.warn("released pending ack: {} release stack: {}", MessageUtil.humanize(buffer),
+                            Arrays.toString(new Throwable().getStackTrace()));
+                }
+            } catch (Throwable t) {
+                LOGGER.debug("ignoring exception logging pending ack", t);
+            }
+        }
+        return ReferenceCountUtil.release(buffer);
+    }
+
+    private static class AckKey {
+        private final int messageHash;
+        private final byte messageOpcode;
+        private final int messageReadableBytes;
+
+        AckKey(ByteBuf message) {
+            this.messageHash = System.identityHashCode(message);
+            this.messageOpcode = message.getByte(1);
+            this.messageReadableBytes = message.readableBytes();
+        }
+
+        static AckKey from(ByteBuf message) {
+            return new AckKey(message);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o == null || getClass() != o.getClass())
+                return false;
+            AckKey ackKey = (AckKey) o;
+            return messageHash == ackKey.messageHash && messageOpcode == ackKey.messageOpcode
+                    && messageReadableBytes == ackKey.messageReadableBytes;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(messageHash, messageOpcode, messageReadableBytes);
+        }
+
+        @Override
+        public String toString() {
+            return "{" + "address=0x" + Integer.toHexString(messageHash) + ", opcode="
+                    + MessageUtil.humanizeOpcode(messageOpcode) + ", readableBytes=" + messageReadableBytes + '}';
+        }
     }
 }
