@@ -7,6 +7,7 @@ import static com.couchbase.client.dcp.message.MessageUtil.DCP_MUTATION_OPCODE;
 
 import java.nio.charset.Charset;
 
+import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
@@ -75,7 +76,7 @@ public enum DcpMutationMessage {
 
     public static String toString(final ByteBuf buffer, boolean collections) {
         return "MutationMessage [key: \"" + keyString(buffer, collections) + "\", "
-                + (collections ? "cid: 0x" + Integer.toUnsignedString(cid(buffer), 16) + ", " : "") + "vbid: "
+                + (collections ? "cid: " + CollectionsUtil.displayCid(cid(buffer)) + ", " : "") + "vbid: "
                 + partition(buffer) + ", cas: " + cas(buffer) + ", bySeqno: " + bySeqno(buffer) + ", revSeqno: "
                 + revisionSeqno(buffer) + ", flags: " + flags(buffer) + ", expiry: " + expiry(buffer) + ", lockTime: "
                 + lockTime(buffer) + ", clength: " + content(buffer).readableBytes() + "]";

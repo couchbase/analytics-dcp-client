@@ -19,6 +19,7 @@ import org.apache.hyracks.util.fastutil.Collectors;
 
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -122,8 +123,8 @@ public class CollectionsManifest {
 
         @Override
         public String toString() {
-            return "CollectionInfo{" + "id=0x" + Integer.toUnsignedString(id, 16) + ", name='" + name + '\''
-                    + ", scope=" + scope + ", maxTtl=" + (maxTtl == MAX_TTL_UNDEFINED ? "<UNDEFINED>" : maxTtl) + '}';
+            return "CollectionInfo{" + "id=" + CollectionsUtil.displayCid(id) + ", name='" + name + '\'' + ", scope="
+                    + scope + ", maxTtl=" + (maxTtl == MAX_TTL_UNDEFINED ? "<UNDEFINED>" : maxTtl) + '}';
         }
     }
 
@@ -302,7 +303,7 @@ public class CollectionsManifest {
             result.name = info.name;
             result.collections = info.collectionsByName.values().stream().map(collectionInfo -> {
                 CollectionJson collectionResult = new CollectionJson();
-                collectionResult.uid = Integer.toUnsignedString(collectionInfo.id, 16);
+                collectionResult.uid = CollectionsUtil.encodeCid(collectionInfo.id);
                 collectionResult.max_ttl = collectionInfo.maxTtl;
                 collectionResult.name = collectionInfo.name;
                 return collectionResult;

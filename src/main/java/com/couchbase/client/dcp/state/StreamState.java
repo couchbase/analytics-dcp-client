@@ -93,7 +93,7 @@ public class StreamState {
 
     @Override
     public String toString() {
-        return "StreamState{" + "streamId=" + streamId + ", partitionStates=" + Arrays.toString(partitionStates) + '}';
+        return "StreamState{" + "sid=" + streamId + ", partitionStates=" + Arrays.toString(partitionStates) + '}';
     }
 
     public int streamId() {

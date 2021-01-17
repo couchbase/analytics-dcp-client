@@ -8,6 +8,7 @@ import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetry;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -31,6 +32,7 @@ import com.couchbase.client.dcp.state.StreamRequest;
 import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.DcpPipeline;
+import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.node.ArrayNode;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.node.ObjectNode;
@@ -246,9 +248,10 @@ public class DcpChannel {
         }
         LOGGER.debug(
                 "Opening stream {} against {} with vbid {} vbuuid {} startSeqno {} "
-                        + "endSeqno {} snapshotStartSeqno {} snapshotEndSeqno {} manifestUid {}",
+                        + "endSeqno {} snapshotStartSeqno {} snapshotEndSeqno {} manifestUid {} cids {}",
                 streamId, channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno,
-                snapshotEndSeqno, manifestUid);
+                snapshotEndSeqno, manifestUid,
+                IntStream.of(cids).mapToObj(CollectionsUtil::displayCid).collect(Collectors.toList()));
         partitionState.setState(StreamPartitionState.CONNECTING);
         if (openStreams[vbid] == null) {
             openStreams[vbid] = new IntOpenHashSet();
@@ -267,7 +270,7 @@ public class DcpChannel {
             ObjectMapper om = new ObjectMapper();
             ObjectNode json = om.createObjectNode();
             ArrayNode an = json.putArray("collections");
-            IntStream.of(cids).mapToObj(uid -> Integer.toUnsignedString(uid, 16)).forEach(an::add);
+            IntStream.of(cids).mapToObj(CollectionsUtil::encodeCid).forEach(an::add);
             if (manifestUid != 0) {
                 json.put("uid", Long.toUnsignedString(manifestUid, 16));
             }

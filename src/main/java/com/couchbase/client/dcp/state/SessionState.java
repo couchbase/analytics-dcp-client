@@ -18,6 +18,7 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.message.CollectionsManifest;
+import com.couchbase.client.dcp.util.CollectionsUtil;
 
 /**
  * Holds the state information for the current session (all partitions involved).
@@ -68,7 +69,7 @@ public class SessionState {
     public String toString() {
         return "SessionState{" + "numPartitions=" + numPartitions + ", uuid='" + uuid + '\'' + ", streams=["
                 + Stream.of(streams)
-                        .map(ss -> '"' + ss.streamId() + ":0x" + Integer.toHexString(ss.collectionId()) + '"')
+                        .map(ss -> '"' + ss.streamId() + ":" + CollectionsUtil.displayCid(ss.collectionId()) + '"')
                         .collect(Collectors.joining(", "))
                 + "]}";
     }

@@ -132,8 +132,7 @@ public class Conductor {
     public void requestSeqnos(int streamId) {
         short[] vbuckets = env.vbuckets();
         final StreamState streamState = sessionState.streamState(streamId);
-        LOGGER.debug("Getting sequence numbers for {} vbuckets for cid 0x{} on stream {}", vbuckets.length,
-                Integer.toUnsignedString(streamState.collectionId()), streamId);
+        LOGGER.debug("Getting sequence numbers for {} vbuckets on sid {}", vbuckets.length, streamId);
         streamState.currentSeqRequest(vbuckets.length);
         synchronized (channels) {
             for (DcpChannel channel : channels.values()) {

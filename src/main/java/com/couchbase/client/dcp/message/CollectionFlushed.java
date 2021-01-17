@@ -4,6 +4,7 @@
 
 package com.couchbase.client.dcp.message;
 
+import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public class CollectionFlushed extends DcpSystemEvent {
@@ -43,7 +44,7 @@ public class CollectionFlushed extends DcpSystemEvent {
     @Override
     public String toString() {
         return "CollectionFlushed{" + "newManifestUid=0x" + Long.toUnsignedString(newManifestUid, 16)
-                + ", collectionId=0x" + Integer.toUnsignedString(collectionId, 16) + ", scopeId=0x"
+                + ", collectionId=" + CollectionsUtil.displayCid(collectionId) + ", scopeId=0x"
                 + Integer.toUnsignedString(scopeId, 16) + ", vbucket=" + getVbucket() + ", seqno=" + getSeqno()
                 + ", version=" + getVersion() + '}';
     }

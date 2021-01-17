@@ -3,6 +3,9 @@
  */
 package com.couchbase.client.dcp.message;
 
+import java.util.ArrayList;
+import java.util.Collection;
+
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public class DcpOsoSnapshotMarkerMessage {
@@ -44,8 +47,24 @@ public class DcpOsoSnapshotMarkerMessage {
         return (flags(event) & FLAG_END) != 0;
     }
 
+    public static String humanizeFlags(ByteBuf event) {
+        int flags = flags(event);
+        Collection<String> setFlags = new ArrayList<>();
+        if ((flags & FLAG_BEGIN) != 0) {
+            flags &= ~FLAG_BEGIN;
+            setFlags.add("BEGIN");
+        }
+        if ((flags & FLAG_END) != 0) {
+            flags &= ~FLAG_END;
+            setFlags.add("END");
+        }
+        if (flags != 0) {
+            setFlags.add("<UNKNOWN FLAG(S): 0x" + Integer.toUnsignedString(flags, 16) + ">");
+        }
+        return setFlags.toString();
+    }
+
     public static String toString(final ByteBuf buffer) {
-        return "DcpOsoSnapshotMarker [vbucket: " + vbucket(buffer) + ", flags: " + flags(buffer) + ", begin: "
-                + begin(buffer) + ", end: " + end(buffer) + "]";
+        return "DcpOsoSnapshotMarker [vbucket: " + vbucket(buffer) + ", flags: " + humanizeFlags(buffer) + "]";
     }
 }

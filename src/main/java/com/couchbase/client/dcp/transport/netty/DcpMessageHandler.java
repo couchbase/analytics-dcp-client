@@ -48,7 +48,9 @@ import com.couchbase.client.dcp.message.DcpBufferAckRequest;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpNoopResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
+import com.couchbase.client.dcp.message.DcpOsoSnapshotMarkerMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
+import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.Channel;
@@ -199,24 +201,28 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case FLEX_REQ_DCP_MUTATION:
             case FLEX_REQ_DCP_DELETION:
             case FLEX_REQ_DCP_EXPIRATION:
-                LOGGER.trace("{} sid {} vbid {} seq {} cid 0x{} key {}", MessageUtil.humanizeOpcode(message),
+                LOGGER.trace("{} sid {} vbid {} seq {} cid {} key {}", MessageUtil.humanizeOpcode(message),
                         MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message),
-                        DcpMutationMessage.bySeqno(message), Integer.toUnsignedString(MessageUtil.getCid(message), 16),
+                        DcpMutationMessage.bySeqno(message), CollectionsUtil.displayCid(MessageUtil.getCid(message)),
                         LogRedactionUtil
                                 .userData(MessageUtil.getKeyAsString(message, dcpChannel.isCollectionCapable())));
                 break;
             case REQ_DCP_MUTATION:
             case REQ_DCP_DELETION:
             case REQ_DCP_EXPIRATION:
-                LOGGER.trace("{} vbid {} seq {} cid 0x{} key {}", MessageUtil.humanizeOpcode(message),
+                LOGGER.trace("{} vbid {} seq {} cid {} key {}", MessageUtil.humanizeOpcode(message),
                         MessageUtil.getVbucket(message), DcpMutationMessage.bySeqno(message),
-                        Integer.toUnsignedString(MessageUtil.getCid(message), 16), LogRedactionUtil
+                        CollectionsUtil.displayCid(MessageUtil.getCid(message)), LogRedactionUtil
                                 .userData(MessageUtil.getKeyAsString(message, dcpChannel.isCollectionCapable())));
+                break;
+            case FLEX_REQ_OSO_SNAPSHOT_MARKER:
+                LOGGER.trace("{} sid {} vbid {} flags {}", MessageUtil.humanizeOpcode(message),
+                        MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message),
+                        DcpOsoSnapshotMarkerMessage.humanizeFlags(message));
                 break;
             case FLEX_REQ_STREAM_END:
             case FLEX_REQ_SNAPSHOT_MARKER:
             case FLEX_REQ_SET_VBUCKET_STATE:
-            case FLEX_REQ_OSO_SNAPSHOT_MARKER:
             case FLEX_REQ_SYSTEM_EVENT:
             case FLEX_REQ_SEQNO_ADVANCED:
                 LOGGER.trace("{} sid {} vbid {}", MessageUtil.humanizeOpcode(message),

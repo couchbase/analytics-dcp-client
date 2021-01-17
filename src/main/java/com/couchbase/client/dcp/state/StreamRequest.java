@@ -6,6 +6,8 @@ package com.couchbase.client.dcp.state;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import com.couchbase.client.dcp.util.CollectionsUtil;
+
 public class StreamRequest {
     private final short partition;
     private final long startSeqno;
@@ -70,8 +72,7 @@ public class StreamRequest {
     public String toString() {
         return "partition = " + partition + " startSeqno = " + startSeqno + " endSeqno = " + endSeqno
                 + " vbucketUuid = " + vbucketUuid + " snapshotStartSeqno = " + snapshotStartSeqno
-                + " snapshotEndSeqno = " + snapshotEndSeqno + " manifestUid = " + manifestUid + " streamId = "
-                + streamId + " cids = "
-                + IntStream.of(cids).mapToObj(cid -> Integer.toUnsignedString(cid, 16)).collect(Collectors.toList());
+                + " snapshotEndSeqno = " + snapshotEndSeqno + " manifestUid = " + manifestUid + " sid = " + streamId
+                + " cids = " + IntStream.of(cids).mapToObj(CollectionsUtil::displayCid).collect(Collectors.toList());
     }
 }
