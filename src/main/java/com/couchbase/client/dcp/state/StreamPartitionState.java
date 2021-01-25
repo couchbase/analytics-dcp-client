@@ -25,7 +25,7 @@ import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class StreamPartitionState {
     private static final Logger LOGGER = LogManager.getLogger();
-    public static final long INVALID = -1L;
+    public static final long INVALID_SEQNO = -1L;
     public static final byte DISCONNECTED = 0x00;
     public static final byte CONNECTING = 0x02;
     public static final byte CONNECTED = 0x03;
@@ -33,7 +33,7 @@ public class StreamPartitionState {
     public static final byte CONNECTED_OSO = 0x05;
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private volatile long currentVBucketSeqnoInMaster = INVALID;
+    private volatile long currentVBucketSeqnoInMaster = INVALID_SEQNO;
 
     private final short vbid;
 
@@ -208,16 +208,25 @@ public class StreamPartitionState {
 
     public void beginOutOfOrder() {
         state = CONNECTED_OSO;
-        osoMaxSeqno = 0;
+        osoMaxSeqno = seqno;
     }
 
+    /**
+     * @return the new seqno due to the completed OSO snapshot, or {@link StreamPartitionState#INVALID_SEQNO} (i.e. -1)
+     *         if the OSO snapshot was empty
+     */
     public long endOutOfOrder() {
         // On disconnect after successfully receiving the OSO end, reconnect
         // with a stream-request where start=X, snap.start=X, snap.end=X
         useStreamRequest();
         state = CONNECTED;
-        advanceSeqno(osoMaxSeqno);
-        return osoMaxSeqno;
+        boolean noop = osoMaxSeqno == seqno;
+        if (!noop) {
+            setSeqno(osoMaxSeqno);
+        }
+        setSnapshotStartSeqno(osoMaxSeqno);
+        setSnapshotEndSeqno(osoMaxSeqno);
+        return noop ? INVALID_SEQNO : osoMaxSeqno;
     }
 
     public boolean isOsoSnapshot() {
