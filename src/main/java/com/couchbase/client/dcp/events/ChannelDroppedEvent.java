@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.events;
 
@@ -15,6 +15,7 @@ import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 public class ChannelDroppedEvent implements DcpEvent {
     private static final Logger LOGGER = LogManager.getLogger();
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final DcpChannel channel;
     private final Throwable cause;
     private int fixAttempts = 0;
@@ -47,9 +48,8 @@ public class ChannelDroppedEvent implements DcpEvent {
 
     @Override
     public String toString() {
-        ObjectMapper mapper = new ObjectMapper();
         try {
-            return mapper.writeValueAsString(toMap());
+            return OBJECT_MAPPER.writeValueAsString(toMap());
         } catch (Exception e) {
             LOGGER.log(Level.WARN, e);
             return "{\"" + this.getClass().getSimpleName() + "\":\"" + e.toString() + "\"}";

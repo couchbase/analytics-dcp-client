@@ -25,6 +25,7 @@ import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.dcp.message.CollectionsManifest;
+import com.couchbase.client.dcp.message.DcpDataMessage;
 import com.couchbase.client.dcp.message.DcpDeletionMessage;
 import com.couchbase.client.dcp.message.DcpExpirationMessage;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
@@ -203,7 +204,7 @@ public class Client {
      * The following messages can happen and should be handled depending on the needs of the
      * client:
      *
-     * - {@link DcpMutationMessage}: A mtation has occurred. Needs to be acknowledged.
+     * - {@link DcpMutationMessage}: A mutation has occurred. Needs to be acknowledged.
      * - {@link DcpDeletionMessage}: A deletion has occurred. Needs to be acknowledged.
      * - {@link DcpExpirationMessage}: An expiration has occurred. Note that current server versions
      * (as of 4.5.0) are not emitting this event, but in any case you should at least release it to
@@ -218,14 +219,17 @@ public class Client {
      */
     public void dataEventHandler(final ClientDataEventHandler dataEventHandler) {
         env.setDataEventHandler((ackHandle, event) -> {
-            if (DcpMutationMessage.is(event)) {
-                short partition = DcpMutationMessage.partition(event);
-                StreamPartitionState ps = MessageUtil.streamState(event, sessionState()).get(partition);
-                ps.setSeqno(DcpMutationMessage.bySeqno(event));
-            } else if (DcpDeletionMessage.is(event)) {
-                short partition = DcpDeletionMessage.partition(event);
-                StreamPartitionState ps = MessageUtil.streamState(event, sessionState()).get(partition);
-                ps.setSeqno(DcpDeletionMessage.bySeqno(event));
+            switch (event.getByte(1)) {
+                case MessageUtil.DCP_MUTATION_OPCODE:
+                case MessageUtil.DCP_DELETION_OPCODE:
+                case MessageUtil.DCP_EXPIRATION_OPCODE:
+                    short partition = MessageUtil.getVbucket(event);
+                    StreamPartitionState ps = MessageUtil.streamState(event, sessionState()).get(partition);
+                    ps.setSeqno(DcpDataMessage.bySeqno(event));
+                    break;
+                default:
+                    LOGGER.error("unrecognized data event {}", MessageUtil.humanize(event));
+                    throw new IllegalArgumentException("unrecognized data event: " + MessageUtil.humanize(event));
             }
             dataEventHandler.onEvent(ackHandle, event);
         });

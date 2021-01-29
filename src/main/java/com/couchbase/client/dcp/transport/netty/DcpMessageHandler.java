@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.transport.netty;
 
@@ -50,7 +50,7 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.message.DcpBufferAckRequest;
-import com.couchbase.client.dcp.message.DcpMutationMessage;
+import com.couchbase.client.dcp.message.DcpDataMessage;
 import com.couchbase.client.dcp.message.DcpNoopResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
 import com.couchbase.client.dcp.message.DcpOsoSnapshotMarkerMessage;
@@ -218,7 +218,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case FLEX_REQ_DCP_EXPIRATION:
                 LOGGER.trace("{} sid {} vbid {} seq {} cid {} key {}", MessageUtil.humanizeOpcode(message),
                         MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message),
-                        DcpMutationMessage.bySeqno(message), CollectionsUtil.displayCid(MessageUtil.getCid(message)),
+                        DcpDataMessage.bySeqno(message), CollectionsUtil.displayCid(MessageUtil.getCid(message)),
                         LogRedactionUtil
                                 .userData(MessageUtil.getKeyAsString(message, dcpChannel.isCollectionCapable())));
                 break;
@@ -226,7 +226,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case REQ_DCP_DELETION:
             case REQ_DCP_EXPIRATION:
                 LOGGER.trace("{} vbid {} seq {} cid {} key {}", MessageUtil.humanizeOpcode(message),
-                        MessageUtil.getVbucket(message), DcpMutationMessage.bySeqno(message),
+                        MessageUtil.getVbucket(message), DcpDataMessage.bySeqno(message),
                         CollectionsUtil.displayCid(MessageUtil.getCid(message)), LogRedactionUtil
                                 .userData(MessageUtil.getKeyAsString(message, dcpChannel.isCollectionCapable())));
                 break;
