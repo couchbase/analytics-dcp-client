@@ -96,8 +96,14 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     private final DcpChannel dcpChannel;
     private final ChannelFutureListener ackListener;
 
-    private static final boolean ACK_SANITY = true; // TODO(mblow) MB-43719: disable, or enable only when TRACE
+    private static final boolean ACK_SANITY = LOGGER.isTraceEnabled();
     private static final Set<AckKey> globalPendingAck = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+    static {
+        if (ACK_SANITY) {
+            LOGGER.warn("ACK sanity checks enabled; violations will be logged here");
+        }
+    }
 
     /**
      * Create a new message handler.
@@ -290,11 +296,12 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         final byte magicByte = message.getByte(0);
         if (magicByte == MAGIC_REQ || magicByte == MAGIC_REQ_FLEX) {
             if (ACK_SANITY) {
-                if (!globalPendingAck.remove(AckKey.from(message))) {
-                    LOGGER.warn("acking non-pending message! {} release stack: {}", MessageUtil.humanize(message),
-                            Arrays.toString(new Throwable().getStackTrace()));
+                final AckKey ackKey = AckKey.from(message);
+                if (!globalPendingAck.remove(ackKey)) {
+                    LOGGER.warn("acking non-pending message! key={} message={} stack={}", ackKey,
+                            MessageUtil.humanize(message), Arrays.toString(new Throwable().getStackTrace()));
                 } else {
-                    LOGGER.debug("acking pending message {}", AckKey.from(message));
+                    LOGGER.debug("acking pending message {}", ackKey);
                 }
             }
             // we should never get called on a NOOP
@@ -341,9 +348,10 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     public static boolean release(ByteBuf buffer) {
         if (ACK_SANITY) {
             try {
-                if (globalPendingAck.remove(AckKey.from(buffer))) {
-                    LOGGER.warn("released pending ack: {} release stack: {}", MessageUtil.humanize(buffer),
-                            Arrays.toString(new Throwable().getStackTrace()));
+                final AckKey ackKey = AckKey.from(buffer);
+                if (globalPendingAck.remove(ackKey)) {
+                    LOGGER.warn("released pending ack: key={} message={} stack={}", ackKey,
+                            MessageUtil.humanize(buffer), Arrays.toString(new Throwable().getStackTrace()));
                 }
             } catch (Throwable t) {
                 LOGGER.debug("ignoring exception logging pending ack", t);
