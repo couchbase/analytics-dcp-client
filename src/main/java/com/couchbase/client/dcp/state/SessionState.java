@@ -69,7 +69,7 @@ public class SessionState {
     public String toString() {
         return "SessionState{" + "numPartitions=" + numPartitions + ", uuid='" + uuid + '\'' + ", streams=["
                 + Stream.of(streams)
-                        .map(ss -> '"' + ss.streamId() + ":" + CollectionsUtil.displayCid(ss.collectionId()) + '"')
+                        .map(ss -> "\"" + ss.streamId() + ":" + CollectionsUtil.displayCid(ss.collectionId()) + '"')
                         .collect(Collectors.joining(", "))
                 + "]}";
     }
