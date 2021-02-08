@@ -173,13 +173,13 @@ public class Conductor {
             CouchbaseBucketConfig config = configProvider.config();
             int index = config.nodeIndexForMaster(partition, false);
             if (index < 0) {
-                throw new CouchbaseException(
-                        "partition " + partition + " does not have a master node; config: " + config);
+                LOGGER.debug("partition {} does not have a master node; config: {}", partition, config);
+                throw new CouchbaseException("partition " + partition + " does not have a master node");
             }
             DcpChannel theChannel = dcpChannelForNode(partition, config.nodeAtIndex(index));
             if (theChannel == null) {
-                throw new MasterDcpChannelNotFoundException(
-                        "master DcpChannel not found for partition " + partition + "; config: " + config);
+                LOGGER.debug("master DcpChannel not found for partition {}; config: {}", partition, config);
+                throw new MasterDcpChannelNotFoundException("master DcpChannel not found for partition " + partition);
             }
             return theChannel;
         }
