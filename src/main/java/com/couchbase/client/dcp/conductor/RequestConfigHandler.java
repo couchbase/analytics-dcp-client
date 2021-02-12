@@ -6,6 +6,7 @@ package com.couchbase.client.dcp.conductor;
 import java.net.SocketAddress;
 
 import org.apache.commons.lang3.mutable.MutableObject;
+import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -67,8 +68,8 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
      */
     @Override
     public void channelActive(final ChannelHandlerContext ctx) throws Exception {
-        String terseUri =
-                "/pools/default/b/" + bucket + (uuid.isEmpty() ? uuid : ('?' + Conductor.KEY_BUCKET_UUID + uuid));
+        String terseUri = "/pools/default/b/" + URLEncodedUtils.formatSegments(bucket)
+                + (uuid.isEmpty() ? uuid : ('?' + Conductor.KEY_BUCKET_UUID + uuid));
         FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, terseUri);
         request.headers().add(HttpHeaders.Names.ACCEPT, "application/json");
         request.headers().add(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.CLOSE);
