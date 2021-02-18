@@ -3,6 +3,7 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import static com.couchbase.client.dcp.DcpAckHandle.Util.NOOP_ACK_HANDLE;
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_NOOP_OPCODE;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_DELETION;
 import static com.couchbase.client.dcp.message.MessageUtil.FLEX_REQ_DCP_EXPIRATION;
@@ -91,6 +92,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
      */
     private final ControlEventHandler controlEventHandler;
     private final boolean ackEnabled;
+    private final DcpAckHandle ackHandle;
     private int ackCounter;
     private final int ackWatermark;
     private final DcpChannel dcpChannel;
@@ -131,16 +133,18 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             int bufferSize = Integer.parseInt(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
             this.ackWatermark = (int) Math.round(bufferSize / 100.0 * bufferAckPercent);
             LOGGER.debug("BufferAckWatermark absolute is {}", ackWatermark);
+            ackHandle = this;
             ackListener = future -> {
                 if (!future.isSuccess()) {
                     LOGGER.log(CouchbaseLogLevel.WARN, "Failed to send the ack to the dcp producer", future.cause());
                     ch.close();
                 } else {
-                    env.flowControlCallback().ackFlushedThroughNetwork(this, this.dcpChannel);
+                    env.flowControlCallback().ackFlushedThroughNetwork(ackHandle, this.dcpChannel);
                 }
             };
         } else {
             this.ackWatermark = 0;
+            ackHandle = NOOP_ACK_HANDLE;
             ackListener = null;
         }
     }
@@ -165,7 +169,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                 if (ACK_SANITY && ackEnabled) {
                     globalPendingAck.add(AckKey.from(message));
                 }
-                dataEventHandler.onEvent(this, message);
+                dataEventHandler.onEvent(ackHandle, message);
                 break;
 
             case REQ_STREAM_END:
@@ -189,7 +193,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case RES_STREAM_CLOSE:
             case RES_GET_SEQNOS:
             case RES_DCP_COLLECTIONS_MANIFEST:
-                controlEventHandler.onEvent(this, message);
+                controlEventHandler.onEvent(ackHandle, message);
                 break;
 
             case REQ_DCP_NOOP:
@@ -309,14 +313,15 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                 throw new IllegalStateException("ack() called on NOOP");
             }
             final int ackBytes = message.readableBytes();
-            synchronized (this) {
+            synchronized (ackHandle) {
                 ackCounter += ackBytes;
                 if (LOGGER.isTraceEnabled()) {
                     LOGGER.trace("BufferAckCounter is now {} after += {} for opcode {}", ackCounter, ackBytes,
                             MessageUtil.humanizeOpcode(message));
                 }
                 if (ackCounter >= ackWatermark) {
-                    env.flowControlCallback().bufferAckWaterMarkReached(this, dcpChannel, ackCounter, ackWatermark);
+                    env.flowControlCallback().bufferAckWaterMarkReached(ackHandle, dcpChannel, ackCounter,
+                            ackWatermark);
                     LOGGER.debug("BufferAckWatermark ({}) reached on {}, acking {} bytes now with the server",
                             ackWatermark, channel.remoteAddress(), ackCounter);
                     ByteBuf buffer = channel.alloc().buffer();
