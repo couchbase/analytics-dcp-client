@@ -52,6 +52,8 @@ public class StreamPartitionState {
 
     private volatile long osoMaxSeqno = 0;
 
+    private volatile long osoSeqnoAdvances = 0;
+
     private StreamRequest streamRequest;
 
     private long manifestUid;
@@ -97,6 +99,7 @@ public class StreamPartitionState {
         if (state == CONNECTED_OSO) {
             //noinspection NonAtomicOperationOnVolatileField
             osoMaxSeqno = maxUnsigned(seqno, osoMaxSeqno);
+            osoSeqnoAdvances++;
         } else {
             if (Long.compareUnsigned(seqno, this.seqno) <= 0) {
                 LOGGER.warn("new seqno received (0x{}) <= the previous seqno(0x{}) for vbid: {}",
@@ -226,11 +229,16 @@ public class StreamPartitionState {
         }
         setSnapshotStartSeqno(osoMaxSeqno);
         setSnapshotEndSeqno(osoMaxSeqno);
+        osoSeqnoAdvances = 0;
         return noop ? INVALID_SEQNO : osoMaxSeqno;
     }
 
     public boolean isOsoSnapshot() {
         return state == CONNECTED_OSO;
+    }
+
+    public long getOsoSeqnoAdvances() {
+        return osoSeqnoAdvances;
     }
 
     public void onSystemEvent(DcpSystemEvent event) {
