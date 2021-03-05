@@ -98,14 +98,8 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     private final DcpChannel dcpChannel;
     private final ChannelFutureListener ackListener;
 
-    private static final boolean ACK_SANITY = LOGGER.isTraceEnabled();
+    private static boolean ackSanity;
     private static final Set<AckKey> globalPendingAck = Collections.newSetFromMap(new ConcurrentHashMap<>());
-
-    static {
-        if (ACK_SANITY) {
-            LOGGER.warn("ACK sanity checks enabled; violations will be logged here");
-        }
-    }
 
     /**
      * Create a new message handler.
@@ -142,6 +136,10 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                     env.flowControlCallback().ackFlushedThroughNetwork(ackHandle, this.dcpChannel);
                 }
             };
+            if (!ackSanity && LOGGER.isTraceEnabled()) {
+                LOGGER.warn("ACK sanity checks enabled; violations will be logged here");
+                ackSanity = true; // NOSONAR: S3010 - assignment to static field in ctor
+            }
         } else {
             this.ackWatermark = 0;
             ackHandle = NOOP_ACK_HANDLE;
@@ -166,7 +164,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case FLEX_REQ_DCP_MUTATION:
             case FLEX_REQ_DCP_DELETION:
             case FLEX_REQ_DCP_EXPIRATION:
-                if (ACK_SANITY && ackEnabled) {
+                if (ackSanity && ackEnabled) {
                     globalPendingAck.add(AckKey.from(message));
                 }
                 dataEventHandler.onEvent(ackHandle, message);
@@ -184,7 +182,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case FLEX_REQ_OSO_SNAPSHOT_MARKER:
             case FLEX_REQ_SYSTEM_EVENT:
             case FLEX_REQ_SEQNO_ADVANCED:
-                if (ACK_SANITY && ackEnabled) {
+                if (ackSanity && ackEnabled) {
                     globalPendingAck.add(AckKey.from(message));
                 }
                 // fall-through
@@ -299,7 +297,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         }
         final byte magicByte = message.getByte(0);
         if (magicByte == MAGIC_REQ || magicByte == MAGIC_REQ_FLEX) {
-            if (ACK_SANITY) {
+            if (ackSanity) {
                 final AckKey ackKey = AckKey.from(message);
                 if (!globalPendingAck.remove(ackKey)) {
                     LOGGER.warn("acking non-pending message! key={} message={} stack={}", ackKey,
@@ -351,7 +349,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     }
 
     public static boolean release(ByteBuf buffer) {
-        if (ACK_SANITY) {
+        if (ackSanity && !globalPendingAck.isEmpty()) {
             try {
                 final AckKey ackKey = AckKey.from(buffer);
                 if (globalPendingAck.remove(ackKey)) {
