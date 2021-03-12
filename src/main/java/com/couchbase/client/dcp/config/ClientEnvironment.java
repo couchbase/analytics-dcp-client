@@ -102,6 +102,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     private final int bufferAckWatermark;
 
     /**
+     * The configured noop interval, in seconds
+     */
+    private final int noopIntervalSeconds;
+
+    /**
      * User-attached data event handler.
      */
     private volatile DataEventHandler dataEventHandler;
@@ -200,6 +205,12 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         uuid = builder.uuid;
         dynamicConfigurationNodes = builder.dynamicConfigurationNodes;
         networkResolution = builder.networkResolution;
+        if (dcpControl != null) {
+            String noopInterval = dcpControl().get(Names.SET_NOOP_INTERVAL);
+            noopIntervalSeconds = noopInterval == null ? 0 : Integer.parseInt(noopInterval);
+        } else {
+            noopIntervalSeconds = 0;
+        }
     }
 
     /**
@@ -665,8 +676,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         return credentialsProvider;
     }
 
-    public long getDeadConnectionDetectionInterval() {
-        String noOpInterval = dcpControl().get(Names.SET_NOOP_INTERVAL);
-        return noOpInterval == null ? Long.MAX_VALUE : Long.parseLong(noOpInterval) * 2000;
+    public int getNoopIntervalSeconds() {
+        return noopIntervalSeconds;
+    }
+
+    public int getDeadConnectionDetectionIntervalSeconds() {
+        return getNoopIntervalSeconds() * 2;
     }
 }

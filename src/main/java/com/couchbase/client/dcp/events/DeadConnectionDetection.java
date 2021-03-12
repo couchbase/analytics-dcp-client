@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Couchbase, Inc.
+ * Copyright (c) 2017-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.events;
 
@@ -20,20 +20,19 @@ public class DeadConnectionDetection {
     private static final Delay DELAY = Delay.fixed(0, TimeUnit.MILLISECONDS);
 
     private final Conductor conductor;
-    private final long interval;
     private Span span;
 
     public DeadConnectionDetection(Conductor conductor) {
         this.conductor = conductor;
-        this.interval = conductor.getEnv().getDeadConnectionDetectionInterval();
-        span = Span.start(interval, TimeUnit.MILLISECONDS);
+        int intervalSecs = conductor.getEnv().getDeadConnectionDetectionIntervalSeconds();
+        span = intervalSecs == 0 ? Span.INFINITE : Span.start(intervalSecs, TimeUnit.SECONDS);
     }
 
     public void run() {
         if (span.elapsed()) {
-            span = Span.start(interval, TimeUnit.MILLISECONDS);
             LOGGER.info("Running dead connection detection");
             conductor.reviveDeadConnections(ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
+            span.reset();
         }
     }
 

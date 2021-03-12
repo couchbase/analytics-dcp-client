@@ -152,7 +152,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
      */
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
-        dcpChannel.newMessageRecieved();
+        dcpChannel.newMessageReceived();
         ByteBuf message = (ByteBuf) msg;
         if (LOGGER.isTraceEnabled()) {
             trace(message);

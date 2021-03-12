@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.conductor;
 
@@ -8,6 +8,7 @@ import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetry;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -70,9 +71,9 @@ public class DcpChannel {
     private final DcpChannelControlMessageHandler controlHandler;
     private volatile Channel channel;
     private final DcpChannelCloseListener closeListener;
-    private final long deadConnectionDetectionInterval;
+    private final long deadConnectionDetectionIntervalNanos;
     private Int2BooleanMap stateFetched = new Int2BooleanOpenHashMap();
-    private volatile long lastConnectionTime = System.currentTimeMillis();
+    private volatile long lastActivityNanoTime = System.currentTimeMillis();
     private boolean channelDroppedReported = false;
     private final boolean collectionCapable;
 
@@ -87,7 +88,8 @@ public class DcpChannel {
         this.controlHandler = new DcpChannelControlMessageHandler(this);
         this.openStreams = new IntSet[numOfPartitions];
         this.closeListener = new DcpChannelCloseListener(this);
-        this.deadConnectionDetectionInterval = env.getDeadConnectionDetectionInterval();
+        this.deadConnectionDetectionIntervalNanos =
+                TimeUnit.SECONDS.toNanos(env.getDeadConnectionDetectionIntervalSeconds());
         this.collectionCapable = collectionCapable;
     }
 
@@ -427,11 +429,11 @@ public class DcpChannel {
     }
 
     public synchronized boolean producerDroppedConnection() {
-        if (state != State.CONNECTED || channelDroppedReported) {
+        if (state != State.CONNECTED || channelDroppedReported || deadConnectionDetectionIntervalNanos == 0) {
             return false;
         }
-        long now = System.currentTimeMillis();
-        if (now - lastConnectionTime > deadConnectionDetectionInterval) {
+        long now = System.nanoTime();
+        if (now - lastActivityNanoTime > deadConnectionDetectionIntervalNanos) {
             LOGGER.info("Detected dead connection on {}", this);
             return true;
         } else {
@@ -440,8 +442,8 @@ public class DcpChannel {
         }
     }
 
-    public void newMessageRecieved() {
-        lastConnectionTime = System.currentTimeMillis();
+    public void newMessageReceived() {
+        lastActivityNanoTime = System.nanoTime();
     }
 
     public void setChannelDroppedReported(boolean b) {
