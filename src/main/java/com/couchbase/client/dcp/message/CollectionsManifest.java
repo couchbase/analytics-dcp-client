@@ -42,6 +42,13 @@ public class CollectionsManifest {
      * A manifest with just the default scope and default collection.
      */
     public static final CollectionsManifest DEFAULT = defaultManifest();
+
+    /**
+     * A manifest with no collections & no scopes
+     */
+    public static final CollectionsManifest EMPTY_MANIFEST =
+            new CollectionsManifest(0, Int2ObjectMaps.emptyMap(), Int2ObjectMaps.emptyMap());
+
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public static class ScopeInfo {
