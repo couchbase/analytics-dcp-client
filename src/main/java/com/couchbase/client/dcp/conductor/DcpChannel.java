@@ -25,6 +25,7 @@ import com.couchbase.client.dcp.message.DcpFailoverLogRequest;
 import com.couchbase.client.dcp.message.DcpGetCollectionsManifestRequest;
 import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosRequest;
 import com.couchbase.client.dcp.message.DcpOpenStreamRequest;
+import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.message.VbucketState;
 import com.couchbase.client.dcp.state.SessionState;
@@ -33,6 +34,7 @@ import com.couchbase.client.dcp.state.StreamRequest;
 import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.DcpPipeline;
+import com.couchbase.client.dcp.transport.netty.Stat;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.node.ArrayNode;
@@ -332,6 +334,16 @@ public class DcpChannel {
         }
         DcpGetPartitionSeqnosRequest.opaque(buffer, streamId);
         channel.writeAndFlush(buffer);
+    }
+
+    public void requestCollectionItemCounts(int streamId, int[] cids) {
+        ByteBuf buffer = Unpooled.buffer();
+        Stat.init(buffer);
+        for (int cid : cids) {
+            Stat.collectionsById(buffer, cid);
+            MessageUtil.setOpaqueHi((short) streamId, buffer);
+            channel.writeAndFlush(buffer);
+        }
     }
 
     public synchronized void getFailoverLog(final short vbid) {

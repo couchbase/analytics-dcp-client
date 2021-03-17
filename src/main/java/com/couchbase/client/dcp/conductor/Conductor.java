@@ -1,11 +1,12 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.conductor;
 
 import static com.couchbase.client.core.env.NetworkResolution.EXTERNAL;
 
 import java.net.InetSocketAddress;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
@@ -150,6 +151,17 @@ public class Conductor {
 
     public void waitForFailoverLog(short vbid) throws Throwable {
         sessionState.waitTillFailoverUpdated(vbid, env.partitionRequestsTimeout());
+    }
+
+    public void requestCollectionItemCounts(int streamId, int... cids) {
+        LOGGER.debug("Getting item count(s) for sid {} cids {}", streamId, Arrays.toString(cids));
+        synchronized (channels) {
+            for (DcpChannel channel : channels.values()) {
+                if (channel.getState() == State.CONNECTED) {
+                    channel.requestCollectionItemCounts(streamId, cids);
+                }
+            }
+        }
     }
 
     public void startStreamForPartition(StreamRequest request) {

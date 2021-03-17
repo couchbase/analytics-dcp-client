@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.message;
 
@@ -36,6 +36,7 @@ public class MessageUtil {
 
     public static final byte VERSION_OPCODE = 0x0b;
     public static final byte HELO_OPCODE = 0x1f;
+    public static final byte STAT_OPCODE = 0x10;
     public static final byte SASL_LIST_MECHS_OPCODE = 0x20;
     public static final byte SASL_AUTH_OPCODE = 0x21;
     public static final byte SASL_STEP_OPCODE = 0x22;
@@ -91,6 +92,7 @@ public class MessageUtil {
     public static final short RES_GET_SEQNOS = MAGIC_RES << 8 | GET_ALL_VB_SEQNOS_OPCODE & 0xff;
     public static final short RES_STREAM_CLOSE = MAGIC_RES << 8 | DCP_STREAM_CLOSE_OPCODE & 0xff;
     public static final short RES_FAILOVER_LOG = MAGIC_RES << 8 | DCP_FAILOVER_LOG_OPCODE & 0xff;
+    public static final short RES_STAT = MAGIC_RES << 8 | STAT_OPCODE & 0xff;
 
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
@@ -130,6 +132,8 @@ public class MessageUtil {
                 return "VERSION";
             case HELO_OPCODE:
                 return "HELO";
+            case STAT_OPCODE:
+                return "STAT";
             case SASL_LIST_MECHS_OPCODE:
                 return "SASL_LIST_MECHS";
             case SASL_AUTH_OPCODE:
@@ -387,6 +391,10 @@ public class MessageUtil {
         return buffer.slice(HEADER_SIZE + framingExtrasLength + extrasLength + keyLength, contentLength);
     }
 
+    public static String getContentAsString(ByteBuf buffer) {
+        return getContent(buffer).toString(UTF_8);
+    }
+
     public static short getStatus(ByteBuf buffer) {
         return buffer.getShort(VBUCKET_OFFSET);
     }
@@ -395,12 +403,24 @@ public class MessageUtil {
         buffer.setInt(OPAQUE_OFFSET, opaque);
     }
 
+    public static void setOpaqueHi(short flags, ByteBuf buffer) {
+        buffer.setShort(OPAQUE_OFFSET, flags);
+    }
+
     public static void setOpaqueLo(short flags, ByteBuf buffer) {
         buffer.setShort(OPAQUE_OFFSET + 2, flags);
     }
 
     public static int getOpaque(ByteBuf buffer) {
         return buffer.getInt(OPAQUE_OFFSET);
+    }
+
+    public static short getOpaqueHi(ByteBuf buffer) {
+        return buffer.getShort(OPAQUE_OFFSET);
+    }
+
+    public static short getOpaqueLo(ByteBuf buffer) {
+        return buffer.getShort(OPAQUE_OFFSET + 2);
     }
 
     public static void setCas(long cas, ByteBuf buffer) {

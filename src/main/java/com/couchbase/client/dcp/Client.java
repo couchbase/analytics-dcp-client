@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp;
 
@@ -25,13 +25,11 @@ import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.dcp.message.CollectionsManifest;
-import com.couchbase.client.dcp.message.DcpDataMessage;
 import com.couchbase.client.dcp.message.DcpDeletionMessage;
 import com.couchbase.client.dcp.message.DcpExpirationMessage;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
-import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.RollbackMessage;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
@@ -153,6 +151,16 @@ public class Client {
     }
 
     /**
+     * Requests the current item counts for the specified collections
+     *
+     * @param streamId the associated stream id
+     * @param cids the collection ids
+     */
+    public void requestCollectionItemCounts(int streamId, int... cids) {
+        conductor.requestCollectionItemCounts(streamId, cids);
+    }
+
+    /**
      * Returns the current {@link SessionState}, useful for persistence and inspection.
      *
      * @return the current session state.
@@ -219,18 +227,7 @@ public class Client {
      */
     public void dataEventHandler(final ClientDataEventHandler dataEventHandler) {
         env.setDataEventHandler((ackHandle, event) -> {
-            switch (event.getByte(1)) {
-                case MessageUtil.DCP_MUTATION_OPCODE:
-                case MessageUtil.DCP_DELETION_OPCODE:
-                case MessageUtil.DCP_EXPIRATION_OPCODE:
-                    short partition = MessageUtil.getVbucket(event);
-                    StreamPartitionState ps = MessageUtil.streamState(event, sessionState()).get(partition);
-                    ps.setSeqno(DcpDataMessage.bySeqno(event));
-                    break;
-                default:
-                    LOGGER.error("unrecognized data event {}", MessageUtil.humanize(event));
-                    throw new IllegalArgumentException("unrecognized data event: " + MessageUtil.humanize(event));
-            }
+            sessionState().onDataEvent(event);
             dataEventHandler.onEvent(ackHandle, event);
         });
     }

@@ -1,11 +1,13 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.conductor;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.IOException;
+
+import org.apache.commons.lang3.StringUtils;
 
 import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.logging.CouchbaseLogLevel;
@@ -31,6 +33,8 @@ import com.couchbase.client.dcp.state.SessionPartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamState;
+import com.couchbase.client.dcp.transport.netty.Stat;
+import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.Unpooled;
@@ -82,6 +86,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             case MessageUtil.DCP_COLLECTIONS_MANIFEST_OPCODE:
                 handleCollectionsManifest(buf);
                 break;
+            case MessageUtil.STAT_OPCODE:
+                handleStatResponse(buf);
             default:
                 LOGGER.warn("ignoring {}", MessageUtil.humanize(buf));
         }
@@ -282,6 +288,33 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         } catch (IOException e) {
             LOGGER.error("malformed collections manifest {}", new String(manifestJsonBytes, UTF_8), e);
             channel.getSessionState().onCollectionsManifestFailure(e);
+        }
+    }
+
+    private void handleStatResponse(ByteBuf buf) {
+        int streamId = MessageUtil.getOpaqueHi(buf);
+        int kindId = MessageUtil.getOpaqueLo(buf);
+        Stat.Kind statKind = Stat.Kind.valueOf(kindId, Stat.Kind.UNKNOWN);
+        String key = MessageUtil.getKeyAsString(buf, false);
+        if (key.isEmpty()) {
+            LOGGER.debug("handleStatResponse: sid {} {} <end>", streamId, statKind);
+            return;
+        }
+        switch (statKind) {
+            case COLLECTIONS_BYID:
+                String value = MessageUtil.getContentAsString(buf);
+                LOGGER.debug("handleStatResponse: sid {} {} {}={}", streamId, statKind, key, value);
+                String[] parts = StringUtils.split(key, ':');
+                if (parts.length == 3 && "items".equals(parts[2])) {
+                    // 0x8:0x8:items=4999
+                    int cid = CollectionsUtil.decodeCid(parts[1].substring(2));
+                    long count = Long.parseLong(value);
+                    channel.getSessionState().streamState(streamId).setCollectionItemCount(cid, count);
+                }
+                break;
+            default:
+                LOGGER.warn("unrecognized stat response {}", MessageUtil.humanize(buf));
+                throw new IllegalArgumentException("unrecognized stat response: kind=" + kindId);
         }
     }
 }

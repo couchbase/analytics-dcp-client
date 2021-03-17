@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.state;
 
@@ -18,7 +18,9 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.message.CollectionsManifest;
+import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.CollectionsUtil;
+import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 /**
  * Holds the state information for the current session (all partitions involved).
@@ -159,5 +161,11 @@ public class SessionState {
 
     public void waitTillFailoverUpdated(short vbid, long partitionRequestsTimeout) throws Throwable {
         get(vbid).waitTillFailoverUpdated(this, partitionRequestsTimeout);
+    }
+
+    public void onDataEvent(ByteBuf event) {
+        int streamId = MessageUtil.streamId(event);
+        StreamPartitionState ps = streamState(streamId).get(MessageUtil.getVbucket(event));
+        ps.processDataEvent(event);
     }
 }
