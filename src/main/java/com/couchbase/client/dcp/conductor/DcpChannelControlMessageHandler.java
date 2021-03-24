@@ -88,6 +88,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 break;
             case MessageUtil.STAT_OPCODE:
                 handleStatResponse(buf);
+                break;
             default:
                 LOGGER.warn("ignoring {}", MessageUtil.humanize(buf));
         }
