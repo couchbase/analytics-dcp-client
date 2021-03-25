@@ -118,7 +118,7 @@ public class StreamPartitionState {
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("setting seqno to {} for vbid {} on setSeqno", seqno, vbid);
             }
-            seqnoAdvances += this.seqno - seqno;
+            seqnoAdvances += seqno - this.seqno;
             this.seqno = seqno;
         }
     }
