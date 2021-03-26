@@ -29,6 +29,7 @@ import static com.couchbase.client.dcp.message.MessageUtil.REQ_SYSTEM_EVENT;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_DCP_COLLECTIONS_MANIFEST;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_FAILOVER_LOG;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_GET_SEQNOS;
+import static com.couchbase.client.dcp.message.MessageUtil.RES_STAT;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_CLOSE;
 import static com.couchbase.client.dcp.message.MessageUtil.RES_STREAM_REQUEST;
 
@@ -152,7 +153,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
      */
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
-        dcpChannel.newMessageRecieved();
+        dcpChannel.newMessageReceived();
         ByteBuf message = (ByteBuf) msg;
         if (LOGGER.isTraceEnabled()) {
             trace(message);
@@ -191,6 +192,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case RES_STREAM_CLOSE:
             case RES_GET_SEQNOS:
             case RES_DCP_COLLECTIONS_MANIFEST:
+            case RES_STAT:
                 controlEventHandler.onEvent(ackHandle, message);
                 break;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.state;
 
@@ -12,13 +12,17 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.GuardedBy;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.client.dcp.message.DcpDataMessage;
 import com.couchbase.client.dcp.message.DcpSystemEvent;
+import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
+import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 /**
  * Represents the individual current session state for a given partition.
@@ -52,7 +56,11 @@ public class StreamPartitionState {
 
     private volatile long osoMaxSeqno = 0;
 
-    private volatile long osoSeqnoAdvances = 0;
+    private volatile long seqnoAdvances = 0;
+
+    private volatile long mutationsProcessed = 0;
+
+    private volatile long deletionsProcessed = 0;
 
     private StreamRequest streamRequest;
 
@@ -80,6 +88,8 @@ public class StreamPartitionState {
         return snapshotEndSeqno;
     }
 
+    @GuardedBy("operations on a vbucket do not interleave")
+    @SuppressWarnings("NonAtomicOperationOnVolatileField")
     public void setSnapshotEndSeqno(long snapshotEndSeqno) {
         this.snapshotEndSeqno = snapshotEndSeqno;
         currentVBucketSeqnoInMaster = maxUnsigned(currentVBucketSeqnoInMaster, snapshotEndSeqno);
@@ -95,11 +105,11 @@ public class StreamPartitionState {
     /**
      * Allows to set the current sequence number.
      */
+    @GuardedBy("operations on a vbucket do not interleave")
+    @SuppressWarnings("NonAtomicOperationOnVolatileField")
     public void setSeqno(long seqno) {
         if (state == CONNECTED_OSO) {
-            //noinspection NonAtomicOperationOnVolatileField
             osoMaxSeqno = maxUnsigned(seqno, osoMaxSeqno);
-            osoSeqnoAdvances++;
         } else {
             if (Long.compareUnsigned(seqno, this.seqno) <= 0) {
                 LOGGER.warn("new seqno received (0x{}) <= the previous seqno(0x{}) for vbid: {}",
@@ -108,6 +118,7 @@ public class StreamPartitionState {
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("setting seqno to {} for vbid {} on setSeqno", seqno, vbid);
             }
+            seqnoAdvances += seqno - this.seqno;
             this.seqno = seqno;
         }
     }
@@ -229,7 +240,6 @@ public class StreamPartitionState {
         }
         setSnapshotStartSeqno(osoMaxSeqno);
         setSnapshotEndSeqno(osoMaxSeqno);
-        osoSeqnoAdvances = 0;
         return noop ? INVALID_SEQNO : osoMaxSeqno;
     }
 
@@ -237,8 +247,8 @@ public class StreamPartitionState {
         return state == CONNECTED_OSO;
     }
 
-    public long getOsoSeqnoAdvances() {
-        return osoSeqnoAdvances;
+    public long getSeqnoAdvances() {
+        return seqnoAdvances;
     }
 
     public void onSystemEvent(DcpSystemEvent event) {
@@ -263,5 +273,36 @@ public class StreamPartitionState {
 
     public Span getDelay() {
         return delay;
+    }
+
+    public long getNetMutations() {
+        return mutationsProcessed - deletionsProcessed;
+    }
+
+    public long getMutationsProcessed() {
+        return mutationsProcessed;
+    }
+
+    public long getDeletionsProcessed() {
+        return deletionsProcessed;
+    }
+
+    @GuardedBy("operations on a vbucket do not interleave")
+    @SuppressWarnings("NonAtomicOperationOnVolatileField")
+    public void processDataEvent(ByteBuf event) {
+        switch (event.getByte(1)) {
+            case MessageUtil.DCP_DELETION_OPCODE:
+            case MessageUtil.DCP_EXPIRATION_OPCODE:
+                deletionsProcessed++;
+                setSeqno(DcpDataMessage.bySeqno(event));
+                break;
+            case MessageUtil.DCP_MUTATION_OPCODE:
+                mutationsProcessed++;
+                setSeqno(DcpDataMessage.bySeqno(event));
+                break;
+            default:
+                LOGGER.error("unrecognized data event {}", MessageUtil.humanize(event));
+                throw new IllegalArgumentException("unrecognized data event: " + MessageUtil.humanize(event));
+        }
     }
 }

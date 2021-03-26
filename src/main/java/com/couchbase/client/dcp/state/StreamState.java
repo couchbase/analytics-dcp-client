@@ -1,10 +1,13 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.state;
 
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayCid;
+
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -34,6 +37,8 @@ public class StreamState {
     private volatile CountDownLatch currentSeqLatch = new CountDownLatch(0);
 
     private volatile Throwable seqsRequestFailure;
+
+    private long itemCount = -1;
 
     /**
      * Initializes a StreamState
@@ -71,6 +76,16 @@ public class StreamState {
     }
 
     /**
+     * Accessor into the partition state
+     *
+     * @param partition the index of the partition.
+     * @return the partition state for the given partition id, otherwise {@link Optional#empty()}
+     */
+    public Optional<StreamPartitionState> getOptional(final int partition) {
+        return partition < partitionStates.length ? Optional.ofNullable(partitionStates[partition]) : Optional.empty();
+    }
+
+    /**
      * Accessor to set/override the current partition state, only use this if really needed.
      *
      * @param partition      the index of the partition.
@@ -93,7 +108,8 @@ public class StreamState {
 
     @Override
     public String toString() {
-        return "StreamState{" + "sid=" + streamId + ", partitionStates=" + Arrays.toString(partitionStates) + '}';
+        return "StreamState{" + "sid=" + streamId + ", itemCount=" + itemCount + ", partitionStates="
+                + Arrays.toString(partitionStates) + '}';
     }
 
     public int streamId() {
@@ -135,5 +151,18 @@ public class StreamState {
 
     public int collectionId() {
         return cid;
+    }
+
+    public long itemCount() {
+        return itemCount;
+    }
+
+    public void setCollectionItemCount(int cid, long itemCount) {
+        if (this.cid != cid) {
+            throw new IllegalStateException("received item count for wrong collection: expected " + displayCid(this.cid)
+                    + " got " + displayCid(cid));
+        }
+        this.itemCount = itemCount;
+        LOGGER.debug("setting item count to {} for sid {} (cid {})", itemCount, streamId, displayCid(this.cid));
     }
 }

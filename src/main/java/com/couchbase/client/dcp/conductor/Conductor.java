@@ -1,11 +1,12 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.conductor;
 
 import static com.couchbase.client.core.env.NetworkResolution.EXTERNAL;
 
 import java.net.InetSocketAddress;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
@@ -152,6 +153,17 @@ public class Conductor {
         sessionState.waitTillFailoverUpdated(vbid, env.partitionRequestsTimeout());
     }
 
+    public void requestCollectionItemCounts(int streamId, int... cids) {
+        LOGGER.debug("Getting item count(s) for sid {} cids {}", streamId, Arrays.toString(cids));
+        synchronized (channels) {
+            for (DcpChannel channel : channels.values()) {
+                if (channel.getState() == State.CONNECTED) {
+                    channel.requestCollectionItemCounts(streamId, cids);
+                }
+            }
+        }
+    }
+
     public void startStreamForPartition(StreamRequest request) {
         synchronized (channels) {
             DcpChannel channel = masterChannelByPartition(request.getPartition());
@@ -173,15 +185,10 @@ public class Conductor {
             CouchbaseBucketConfig config = configProvider.config();
             int index = config.nodeIndexForMaster(partition, false);
             if (index < 0) {
-                LOGGER.debug("partition {} does not have a master node; config: {}", partition, config);
-                throw new CouchbaseException("partition " + partition + " does not have a master node");
+                throw new CouchbaseException(
+                        "partition " + partition + " does not have a master node; nodes=" + config.nodes());
             }
-            DcpChannel theChannel = dcpChannelForNode(partition, config.nodeAtIndex(index));
-            if (theChannel == null) {
-                LOGGER.debug("master DcpChannel not found for partition {}; config: {}", partition, config);
-                throw new MasterDcpChannelNotFoundException("master DcpChannel not found for partition " + partition);
-            }
-            return theChannel;
+            return dcpChannelForNode(partition, config.nodeAtIndex(index));
         }
     }
 
@@ -189,27 +196,31 @@ public class Conductor {
         if (env.networkResolution().equals(EXTERNAL)) {
             AlternateAddress aa = node.alternateAddresses().get(EXTERNAL.name());
             if (aa == null) {
-                LOGGER.debug("partition {} master node {} does not provide an external alternate address", partition,
-                        NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.CONFIG)));
-                return null;
+                throw new CouchbaseException("partition " + partition + " master node " + node
+                        + " does not provide an external alternate address!");
             }
             Map<ServiceType, Integer> services = env.sslEnabled() ? aa.sslServices() : aa.services();
-            if (services.containsKey(ServiceType.BINARY)) {
-                int altPort = services.get(ServiceType.BINARY);
-                InetSocketAddress altAddress = new InetSocketAddress(aa.hostname(), altPort);
-                return channels.get(altAddress);
-            } else {
-                LOGGER.debug(
-                        "partition {} master node {} does not provide the KV service on its external alternate address {}",
-                        partition, NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.CONFIG)),
-                        aa.hostname());
-                return null;
+            int altPort = services.getOrDefault(ServiceType.BINARY, -1);
+            if (altPort == -1) {
+                throw new CouchbaseException("partition " + partition + " master node " + node
+                        + " does not provide the KV service on its external alternate address " + aa.hostname() + "!");
             }
+            InetSocketAddress altAddress = new InetSocketAddress(aa.hostname(), altPort);
+            return ensureDcpChannelForPartition(altAddress, partition);
         } else {
             InetSocketAddress address = new InetSocketAddress(node.hostname(),
                     (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
-            return channels.get(address);
+            return ensureDcpChannelForPartition(address, partition);
         }
+    }
+
+    private DcpChannel ensureDcpChannelForPartition(InetSocketAddress address, short partition) {
+        DcpChannel channel = channels.get(address);
+        if (channel == null) {
+            throw new MasterDcpChannelNotFoundException(
+                    "master DcpChannel not found for partition " + partition + "; address: " + address);
+        }
+        return channel;
     }
 
     private synchronized void createSession(CouchbaseBucketConfig config) {
