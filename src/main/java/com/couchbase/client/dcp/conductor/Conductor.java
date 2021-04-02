@@ -9,6 +9,7 @@ import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeoutException;
 
 import org.apache.hyracks.api.util.InvokeUtil;
@@ -156,8 +157,10 @@ public class Conductor {
     public void requestCollectionItemCounts(int streamId, int... cids) {
         LOGGER.debug("Getting item count(s) for sid {} cids {}", streamId, Arrays.toString(cids));
         synchronized (channels) {
+            Semaphore requestSemaphore = sessionState.streamState(streamId).initCollectionItemRequest();
             for (DcpChannel channel : channels.values()) {
                 if (channel.getState() == State.CONNECTED) {
+                    requestSemaphore.release();
                     channel.requestCollectionItemCounts(streamId, cids);
                 }
             }

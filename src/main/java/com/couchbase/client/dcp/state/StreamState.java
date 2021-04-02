@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
@@ -38,7 +39,11 @@ public class StreamState {
 
     private volatile Throwable seqsRequestFailure;
 
+    private long pendingItemCount = 0;
+
     private long itemCount = -1;
+
+    private final Semaphore collectionItemSemaphore = new Semaphore(0);
 
     /**
      * Initializes a StreamState
@@ -157,12 +162,29 @@ public class StreamState {
         return itemCount;
     }
 
-    public void setCollectionItemCount(int cid, long itemCount) {
+    public synchronized void setCollectionItemCount(int cid, long itemCount) {
         if (this.cid != cid) {
             throw new IllegalStateException("received item count for wrong collection: expected " + displayCid(this.cid)
                     + " got " + displayCid(cid));
         }
-        this.itemCount = itemCount;
-        LOGGER.debug("setting item count to {} for sid {} (cid {})", itemCount, streamId, displayCid(this.cid));
+        if (!collectionItemSemaphore.tryAcquire()) {
+            LOGGER.warn("received unexpected collection item count!");
+        } else {
+            pendingItemCount += itemCount;
+            if (collectionItemSemaphore.availablePermits() == 0) {
+                LOGGER.debug("setting item count to {} (was {}) for sid {} (cid {})", pendingItemCount, this.itemCount,
+                        streamId, displayCid(this.cid));
+                this.itemCount = pendingItemCount;
+                pendingItemCount = 0;
+            }
+        }
+    }
+
+    public synchronized Semaphore initCollectionItemRequest() {
+        if (collectionItemSemaphore.drainPermits() != 0) {
+            LOGGER.warn("making new collection item request before previous finished");
+            pendingItemCount = 0;
+        }
+        return collectionItemSemaphore;
     }
 }
