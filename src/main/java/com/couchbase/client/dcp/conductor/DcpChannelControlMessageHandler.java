@@ -33,6 +33,7 @@ import com.couchbase.client.dcp.state.SessionPartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamState;
+import com.couchbase.client.dcp.transport.netty.DcpMessageHandler;
 import com.couchbase.client.dcp.transport.netty.Stat;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
@@ -52,45 +53,55 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     @Override
     public void onEvent(DcpAckHandle ackHandle, ByteBuf buf) {
-        switch (buf.getByte(1)) {
-            case MessageUtil.DCP_STREAM_REQUEST_OPCODE:
-                handleOpenStreamResponse(buf);
-                break;
-            case MessageUtil.DCP_FAILOVER_LOG_OPCODE:
-                handleFailoverLogResponse(buf);
-                break;
-            case MessageUtil.DCP_STREAM_END_OPCODE:
-                handleDcpStreamEndMessage(buf);
-                break;
-            case MessageUtil.DCP_STREAM_CLOSE_OPCODE:
-                handleDcpCloseStreamResponse(buf);
-                break;
-            case MessageUtil.GET_ALL_VB_SEQNOS_OPCODE:
-                handleDcpGetPartitionSeqnosResponse(buf);
-                break;
-            case MessageUtil.DCP_SNAPSHOT_MARKER_OPCODE:
-                handleDcpSnapshotMarker(buf);
-                break;
-            case MessageUtil.DCP_SET_VBUCKET_STATE_OPCODE:
-                handleDcpStateVbucketStateMessage(buf);
-                break;
-            case MessageUtil.DCP_SEQNO_ADVANCED_OPCODE:
-                handleSeqnoAdvanced(buf);
-                break;
-            case MessageUtil.DCP_SYSTEM_EVENT_OPCODE:
-                handleSystemEvent(buf);
-                break;
-            case MessageUtil.DCP_OSO_SNAPSHOT_MARKER_OPCODE:
-                handleOsoSnapshotMarker(buf);
-                break;
-            case MessageUtil.DCP_COLLECTIONS_MANIFEST_OPCODE:
-                handleCollectionsManifest(buf);
-                break;
-            case MessageUtil.STAT_OPCODE:
-                handleStatResponse(buf);
-                break;
-            default:
-                LOGGER.warn("ignoring {}", MessageUtil.humanize(buf));
+        try {
+            switch (buf.getByte(1)) {
+                case MessageUtil.DCP_STREAM_REQUEST_OPCODE:
+                    handleOpenStreamResponse(buf);
+                    break;
+                case MessageUtil.DCP_FAILOVER_LOG_OPCODE:
+                    handleFailoverLogResponse(buf);
+                    break;
+                case MessageUtil.DCP_STREAM_END_OPCODE:
+                    handleDcpStreamEndMessage(buf);
+                    break;
+                case MessageUtil.DCP_STREAM_CLOSE_OPCODE:
+                    handleDcpCloseStreamResponse(buf);
+                    break;
+                case MessageUtil.GET_ALL_VB_SEQNOS_OPCODE:
+                    handleDcpGetPartitionSeqnosResponse(buf);
+                    break;
+                case MessageUtil.DCP_SNAPSHOT_MARKER_OPCODE:
+                    handleDcpSnapshotMarker(buf);
+                    break;
+                case MessageUtil.DCP_SET_VBUCKET_STATE_OPCODE:
+                    handleDcpStateVbucketStateMessage(buf);
+                    break;
+                case MessageUtil.DCP_SEQNO_ADVANCED_OPCODE:
+                    handleSeqnoAdvanced(buf);
+                    break;
+                case MessageUtil.DCP_SYSTEM_EVENT_OPCODE:
+                    handleSystemEvent(buf);
+                    break;
+                case MessageUtil.DCP_OSO_SNAPSHOT_MARKER_OPCODE:
+                    handleOsoSnapshotMarker(buf);
+                    break;
+                case MessageUtil.DCP_COLLECTIONS_MANIFEST_OPCODE:
+                    handleCollectionsManifest(buf);
+                    break;
+                case MessageUtil.STAT_OPCODE:
+                    handleStatResponse(buf);
+                    break;
+                default:
+                    LOGGER.warn("ignoring {}", MessageUtil.humanize(buf));
+            }
+        } catch (Exception e) {
+            LOGGER.error(e);
+            channel.getEnv().controlEventHandler().onEvent(ackHandle, buf);
+            throw e;
+        } catch (Throwable t) {
+            LOGGER.error(t);
+            DcpMessageHandler.ackAndRelease(ackHandle, buf);
+            throw t;
         }
         channel.getEnv().controlEventHandler().onEvent(ackHandle, buf);
     }
