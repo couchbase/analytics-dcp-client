@@ -5,7 +5,6 @@ import java.util.Deque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -26,6 +25,9 @@ import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.util.MemcachedStatus;
+import com.couchbase.client.dcp.util.ShortSortedBitSet;
+
+import it.unimi.dsi.fastutil.ints.IntSet;
 
 public class Fixer implements Runnable, SystemEventHandler {
 
@@ -286,7 +288,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                     }
                     final SessionState sessionState = conductor.getSessionState();
                     if (streamEndEvent.isSeqRequested()) {
-                        channel.getSeqnos(streamEndEvent.getStreamState());
+                        channel.requestSeqnos(streamEndEvent.getStreamState());
                     }
                     streamEndEvent.reset();
                     state.prepareNextStreamRequest(sessionState, streamEndEvent.getStreamState());
@@ -418,36 +420,21 @@ public class Fixer implements Runnable, SystemEventHandler {
     }
 
     private void queueOpenStreams(DcpChannel channel, int numPartitions) {
-        // TODO: streamid revisit logging
         boolean infoEnabled = LOGGER.isInfoEnabled();
-        MutableInt run = new MutableInt();
-        final StringBuilder affectedVBuckets = infoEnabled ? new StringBuilder() : null;
+        ShortSortedBitSet toLog = infoEnabled ? new ShortSortedBitSet(numPartitions) : null;
+        IntSet[] openStreams = channel.openStreams();
         for (short vb = 0; vb < numPartitions; vb++) {
             short vbid = vb;
-            conductor.getSessionState().streamStream().forEach(ss -> {
-                if (channel.openStreams(vbid).contains(ss.streamId())) {
-                    if (infoEnabled && run.getAndIncrement() == 0) {
-                        affectedVBuckets.append(vbid);
-                    }
-                    putPartitionInQueue(channel, ss, vbid);
-                } else if (infoEnabled && run.getValue() > 0) {
-                    if (run.getValue() > 1) {
-                        affectedVBuckets.append('-').append(vbid - 1);
-                    }
-                    affectedVBuckets.append(',');
-                    run.setValue(0);
+            if (openStreams[vbid] != null) {
+                openStreams[vbid].intStream().mapToObj(sid -> conductor.getSessionState().streamState(sid))
+                        .forEach(ss -> putPartitionInQueue(channel, ss, vbid));
+                if (infoEnabled && !openStreams[vbid].isEmpty()) {
+                    toLog.add(vbid);
                 }
-            });
-        }
-        if (infoEnabled && affectedVBuckets.length() > 1) {
-            if (run.getValue() > 1) {
-                affectedVBuckets.append('-').append(numPartitions - 1);
-            } else {
-                affectedVBuckets.deleteCharAt(affectedVBuckets.length() - 1);
             }
-            LOGGER.info(this + " server closed stream on vbuckets [" + affectedVBuckets + "] with reason "
-                    + StreamEndReason.CHANNEL_DROPPED);
         }
+        LOGGER.info("{} server closed stream on vbuckets {} with reason {}", this, toLog,
+                StreamEndReason.CHANNEL_DROPPED);
     }
 
     private void putPartitionInQueue(DcpChannel channel, StreamState ss, short vb) {

@@ -21,8 +21,8 @@ public enum DcpGetPartitionSeqnosRequest {
         MessageUtil.initRequest(GET_ALL_VB_SEQNOS_OPCODE, buffer);
     }
 
-    public static void opaque(final ByteBuf buffer, int opaque) {
-        MessageUtil.setOpaque(opaque, buffer);
+    public static void streamId(final ByteBuf buffer, int streamId) {
+        MessageUtil.setOpaque(streamId, buffer);
     }
 
     public static void vbucketStateAndCid(final ByteBuf buffer, VbucketState vbucketState, int... cids) {

@@ -200,7 +200,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleDcpGetPartitionSeqnosResponse(ByteBuf buf) {
         // get status
         short status = MessageUtil.getStatus(buf);
-        int streamId = MessageUtil.getOpaque(buf);
+        short reqId = MessageUtil.getOpaqueHi(buf);
+        int streamId = MessageUtil.getOpaqueLo(buf);
 
         if (status == MemcachedStatus.SUCCESS) {
             ByteBuf content = MessageUtil.getContent(buf);
@@ -208,7 +209,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             for (int offset = 0; offset < size; offset += 10) {
                 short vbid = content.getShort(offset);
                 long seq = content.getLong(offset + Short.BYTES);
-                channel.getSessionState().streamState(streamId).setCurrentVBucketSeqnoInMaster(vbid, seq);
+                channel.getSessionState().streamState(streamId).handleSeqnoResponse(vbid, seq);
             }
         } else {
             channel.getSessionState().streamState(streamId)
