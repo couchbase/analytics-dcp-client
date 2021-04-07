@@ -186,7 +186,7 @@ public class DcpChannel {
             }
         }
         sessionState.streamStream().filter(s -> !stateFetched.getOrDefault(s.streamId(), true))
-                .forEach(this::getSeqnos);
+                .forEach(this::requestSeqnos);
         channel.closeFuture().addListener(closeListener);
     }
 
@@ -318,7 +318,7 @@ public class DcpChannel {
      * Returns all seqnos for all vbuckets on that channel.
      * @param streamState
      */
-    public synchronized void getSeqnos(StreamState streamState) {
+    public synchronized void requestSeqnos(StreamState streamState) {
         final int streamId = streamState.streamId();
         stateFetched.put(streamId, false);
         if (getState() != State.CONNECTED) {
@@ -332,7 +332,7 @@ public class DcpChannel {
         } else {
             DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE);
         }
-        DcpGetPartitionSeqnosRequest.opaque(buffer, streamId);
+        DcpGetPartitionSeqnosRequest.streamId(buffer, streamId);
         channel.writeAndFlush(buffer);
     }
 

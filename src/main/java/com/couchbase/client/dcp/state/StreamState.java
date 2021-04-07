@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
@@ -16,6 +17,11 @@ import java.util.stream.Stream;
 import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import com.couchbase.client.dcp.util.ShortSortedBitSet;
+
+import it.unimi.dsi.fastutil.shorts.ShortSet;
+import it.unimi.dsi.fastutil.shorts.ShortSets;
 
 /**
  * Holds the state information for the current session (all partitions involved).
@@ -38,7 +44,13 @@ public class StreamState {
 
     private volatile Throwable seqsRequestFailure;
 
+    private long pendingItemCount = 0;
+
     private long itemCount = -1;
+
+    private final Semaphore collectionItemSemaphore = new Semaphore(0);
+
+    private final ShortSet pendingSeqnos = ShortSets.synchronize(new ShortSortedBitSet());
 
     /**
      * Initializes a StreamState
@@ -116,34 +128,56 @@ public class StreamState {
         return streamId;
     }
 
-    public void currentSeqRequest(int length) {
+    public void resetSeqNoRequest(int length) {
         currentSeqLatch = new CountDownLatch(length);
         seqsRequestFailure = null;
+        pendingSeqnos.clear();
+        partitionStream().mapToInt(StreamPartitionState::vbid).forEach(vbid -> pendingSeqnos.add((short) vbid));
     }
 
     public void waitTillCurrentSeqUpdated(long timeout) throws Throwable {
         Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
         LOGGER.debug("Waiting until current seq updated for all vbuckets");
         if (!currentSeqLatch.await(span.getSpanNanos(), TimeUnit.NANOSECONDS)) {
-            throw new TimeoutException(timeout / 1000.0 + "s passed before obtaining current seqnos ("
-                    + currentSeqLatch.getCount() + " remaining)");
+            LOGGER.warn("{} elapsed before obtaining current seqnos ({} remaining {})", span,
+                    currentSeqLatch.getCount(), pendingSeqnos);
+            throw new TimeoutException("waitTillCurrentSeqUpdated");
         }
         if (seqsRequestFailure != null) {
             throw seqsRequestFailure;
         }
     }
 
+    public void interruptPendingSeqnoRequests() {
+        if (!pendingSeqnos.isEmpty()) {
+            seqsRequestFailed(new InterruptedException());
+        }
+    }
+
+    public short[] getPendingSeqnos() {
+        return pendingSeqnos.toShortArray();
+    }
+
     public void seqsRequestFailed(Throwable t) {
+        if (pendingSeqnos.isEmpty()) {
+            LOGGER.debug("ignoring unexpected seqno failure", t);
+            return;
+        }
         seqsRequestFailure = t;
         // drain countdown latch
         for (long i = currentSeqLatch.getCount(); i > 0; i--) {
             currentSeqLatch.countDown();
         }
+        pendingSeqnos.clear();
     }
 
-    public void setCurrentVBucketSeqnoInMaster(short vbid, long seqno) {
+    public void handleSeqnoResponse(short vbid, long seqno) {
+        if (pendingSeqnos.isEmpty()) {
+            LOGGER.debug("ignoring unexpected seqno update for vbid {}", vbid);
+            return;
+        }
         final StreamPartitionState ps = get(vbid);
-        if (ps != null) {
+        if (pendingSeqnos.remove(vbid) && ps != null) {
             ps.setCurrentVBucketSeqnoInMaster(seqno);
             currentSeqLatch.countDown();
         }
@@ -157,12 +191,29 @@ public class StreamState {
         return itemCount;
     }
 
-    public void setCollectionItemCount(int cid, long itemCount) {
+    public synchronized void setCollectionItemCount(int cid, long itemCount) {
         if (this.cid != cid) {
             throw new IllegalStateException("received item count for wrong collection: expected " + displayCid(this.cid)
                     + " got " + displayCid(cid));
         }
-        this.itemCount = itemCount;
-        LOGGER.debug("setting item count to {} for sid {} (cid {})", itemCount, streamId, displayCid(this.cid));
+        if (!collectionItemSemaphore.tryAcquire()) {
+            LOGGER.warn("received unexpected collection item count!");
+        } else {
+            pendingItemCount += itemCount;
+            if (collectionItemSemaphore.availablePermits() == 0) {
+                LOGGER.debug("setting item count to {} (was {}) for sid {} (cid {})", pendingItemCount, this.itemCount,
+                        streamId, displayCid(this.cid));
+                this.itemCount = pendingItemCount;
+                pendingItemCount = 0;
+            }
+        }
+    }
+
+    public synchronized Semaphore initCollectionItemRequest() {
+        if (collectionItemSemaphore.drainPermits() != 0) {
+            LOGGER.warn("making new collection item request before previous finished");
+            pendingItemCount = 0;
+        }
+        return collectionItemSemaphore;
     }
 }

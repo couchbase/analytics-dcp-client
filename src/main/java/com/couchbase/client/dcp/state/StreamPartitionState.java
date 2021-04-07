@@ -44,7 +44,7 @@ public class StreamPartitionState {
     /**
      * Current Sequence Number
      */
-    private volatile long seqno = 0;
+    private volatile long seqno = INVALID_SEQNO;
 
     private volatile long streamEndSeq = 0;
 
@@ -111,14 +111,14 @@ public class StreamPartitionState {
         if (state == CONNECTED_OSO) {
             osoMaxSeqno = maxUnsigned(seqno, osoMaxSeqno);
         } else {
-            if (Long.compareUnsigned(seqno, this.seqno) <= 0) {
+            if (Long.compareUnsigned(seqno, this.seqno) <= 0 && this.seqno != INVALID_SEQNO) {
                 LOGGER.warn("new seqno received (0x{}) <= the previous seqno(0x{}) for vbid: {}",
                         Long.toUnsignedString(seqno, 16), Long.toUnsignedString(this.seqno, 16), vbid);
             }
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("setting seqno to {} for vbid {} on setSeqno", seqno, vbid);
             }
-            seqnoAdvances += seqno - this.seqno;
+            seqnoAdvances += this.seqno != INVALID_SEQNO ? (seqno - this.seqno) : seqno;
             this.seqno = seqno;
         }
     }

@@ -3,7 +3,7 @@
  */
 package com.couchbase.client.dcp;
 
-import static com.couchbase.client.dcp.util.MathUtil.maxUnsigned;
+import static com.couchbase.client.dcp.state.StreamPartitionState.INVALID_SEQNO;
 
 import java.net.InetSocketAddress;
 import java.security.KeyStore;
@@ -920,7 +920,7 @@ public class Client {
         final StreamState streamState = sessionState.streamState(streamId);
         for (short next : vbuckets) {
             StreamPartitionState ps = streamState.get(next);
-            currentSequences[next] = ps == null ? 0 : maxUnsigned(0L, ps.getSeqno());
+            currentSequences[next] = ps == null ? INVALID_SEQNO : ps.getSeqno();
         }
         return currentSequences;
     }

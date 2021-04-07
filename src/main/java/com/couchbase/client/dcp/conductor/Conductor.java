@@ -9,10 +9,14 @@ import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.hyracks.api.util.InvokeUtil;
 import org.apache.hyracks.util.NetworkUtil;
+import org.apache.hyracks.util.Span;
 
 import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.config.AlternateAddress;
@@ -35,6 +39,8 @@ public class Conductor {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Conductor.class);
     public static final String KEY_BUCKET_UUID = "bucket_uuid=";
+    private static final long WAIT_FOR_SEQNOS_TIMEOUT_SECS = 60;
+    private static final long WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS = 5;
     private final ConfigProvider configProvider; // changes
     private final Map<InetSocketAddress, DcpChannel> channels; // changes
     private final ClientEnvironment env; // constant
@@ -127,17 +133,31 @@ public class Conductor {
     }
 
     public void waitForSeqnos(int streamId) throws Throwable {
-        sessionState.streamState(streamId).waitTillCurrentSeqUpdated(env.partitionRequestsTimeout());
+        MutableInt attempt = new MutableInt(1);
+        InvokeUtil.retryUntilSuccessOrExhausted(Span.start(WAIT_FOR_SEQNOS_TIMEOUT_SECS, TimeUnit.SECONDS), () -> {
+            if (attempt.getAndIncrement() > 1) {
+                requestSeqnos(streamId, false);
+            }
+            long attemptMillis =
+                    TimeUnit.SECONDS.toMillis(WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS) * attempt.getValue() / 2;
+            sessionState.streamState(streamId).waitTillCurrentSeqUpdated(attemptMillis);
+            return null;
+        }, failure -> failure instanceof TimeoutException, i -> 0);
     }
 
     public void requestSeqnos(int streamId) {
-        short[] vbuckets = env.vbuckets();
+        requestSeqnos(streamId, true);
+    }
+
+    public void requestSeqnos(int streamId, boolean reset) {
         final StreamState streamState = sessionState.streamState(streamId);
-        LOGGER.debug("Getting sequence numbers for {} vbuckets on sid {}", vbuckets.length, streamId);
-        streamState.currentSeqRequest(vbuckets.length);
+        LOGGER.debug("Getting sequence numbers for vbuckets on sid {}", streamId);
         synchronized (channels) {
+            if (reset) {
+                streamState.resetSeqNoRequest(env.vbuckets().length);
+            }
             for (DcpChannel channel : channels.values()) {
-                channel.getSeqnos(streamState);
+                channel.requestSeqnos(streamState);
             }
         }
     }
@@ -156,8 +176,10 @@ public class Conductor {
     public void requestCollectionItemCounts(int streamId, int... cids) {
         LOGGER.debug("Getting item count(s) for sid {} cids {}", streamId, Arrays.toString(cids));
         synchronized (channels) {
+            Semaphore requestSemaphore = sessionState.streamState(streamId).initCollectionItemRequest();
             for (DcpChannel channel : channels.values()) {
                 if (channel.getState() == State.CONNECTED) {
+                    requestSemaphore.release();
                     channel.requestCollectionItemCounts(streamId, cids);
                 }
             }

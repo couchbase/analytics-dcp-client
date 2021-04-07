@@ -365,6 +365,11 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         return ReferenceCountUtil.release(buffer);
     }
 
+    public static boolean ackAndRelease(DcpAckHandle handle, ByteBuf msg) {
+        handle.ack(msg);
+        return release(msg);
+    }
+
     private static class AckKey {
         private final int messageHash;
         private final byte messageOpcode;
