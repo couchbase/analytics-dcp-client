@@ -399,6 +399,10 @@ public class DcpChannel {
         return env;
     }
 
+    /**
+     * The caller of this method is responsible of guarding this set by synchronizing on the channel
+     * @return the set of currently open streams
+     */
     public IntSet[] openStreams() {
         return openStreams;
     }

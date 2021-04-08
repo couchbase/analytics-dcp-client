@@ -234,9 +234,11 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void clearOpen(StreamState ss, short vbid) {
-        final IntSet openStreams = channel.openStreams()[vbid];
-        if (openStreams != null) {
-            openStreams.remove(ss.streamId());
+        synchronized (channel) {
+            final IntSet openStreams = channel.openStreams()[vbid];
+            if (openStreams != null) {
+                openStreams.remove(ss.streamId());
+            }
         }
     }
 
