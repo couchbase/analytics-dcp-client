@@ -66,7 +66,7 @@ public class StreamPartitionState {
 
     private long manifestUid;
 
-    private Span delay;
+    private Span delay = ELAPSED;
 
     /**
      * Initialize a new partition state.

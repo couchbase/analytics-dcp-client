@@ -6,6 +6,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.GuardedBy;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -419,6 +420,7 @@ public class Fixer implements Runnable, SystemEventHandler {
         }
     }
 
+    @GuardedBy("channel")
     private void queueOpenStreams(DcpChannel channel, int numPartitions) {
         boolean infoEnabled = LOGGER.isInfoEnabled();
         ShortSortedBitSet toLog = infoEnabled ? new ShortSortedBitSet(numPartitions) : null;
