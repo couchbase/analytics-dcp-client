@@ -22,6 +22,7 @@ public class StreamEndEvent implements PartitionDcpEvent {
         this.state = state;
         this.stream = stream;
         this.reason = reason;
+        failoverLogsRequested = reason == StreamEndReason.STATE_CHANGED;
     }
 
     @Override
