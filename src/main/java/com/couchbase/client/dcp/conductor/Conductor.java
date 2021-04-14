@@ -39,7 +39,7 @@ public class Conductor {
 
     private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Conductor.class);
     public static final String KEY_BUCKET_UUID = "bucket_uuid=";
-    private static final long WAIT_FOR_SEQNOS_TIMEOUT_SECS = 60;
+    private static final long WAIT_FOR_SEQNOS_TIMEOUT_SECS = 120;
     private static final long WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS = 5;
     private final ConfigProvider configProvider; // changes
     private final Map<InetSocketAddress, DcpChannel> channels; // changes
