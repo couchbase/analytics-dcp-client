@@ -19,6 +19,7 @@ public class MessageUtil {
      */
     private static final int HEADER_SIZE = 24;
 
+    public static final byte MAGIC_CONSUMER = (byte) 0x44;
     public static final byte MAGIC_INT = (byte) 0x79;
     public static final byte MAGIC_REQ = (byte) 0x80;
     public static final byte MAGIC_RES = (byte) 0x81;
