@@ -89,8 +89,9 @@ public class SessionPartitionState {
         failoverLog.clear();
     }
 
-    public synchronized void waitTillFailoverUpdated(SessionState sessionState, long timeout) throws Throwable {
-        Span span = Span.start(timeout, TimeUnit.MILLISECONDS);
+    public synchronized void waitTillFailoverUpdated(SessionState sessionState, long timeout, TimeUnit timeUnit)
+            throws Throwable {
+        Span span = Span.start(timeout, timeUnit);
         LOGGER.trace("Waiting until failover log updated for {}", vbid);
         while (sessionState.isConnected() && failoverLogRequestFailure == null && !failoverUpdated && !span.elapsed()) {
             span.wait(this);
