@@ -111,9 +111,7 @@ public class Conductor {
             connected = false;
             LOGGER.info("Instructed to shutdown dcp channels.");
             synchronized (channels) {
-                for (DcpChannel channel : channels.values()) {
-                    channel.disconnect(false);
-                }
+                channels.values().forEach(DcpChannel::disconnect);
                 if (wait) {
                     for (DcpChannel channel : channels.values()) {
                         channel.wait(State.DISCONNECTED);
@@ -170,7 +168,11 @@ public class Conductor {
     }
 
     public void waitForFailoverLog(short vbid) throws Throwable {
-        sessionState.waitTillFailoverUpdated(vbid, env.partitionRequestsTimeout());
+        waitForFailoverLog(vbid, env.partitionRequestsTimeout(), TimeUnit.MILLISECONDS);
+    }
+
+    public void waitForFailoverLog(short vbid, long partitionRequestsTimeout, TimeUnit timeUnit) throws Throwable {
+        sessionState.waitTillFailoverUpdated(vbid, partitionRequestsTimeout, timeUnit);
     }
 
     public void requestCollectionItemCounts(int streamId, int... cids) {
@@ -352,7 +354,8 @@ public class Conductor {
                 synchronized (channel) {
                     if (channel.producerDroppedConnection()) {
                         try {
-                            channel.disconnect(true);
+                            channel.disconnect();
+                            channel.wait(State.DISCONNECTED);
                             try {
                                 channel.connect(attemptTimeout, totalTimeout, delay);
                             } catch (Throwable e) {

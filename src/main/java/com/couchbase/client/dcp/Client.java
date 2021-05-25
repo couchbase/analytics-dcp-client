@@ -11,6 +11,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.hyracks.util.Span;
 
 import com.couchbase.client.core.config.BucketCapabilities;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
@@ -352,11 +355,13 @@ public class Client {
      * If the list is empty, the failover logs for all partitions will be returned. Note that the returned
      * ByteBufs can be analyzed using the {@link DcpFailoverLogResponse} flyweight.
      *
+     * @param timeout
+     * @param unit
      * @param vbids
      *            the partitions to return the failover logs from.
      * @throws Throwable
      */
-    public void failoverLogs(short... vbids) throws Throwable {
+    public void failoverLogs(long timeout, TimeUnit unit, short... vbids) throws Throwable {
         vbids = partitionsForVbids(numPartitions(), vbids);
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Asking for failover logs on partitions {}", Arrays.toString(vbids));
@@ -364,15 +369,16 @@ public class Client {
         for (short vbid : vbids) {
             conductor.requestFailoverLog(vbid);
         }
-        LOGGER.debug("Waiting to receive failover logs");
+        Span span = Span.start(timeout, unit);
+        LOGGER.debug("Waiting up to {} to receive failover logs", span);
         for (short vbid : vbids) {
-            conductor.waitForFailoverLog(vbid);
+            conductor.waitForFailoverLog(vbid, span.remaining(unit), unit);
         }
         LOGGER.debug("Received failover logs");
     }
 
-    public void getFailoverLogs() throws Throwable {
-        failoverLogs(env.vbuckets());
+    public void getFailoverLogs(long timeout, TimeUnit unit) throws Throwable {
+        failoverLogs(timeout, unit, env.vbuckets());
     }
 
     /**

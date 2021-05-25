@@ -159,8 +159,8 @@ public class SessionState {
         return ps;
     }
 
-    public void waitTillFailoverUpdated(short vbid, long partitionRequestsTimeout) throws Throwable {
-        get(vbid).waitTillFailoverUpdated(this, partitionRequestsTimeout);
+    public void waitTillFailoverUpdated(short vbid, long partitionRequestsTimeout, TimeUnit timeUnit) throws Throwable {
+        get(vbid).waitTillFailoverUpdated(this, partitionRequestsTimeout, timeUnit);
     }
 
     public void onDataEvent(ByteBuf event) {

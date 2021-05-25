@@ -209,7 +209,7 @@ public class DcpChannel {
         }
     }
 
-    public synchronized void disconnect(boolean wait) throws InterruptedException {
+    public synchronized void disconnect() {
         LOGGER.info(toString() + " is disconnecting");
         switch (getState()) {
             case CONNECTED:
@@ -225,10 +225,6 @@ public class DcpChannel {
                 break;
             default:
                 break;
-        }
-        if (wait) {
-            wait(State.DISCONNECTED);
-            LOGGER.info(toString() + " disconnected");
         }
         channel = null;
     }

@@ -17,6 +17,7 @@ public class RetryUtil {
 
     public static boolean shouldRetry(Throwable th) {
         Throwable root = ExceptionUtils.getRootCause(th);
+        // TODO(mblow): is BadBucketConfigException ever transient?  if it's not, we can add that to the list...
         return !((root instanceof BucketNotFoundException) || (root instanceof MasterDcpChannelNotFoundException)
                 || (root instanceof AuthorizationException)
                 || MemcachedStatus.messageContains(root, MemcachedStatus.UNKNOWN_COLLECTION)
