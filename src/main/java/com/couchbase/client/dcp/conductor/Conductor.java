@@ -249,9 +249,9 @@ public class Conductor {
 
     private synchronized void createSession(CouchbaseBucketConfig config) {
         if (sessionState == null) {
-            sessionState = new SessionState(config.numberOfPartitions(), getUuid(config.uri()));
+            sessionState = new SessionState(config);
         } else {
-            sessionState.setConnected(getUuid(config.uri()));
+            sessionState.setConnected(config);
         }
     }
 
