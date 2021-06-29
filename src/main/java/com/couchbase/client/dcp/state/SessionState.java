@@ -16,6 +16,8 @@ import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.client.core.config.CouchbaseBucketConfig;
+import com.couchbase.client.dcp.conductor.Conductor;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.message.MessageUtil;
@@ -34,7 +36,7 @@ public class SessionState {
 
     private final String uuid;
 
-    private final int numPartitions;
+    private final CouchbaseBucketConfig config;
 
     private volatile boolean connected;
 
@@ -46,14 +48,22 @@ public class SessionState {
 
     private volatile StreamState[] streams = new StreamState[0];
 
-    /**
-     * Initializes with an empty partition state for 1024 partitions.
-     */
-    public SessionState(int numPartitions, String uuid) {
-        this.numPartitions = numPartitions;
-        this.sessionPartitionState = new AtomicReferenceArray<>(numPartitions);
-        this.uuid = uuid;
-        setConnected(uuid);
+    public SessionState(CouchbaseBucketConfig config) {
+        this.config = config;
+        this.sessionPartitionState = new AtomicReferenceArray<>(config.numberOfPartitions());
+        this.uuid = getUuid(config);
+        setConnected(config);
+    }
+
+    private SessionState() {
+        this.config = null;
+        this.sessionPartitionState = new AtomicReferenceArray<>(0);
+        this.uuid = "";
+        connected = true;
+    }
+
+    public static SessionState empty() {
+        return new SessionState();
     }
 
     /**
@@ -64,22 +74,28 @@ public class SessionState {
     }
 
     public int getNumOfPartitions() {
-        return numPartitions;
+        return sessionPartitionState.length();
+    }
+
+    public CouchbaseBucketConfig getConfig() {
+        return config;
     }
 
     @Override
     public String toString() {
-        return "SessionState{" + "numPartitions=" + numPartitions + ", uuid='" + uuid + '\'' + ", streams=["
+        return "SessionState{" + "numPartitions=" + sessionPartitionState.length() + ", uuid='" + uuid + '\''
+                + ", streams=["
                 + Stream.of(streams)
                         .map(ss -> "\"" + ss.streamId() + ":" + CollectionsUtil.displayCid(ss.collectionId()) + '"')
                         .collect(Collectors.joining(", "))
                 + "]}";
     }
 
-    public void setConnected(String uuid) {
+    public void setConnected(CouchbaseBucketConfig config) {
+        String configUuid = getUuid(config);
         LOGGER.debug("{} (0x{}): connected", this, Integer.toHexString(System.identityHashCode(this)));
-        if (!uuid.equals(this.uuid)) {
-            throw new IllegalStateException("UUID changed from " + this.uuid + " to " + uuid);
+        if (!configUuid.equals(uuid)) {
+            throw new IllegalStateException("UUID changed from " + uuid + " to " + configUuid);
         }
         connected = true;
     }
@@ -167,5 +183,9 @@ public class SessionState {
         int streamId = MessageUtil.streamId(event);
         StreamPartitionState ps = streamState(streamId).get(MessageUtil.getVbucket(event));
         ps.processDataEvent(event);
+    }
+
+    protected static String getUuid(CouchbaseBucketConfig config) {
+        return Conductor.getUuid(config.uri());
     }
 }
