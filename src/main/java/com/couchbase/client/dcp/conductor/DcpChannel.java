@@ -45,6 +45,7 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
  */
 public class DcpChannel {
     private static final Logger LOGGER = LogManager.getLogger();
+    private static final int DEFAULT_COLLECTION_ID = 0;
     private volatile State state;
     private final ClientEnvironment env;
     private final String hostname;
@@ -59,9 +60,10 @@ public class DcpChannel {
     private volatile boolean stateFetched = true;
     private volatile long lastConnectionTime = System.currentTimeMillis();
     private boolean channelDroppedReported = false;
+    private final boolean collectionCapable;
 
     public DcpChannel(InetSocketAddress inetAddress, String hostname, final ClientEnvironment env,
-            final SessionState sessionState, int numOfPartitions) {
+            final SessionState sessionState, int numOfPartitions, boolean collectionCapable) {
         setState(State.DISCONNECTED);
         this.inetAddress = inetAddress;
         this.hostname = hostname;
@@ -72,6 +74,7 @@ public class DcpChannel {
         this.openStreams = new boolean[numOfPartitions];
         this.closeListener = new DcpChannelCloseListener(this);
         this.deadConnectionDetectionInterval = env.getDeadConnectionDetectionInterval();
+        this.collectionCapable = collectionCapable;
     }
 
     public void connect() throws Throwable {
@@ -275,7 +278,11 @@ public class DcpChannel {
         }
         ByteBuf buffer = Unpooled.buffer();
         DcpGetPartitionSeqnosRequest.init(buffer);
-        DcpGetPartitionSeqnosRequest.vbucketState(buffer, VbucketState.ACTIVE);
+        if (collectionCapable) {
+            DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE, DEFAULT_COLLECTION_ID);
+        } else {
+            DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE);
+        }
         channel.writeAndFlush(buffer);
     }
 
