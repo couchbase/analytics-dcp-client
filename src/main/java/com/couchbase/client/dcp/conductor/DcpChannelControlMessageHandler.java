@@ -209,6 +209,22 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         short reqId = MessageUtil.getOpaqueHi(buf);
         int streamId = MessageUtil.getOpaqueLo(buf);
 
+        if (streamId == 0) {
+            // global seqnos
+            if (status == MemcachedStatus.SUCCESS) {
+                ByteBuf content = MessageUtil.getContent(buf);
+                int size = content.readableBytes();
+                for (int offset = 0; offset < size; offset += 10) {
+                    short vbid = content.getShort(offset);
+                    long seq = content.getLong(offset + Short.BYTES);
+                    channel.getSessionState().handleSeqnoResponse(vbid, seq);
+                }
+            } else {
+                channel.getSessionState().seqnoRequestFailed(new CouchbaseException(MemcachedStatus.toString(status)));
+            }
+            return;
+        }
+
         if (status == MemcachedStatus.SUCCESS) {
             ByteBuf content = MessageUtil.getContent(buf);
             int size = content.readableBytes();

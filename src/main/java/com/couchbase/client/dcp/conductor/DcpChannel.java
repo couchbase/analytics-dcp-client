@@ -338,6 +338,24 @@ public class DcpChannel {
         channel.writeAndFlush(buffer);
     }
 
+    /**
+     * Requests seqnos for all vbuckets on this channel for the supplied cids.  If no cids are supplied, retrieve
+     * the bucket-wide seqnos
+     */
+    public synchronized void requestSeqnos(int... cids) {
+        if (cids.length > 0) {
+            throw new IllegalArgumentException("NYI: cids");
+        }
+        if (getState() != State.CONNECTED) {
+            sessionState.seqnoRequestFailed(new NotConnectedException());
+            return;
+        }
+        ByteBuf buffer = Unpooled.buffer();
+        DcpGetPartitionSeqnosRequest.init(buffer);
+        DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE);
+        channel.writeAndFlush(buffer);
+    }
+
     public void requestCollectionItemCounts(int streamId, int[] cids) {
         ByteBuf buffer = Unpooled.buffer();
         Stat.init(buffer);

@@ -166,6 +166,29 @@ public class Conductor {
         }
     }
 
+    public void requestBucketSeqnos() {
+        LOGGER.debug("Requesting sequence numbers for all vbuckets");
+        sessionState.prepareForSeqnoRequest();
+        synchronized (channels) {
+            for (DcpChannel channel : channels.values()) {
+                channel.requestSeqnos();
+            }
+        }
+    }
+
+    public void waitForBucketSeqnos() throws Throwable {
+        MutableInt attempt = new MutableInt(1);
+        InvokeUtil.retryUntilSuccessOrExhausted(Span.start(WAIT_FOR_SEQNOS_TIMEOUT_SECS, TimeUnit.SECONDS), () -> {
+            if (attempt.getAndIncrement() > 1) {
+                requestBucketSeqnos();
+            }
+            long attemptMillis =
+                    TimeUnit.SECONDS.toMillis(WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS) * attempt.getValue() / 2;
+            sessionState.waitTillSeqnosUpdated(attemptMillis);
+            return null;
+        }, failure -> failure instanceof TimeoutException, i -> 0);
+    }
+
     public void requestFailoverLog(short vbid) {
         sessionState.get(vbid).failoverRequest();
         synchronized (channels) {

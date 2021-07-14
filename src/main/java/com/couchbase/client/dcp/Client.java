@@ -40,6 +40,7 @@ import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
 import com.couchbase.client.dcp.message.RollbackMessage;
+import com.couchbase.client.dcp.state.SessionPartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamRequest;
@@ -135,9 +136,9 @@ public class Client {
      * @throws Throwable exception which occurred while awaiting for sequence numbers
      * @param streamId
      */
-    public void getSequenceNumbers(int streamId) throws Throwable {
-        conductor.requestSeqnos(streamId);
-        conductor.waitForSeqnos(streamId);
+    public void getSeqNos(int streamId) throws Throwable {
+        requestSeqNos(streamId);
+        waitForSeqNos(streamId);
     }
 
     /**
@@ -145,7 +146,7 @@ public class Client {
      *
      * @param streamId
      */
-    public void requestSequenceNumbers(int streamId) {
+    public void requestSeqNos(int streamId) {
         conductor.requestSeqnos(streamId);
     }
 
@@ -155,8 +156,33 @@ public class Client {
      * @throws Throwable exception which occurred while awaiting for sequence numbers
      * @param streamId
      */
-    public void waitForSequenceNumbers(int streamId) throws Throwable {
+    public void waitForSeqNos(int streamId) throws Throwable {
         conductor.waitForSeqnos(streamId);
+    }
+
+    /**
+     * Requests & waits for the current (bucket-wide) sequence numbers from all partitions. These will be
+     * available in each vbucket's {@link SessionPartitionState} (via {@link Client#sessionState()}).
+     */
+    public void getBucketSeqNos() throws Throwable {
+        requestBucketSeqNos();
+        waitForBucketSeqnos();
+    }
+
+    /**
+     * Requests the current (bucket-wide) sequence numbers from all partitions.
+     */
+    public void requestBucketSeqNos() {
+        conductor.requestBucketSeqnos();
+    }
+
+    /**
+     * Waits for the current (bucket-wide) sequence numbers from all partitions, previously requested via
+     * {@link #requestBucketSeqNos()}. After this method returns, the seqnos will be available in each
+     * vbucket's {@link SessionPartitionState} (via {@link Client#sessionState()}).
+     */
+    public void waitForBucketSeqnos() throws Throwable {
+        conductor.waitForBucketSeqnos();
     }
 
     /**

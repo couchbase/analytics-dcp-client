@@ -16,8 +16,8 @@ import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 
 public class OpenStreamResponse implements PartitionDcpEvent {
-    private final StreamPartitionState state;
-    private final short status;
+    protected final StreamPartitionState state;
+    protected final short status;
 
     public OpenStreamResponse(StreamPartitionState state, short status) {
         this.state = state;
@@ -41,7 +41,8 @@ public class OpenStreamResponse implements PartitionDcpEvent {
 
     @Override
     public String toString() {
-        return "{\"open-stream-response\":\"" + MemcachedStatus.toString(status) + "\"}";
+        return "{\"vbucket\":" + state.vbid() + ", \"open-stream-response\":\"" + MemcachedStatus.toString(status)
+                + "\"}";
     }
 
     @Override
