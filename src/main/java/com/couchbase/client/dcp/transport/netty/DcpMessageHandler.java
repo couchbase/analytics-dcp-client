@@ -24,9 +24,11 @@ import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpNoopRequest;
 import com.couchbase.client.dcp.message.DcpNoopResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
+import com.couchbase.client.dcp.message.DcpSeqnoAdvancedMessage;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
 import com.couchbase.client.dcp.message.DcpStateVbucketStateMessage;
 import com.couchbase.client.dcp.message.DcpStreamEndMessage;
+import com.couchbase.client.dcp.message.DcpSystemEventMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.Channel;
@@ -146,7 +148,8 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     private static boolean isControlMessage(final ByteBuf msg) {
         return DcpStateVbucketStateMessage.is(msg) || DcpOpenStreamResponse.is(msg) || DcpStreamEndMessage.is(msg)
                 || DcpSnapshotMarkerRequest.is(msg) || DcpFailoverLogResponse.is(msg) || DcpCloseStreamResponse.is(msg)
-                || DcpGetPartitionSeqnosResponse.is(msg);
+                || DcpGetPartitionSeqnosResponse.is(msg) || DcpSeqnoAdvancedMessage.is(msg)
+                || DcpSystemEventMessage.is(msg);
     }
 
     /**
@@ -164,8 +167,8 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     public synchronized void ack(ByteBuf message) {
         if (ackEnabled && (DcpStateVbucketStateMessage.is(message) || DcpSnapshotMarkerRequest.is(message)
                 || DcpStreamEndMessage.is(message) || DcpCloseStreamResponse.is(message)
-                || DcpMutationMessage.is(message) || DcpDeletionMessage.is(message)
-                || DcpExpirationMessage.is(message))) {
+                || DcpMutationMessage.is(message) || DcpDeletionMessage.is(message) || DcpExpirationMessage.is(message)
+                || DcpSeqnoAdvancedMessage.is(message) || DcpSystemEventMessage.is(message))) {
             ackCounter += message.readableBytes();
             boolean trace = LOGGER.isTraceEnabled();
             if (trace) {
