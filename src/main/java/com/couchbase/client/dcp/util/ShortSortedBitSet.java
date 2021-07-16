@@ -37,6 +37,13 @@ public class ShortSortedBitSet extends AbstractShortSortedSet {
         addAll(initial);
     }
 
+    public ShortSortedBitSet(short[] initial) {
+        this(Math.max(initial.length - 1, 1));
+        for (short value : initial) {
+            add(value);
+        }
+    }
+
     @Override
     public boolean contains(short k) {
         checkRange(k);
@@ -161,6 +168,11 @@ public class ShortSortedBitSet extends AbstractShortSortedSet {
     @Override
     public ShortBidirectionalIterator iterator(short fromElement) {
         return iterator(firstShort(), fromElement);
+    }
+
+    @Override
+    public String toString() {
+        return ShortUtil.toCompactString(iterator());
     }
 
     private ShortBidirectionalIterator iterator(final short first, final short fromElement) {

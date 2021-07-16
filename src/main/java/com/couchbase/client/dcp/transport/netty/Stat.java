@@ -11,6 +11,9 @@ package com.couchbase.client.dcp.transport.netty;
 
 import static com.couchbase.client.dcp.transport.netty.Stat.Kind.COLLECTIONS_BYID;
 
+import java.util.Collections;
+import java.util.Map;
+
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
@@ -33,6 +36,20 @@ public class Stat {
         }
     }
 
+    public enum CollectionsByid {
+        UNKNOWN,
+        ITEMS;
+
+        private static final Map<String, CollectionsByid> nameMap = Collections.singletonMap("items", ITEMS);
+
+        public static CollectionsByid parseStatParts(String[] parts) {
+            if (parts.length == 3) {
+                return nameMap.getOrDefault(parts[2], UNKNOWN);
+            }
+            return UNKNOWN;
+        }
+    }
+
     private Stat() {
     }
 
@@ -41,7 +58,7 @@ public class Stat {
     }
 
     public static void collectionsById(ByteBuf buffer, int cid) {
-        ByteBuf key = Unpooled.copiedBuffer("collections-byid " + CollectionsUtil.encodeCid(cid), CharsetUtil.UTF_8);
+        ByteBuf key = Unpooled.copiedBuffer(COLLECTIONS_BYID + " " + CollectionsUtil.encodeCid(cid), CharsetUtil.UTF_8);
         MessageUtil.setKey(key, buffer);
         MessageUtil.setOpaque(COLLECTIONS_BYID.ordinal(), buffer);
     }

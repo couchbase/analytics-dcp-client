@@ -9,6 +9,10 @@
  */
 package com.couchbase.client.dcp.util;
 
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 public class CollectionsUtil {
     private CollectionsUtil() {
         throw new AssertionError("do not instantiate");
@@ -24,6 +28,10 @@ public class CollectionsUtil {
 
     public static String displayCid(int cid) {
         return "0x" + encodeCid(cid);
+    }
+
+    public static List<String> displayCids(int... cids) {
+        return IntStream.of(cids).mapToObj(CollectionsUtil::displayCid).collect(Collectors.toList());
     }
 
     public static String encodeManifestUid(long uid) {

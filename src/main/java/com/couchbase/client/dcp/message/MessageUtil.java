@@ -110,6 +110,8 @@ public class MessageUtil {
      */
     public static final int NO_FLEX_FRAMING_STREAM_ID = 1;
 
+    public static final int GET_SEQNOS_GLOBAL_COLLECTION_ID = 1;
+
     private MessageUtil() {
         throw new AssertionError("do not instantiate");
     }

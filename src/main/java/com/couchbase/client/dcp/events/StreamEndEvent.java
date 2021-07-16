@@ -21,7 +21,7 @@ public class StreamEndEvent implements PartitionDcpEvent {
     private final StreamState stream;
     private StreamEndReason reason;
     private boolean failoverLogsRequested;
-    private boolean seqRequested;
+    private int[] seqRequested = new int[0];
     private int attempts = 0;
 
     public StreamEndEvent(StreamPartitionState state, StreamState stream, StreamEndReason reason) {
@@ -47,7 +47,7 @@ public class StreamEndEvent implements PartitionDcpEvent {
     public void reset() {
         reason = StreamEndReason.UNKNOWN;
         setFailoverLogsRequested(false);
-        setSeqRequested(false);
+        setSeqRequested();
         attempts = 0;
     }
 
@@ -76,12 +76,12 @@ public class StreamEndEvent implements PartitionDcpEvent {
         this.failoverLogsRequested = failoverLogsRequested;
     }
 
-    public boolean isSeqRequested() {
+    public int[] getSeqRequested() {
         return seqRequested;
     }
 
-    public void setSeqRequested(boolean seqRequested) {
-        this.seqRequested = seqRequested;
+    public void setSeqRequested(int... cids) {
+        this.seqRequested = cids;
     }
 
     public void incrementAttempts() {

@@ -14,6 +14,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 import org.apache.hyracks.util.Span;
 import org.apache.hyracks.util.annotations.GuardedBy;
@@ -37,6 +38,7 @@ import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.dcp.util.ShortSortedBitSet;
+import com.couchbase.client.dcp.util.ShortUtil;
 
 import it.unimi.dsi.fastutil.ints.IntSet;
 
@@ -330,8 +332,9 @@ public class Fixer implements Runnable, SystemEventHandler {
                 channel.getFailoverLog(streamEndEvent.partition());
             }
             final SessionState sessionState = conductor.getSessionState();
-            if (streamEndEvent.isSeqRequested()) {
-                channel.requestSeqnos(streamEndEvent.getStreamState());
+            final int[] seqRequested = streamEndEvent.getSeqRequested();
+            if (seqRequested.length > 0) {
+                channel.requestSeqnos(seqRequested);
             }
             streamEndEvent.reset();
             state.prepareNextStreamRequest(sessionState, streamEndEvent.getStreamState());
@@ -460,8 +463,10 @@ public class Fixer implements Runnable, SystemEventHandler {
                 }
             }
         }
-        LOGGER.info("{} server closed stream on vbuckets {} with reason {}", this, toLog,
-                StreamEndReason.CHANNEL_DROPPED);
+        if (infoEnabled) {
+            LOGGER.info("{} server closed stream on vbuckets {} with reason {}", this,
+                    ShortUtil.toCompactString(toLog.iterator()), StreamEndReason.CHANNEL_DROPPED);
+        }
     }
 
     private void putPartitionInQueue(DcpChannel channel, StreamState ss, short vb) {
@@ -469,7 +474,7 @@ public class Fixer implements Runnable, SystemEventHandler {
         state.setState(StreamPartitionState.DISCONNECTED);
         StreamEndEvent endEvent = new StreamEndEvent(state, ss, StreamEndReason.CHANNEL_DROPPED);
         endEvent.setFailoverLogsRequested(channel.getFailoverLogRequests()[vb]);
-        endEvent.setSeqRequested(!channel.isStateFetched(ss.streamId()));
+        endEvent.setSeqRequested(IntStream.of(ss.cids()).filter(channel::isMissingSeqnos).toArray());
         conductor.getEnv().eventBus().publish(endEvent);
     }
 

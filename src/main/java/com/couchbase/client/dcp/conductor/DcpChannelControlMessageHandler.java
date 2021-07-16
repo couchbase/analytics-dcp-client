@@ -26,6 +26,7 @@ import com.couchbase.client.dcp.events.OpenStreamRollbackResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
+import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
 import com.couchbase.client.dcp.message.DcpOsoSnapshotMarkerMessage;
 import com.couchbase.client.dcp.message.DcpSeqnoAdvancedMessage;
@@ -205,39 +206,16 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
 
     private void handleDcpGetPartitionSeqnosResponse(ByteBuf buf) {
         // get status
-        short status = MessageUtil.getStatus(buf);
-        short reqId = MessageUtil.getOpaqueHi(buf);
-        int streamId = MessageUtil.getOpaqueLo(buf);
+        short status = DcpGetPartitionSeqnosResponse.getStatus(buf);
+        int cid = DcpGetPartitionSeqnosResponse.getCid(buf);
 
-        if (streamId == 0) {
-            // global seqnos
-            if (status == MemcachedStatus.SUCCESS) {
-                ByteBuf content = MessageUtil.getContent(buf);
-                int size = content.readableBytes();
-                for (int offset = 0; offset < size; offset += 10) {
-                    short vbid = content.getShort(offset);
-                    long seq = content.getLong(offset + Short.BYTES);
-                    channel.getSessionState().handleSeqnoResponse(vbid, seq);
-                }
-            } else {
-                channel.getSessionState().seqnoRequestFailed(new CouchbaseException(MemcachedStatus.toString(status)));
-            }
-            return;
-        }
-
+        final SessionState sessionState = channel.getSessionState();
         if (status == MemcachedStatus.SUCCESS) {
-            ByteBuf content = MessageUtil.getContent(buf);
-            int size = content.readableBytes();
-            for (int offset = 0; offset < size; offset += 10) {
-                short vbid = content.getShort(offset);
-                long seq = content.getLong(offset + Short.BYTES);
-                channel.getSessionState().streamState(streamId).handleSeqnoResponse(vbid, seq);
-            }
+            sessionState.handleSeqnoResponse(cid, MessageUtil.getContent(buf));
         } else {
-            channel.getSessionState().streamState(streamId)
-                    .seqsRequestFailed(new CouchbaseException(MemcachedStatus.toString(status)));
+            sessionState.seqnoRequestFailed(cid, new CouchbaseException(MemcachedStatus.toString(status)));
         }
-        channel.stateFetched(streamId);
+        channel.seqnosFetched(cid);
     }
 
     private void handleDcpStreamEndMessage(ByteBuf buf) {
@@ -329,24 +307,27 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleStatResponse(ByteBuf buf) {
-        int streamId = MessageUtil.getOpaqueHi(buf);
         int kindId = MessageUtil.getOpaqueLo(buf);
         Stat.Kind statKind = Stat.Kind.valueOf(kindId, Stat.Kind.UNKNOWN);
         String key = MessageUtil.getKeyAsString(buf, false);
         if (key.isEmpty()) {
-            LOGGER.debug("handleStatResponse: sid {} {} <end>", streamId, statKind);
+            LOGGER.trace("handleStatResponse: {} <end>", statKind);
             return;
         }
         switch (statKind) {
             case COLLECTIONS_BYID:
                 String value = MessageUtil.getContentAsString(buf);
-                LOGGER.debug("handleStatResponse: sid {} {} {}={}", streamId, statKind, key, value);
+                LOGGER.trace("handleStatResponse: {} {}={}", statKind, key, value);
                 String[] parts = StringUtils.split(key, ':');
-                if (parts.length == 3 && "items".equals(parts[2])) {
-                    // 0x8:0x8:items=4999
-                    int cid = CollectionsUtil.decodeCid(parts[1].substring(2));
-                    long count = Long.parseLong(value);
-                    channel.getSessionState().streamState(streamId).setCollectionItemCount(cid, count);
+                switch (Stat.CollectionsByid.parseStatParts(parts)) {
+                    case ITEMS:
+                        // 0x8:0x8:items=4999
+                        int cid = CollectionsUtil.decodeCid(parts[1].substring(2));
+                        long count = Long.parseLong(value);
+                        channel.getSessionState().recordItemCountResponse(cid, count);
+                        break;
+                    default:
+                        // ignoring unknown stat
                 }
                 break;
             default:

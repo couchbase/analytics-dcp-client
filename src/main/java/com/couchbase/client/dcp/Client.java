@@ -45,7 +45,9 @@ import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamRequest;
 import com.couchbase.client.dcp.state.StreamState;
+import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.dcp.util.FlowControlCallback;
+import com.couchbase.client.dcp.util.ShortUtil;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
@@ -131,33 +133,33 @@ public class Client {
     }
 
     /**
-     * Requests and waits the current sequence numbers from all partitions.
+     * Requests and waits the current sequence numbers from all partitions for the supplied cid(s)
      *
      * @throws Throwable exception which occurred while awaiting for sequence numbers
-     * @param streamId
+     * @param cids
      */
-    public void getSeqNos(int streamId) throws Throwable {
-        requestSeqNos(streamId);
-        waitForSeqNos(streamId);
+    public void getSeqNos(int... cids) throws Throwable {
+        requestSeqNos(cids);
+        waitForSeqNos(cids);
     }
 
     /**
-     * Requests the current sequence numbers from all partitions for the specified stream
+     * Requests the current sequence numbers from all partitions for the specified cid(s)
      *
-     * @param streamId
+     * @param cids
      */
-    public void requestSeqNos(int streamId) {
-        conductor.requestSeqnos(streamId);
+    public void requestSeqNos(int... cids) {
+        conductor.requestSeqnos(cids);
     }
 
     /**
-     * Waits for requested current sequence numbers from all partitions for the specified stream to arrive
+     * Waits for requested current sequence numbers from all partitions for the specified cid(s) to arrive
      *
      * @throws Throwable exception which occurred while awaiting for sequence numbers
-     * @param streamId
+     * @param cids
      */
-    public void waitForSeqNos(int streamId) throws Throwable {
-        conductor.waitForSeqnos(streamId);
+    public void waitForSeqNos(int... cids) throws Throwable {
+        conductor.waitForSeqnos(cids);
     }
 
     /**
@@ -188,11 +190,10 @@ public class Client {
     /**
      * Requests the current item counts for the specified collections
      *
-     * @param streamId the associated stream id
      * @param cids the collection ids
      */
-    public void requestCollectionItemCounts(int streamId, int... cids) {
-        conductor.requestCollectionItemCounts(streamId, cids);
+    public void requestCollectionItemCounts(int... cids) {
+        conductor.requestCollectionItemCounts(cids);
     }
 
     /**
@@ -311,7 +312,6 @@ public class Client {
      *
      * If no ids are provided, all initialized partitions will be started.
      *
-     *
      * @param streamId
      * @param vbids
      *            the partition ids (0-indexed) to start streaming for.
@@ -324,7 +324,10 @@ public class Client {
 
         vbids = partitionsForVbids(numPartitions, vbids);
         ensureInitialized(streamState, vbids);
-        LOGGER.debug("Stream {} start against {} partitions: {}", streamId, vbids.length, Arrays.toString(vbids));
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Stream {} start against {} partitions: {} cids: {}", streamId, vbids.length,
+                    ShortUtil.toCompactString(vbids), CollectionsUtil.displayCids(streamState.cids()));
+        }
         for (short vbid : vbids) {
             StreamRequest request = streamState.get(vbid).getStreamRequest();
             conductor.startStreamForPartition(request);
@@ -396,17 +399,16 @@ public class Client {
     public void failoverLogs(long timeout, TimeUnit unit, short... vbids) throws Throwable {
         vbids = partitionsForVbids(numPartitions(), vbids);
         if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Asking for failover logs on partitions {}", Arrays.toString(vbids));
+            LOGGER.debug("Requesting & awaiting failover logs on partitions {}", ShortUtil.toCompactString(vbids));
         }
         for (short vbid : vbids) {
             conductor.requestFailoverLog(vbid);
         }
         Span span = Span.start(timeout, unit);
-        LOGGER.debug("Waiting up to {} to receive failover logs", span);
         for (short vbid : vbids) {
             conductor.waitForFailoverLog(vbid, span.remaining(unit), unit);
         }
-        LOGGER.debug("Received failover logs");
+        LOGGER.debug("Received requested failover logs");
     }
 
     public void getFailoverLogs(long timeout, TimeUnit unit) throws Throwable {

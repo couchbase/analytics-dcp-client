@@ -104,7 +104,7 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
         if (pair != null && pair.getLeft() != null) {
             pipeline.addLast(new AuthHandler(pair.getLeft(), pair.getRight()));
         }
-        pipeline.addLast(new DcpConnectHandler(environment))
+        pipeline.addLast(new DcpConnectHandler(environment, dcpChannel))
                 .addLast(new DcpNegotiationHandler(environment.dcpControl())).addLast(new DcpMessageHandler(dcpChannel,
                         ch, environment, environment.dataEventHandler(), controlHandler));
     }

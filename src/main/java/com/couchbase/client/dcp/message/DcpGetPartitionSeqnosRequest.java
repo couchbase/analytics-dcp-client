@@ -10,8 +10,7 @@
 package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.GET_ALL_VB_SEQNOS_OPCODE;
-
-import java.util.Arrays;
+import static com.couchbase.client.dcp.message.MessageUtil.GET_SEQNOS_GLOBAL_COLLECTION_ID;
 
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.deps.io.netty.buffer.Unpooled;
@@ -27,25 +26,20 @@ public enum DcpGetPartitionSeqnosRequest {
         MessageUtil.initRequest(GET_ALL_VB_SEQNOS_OPCODE, buffer);
     }
 
-    public static void streamId(final ByteBuf buffer, int streamId) {
-        MessageUtil.setOpaque(streamId, buffer);
-    }
+    public static void vbucketStateAndCid(final ByteBuf buffer, VbucketState vbucketState, int cid) {
 
-    public static void vbucketStateAndCid(final ByteBuf buffer, VbucketState vbucketState, int... cids) {
-        if (cids.length > 1) {
-            throw new IllegalArgumentException(
-                    "at most one collection id can be specified, but was " + Arrays.toString(cids));
-        }
+        MessageUtil.setOpaque(cid, buffer);
+
         switch (vbucketState) {
             case ANY:
             case ACTIVE:
             case REPLICA:
             case PENDING:
             case DEAD:
-                ByteBuf extras = Unpooled.buffer(cids.length == 0 ? 4 : 8);
+                ByteBuf extras = Unpooled.buffer(cid == GET_SEQNOS_GLOBAL_COLLECTION_ID ? 4 : 8);
                 extras.writeInt(vbucketState.value());
-                if (cids.length == 1) {
-                    extras.writeInt(cids[0]);
+                if (cid != GET_SEQNOS_GLOBAL_COLLECTION_ID) {
+                    extras.writeInt(cid);
                 }
                 MessageUtil.setExtras(extras, buffer);
                 extras.release();
