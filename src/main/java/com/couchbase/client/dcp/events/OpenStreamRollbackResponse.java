@@ -1,3 +1,13 @@
+/*
+Copyright 2020-Present Couchbase, Inc.
+
+Use of this software is governed by the Business Source License included in
+the file licenses/BSL-Couchbase.txt.  As of the Change Date specified in that
+file, in accordance with the Business Source License, use of this software will
+be governed by the Apache License, Version 2.0, included in the file
+licenses/APL2.txt.
+*/
+
 package com.couchbase.client.dcp.events;
 
 import com.couchbase.client.dcp.state.StreamPartitionState;
@@ -22,7 +32,7 @@ public class OpenStreamRollbackResponse extends OpenStreamResponse {
 
     @Override
     public String toString() {
-        return "{\"open-stream-response\":\"" + MemcachedStatus.toString(getStatus()) + "\", " + "\"rollback-seq\":"
-                + Long.toUnsignedString(rollbackSeq) + "}";
+        return "{\"vbucket\":" + state.vbid() + ", \"open-stream-response\":\"" + MemcachedStatus.toString(status)
+                + "\", " + "\"rollback-seq\":" + Long.toUnsignedString(rollbackSeq) + "}";
     }
 }

@@ -1,5 +1,11 @@
 /*
- * Copyright (c) 2016-2021 Couchbase, Inc.
+ * Copyright 2016-Present Couchbase, Inc.
+ *
+ * Use of this software is governed by the Business Source License included
+ * in the file licenses/BSL-Couchbase.txt.  As of the Change Date specified
+ * in that file, in accordance with the Business Source License, use of this
+ * software will be governed by the Apache License, Version 2.0, included in
+ * the file licenses/APL2.txt.
  */
 package com.couchbase.client.dcp.state;
 
@@ -22,7 +28,11 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.CollectionsUtil;
+import com.couchbase.client.dcp.util.ShortSortedBitSet;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
+
+import it.unimi.dsi.fastutil.shorts.ShortSortedSet;
+import it.unimi.dsi.fastutil.shorts.ShortSortedSets;
 
 /**
  * Holds the state information for the current session (all partitions involved).
@@ -48,11 +58,16 @@ public class SessionState {
 
     private volatile StreamState[] streams = new StreamState[0];
 
+    private final ShortSortedSet pendingSeqnos;
+
+    private Throwable seqsRequestFailure;
+
     public SessionState(CouchbaseBucketConfig config) {
         this.config = config;
         this.sessionPartitionState = new AtomicReferenceArray<>(config.numberOfPartitions());
         this.uuid = getUuid(config);
         setConnected(config);
+        pendingSeqnos = new ShortSortedBitSet(config.numberOfPartitions());
     }
 
     private SessionState() {
@@ -60,6 +75,7 @@ public class SessionState {
         this.sessionPartitionState = new AtomicReferenceArray<>(0);
         this.uuid = "";
         connected = true;
+        pendingSeqnos = ShortSortedSets.EMPTY_SET;
     }
 
     public static SessionState empty() {
@@ -187,5 +203,46 @@ public class SessionState {
 
     protected static String getUuid(CouchbaseBucketConfig config) {
         return Conductor.getUuid(config.uri());
+    }
+
+    public void prepareForSeqnoRequest() {
+        seqsRequestFailure = null;
+        for (short vbid = 0; vbid < sessionPartitionState.length(); vbid++) {
+            pendingSeqnos.add(vbid);
+        }
+    }
+
+    public void seqnoRequestFailed(Throwable th) {
+        seqsRequestFailure = th;
+        synchronized (pendingSeqnos) {
+            pendingSeqnos.notifyAll();
+
+        }
+    }
+
+    public void handleSeqnoResponse(short vbid, long seq) {
+        if (pendingSeqnos.remove(vbid)) {
+            synchronized (pendingSeqnos) {
+                pendingSeqnos.notifyAll();
+            }
+        }
+        get(vbid).setCurrentVBucketSeqnoInMaster(seq);
+    }
+
+    public void waitTillSeqnosUpdated(long attemptMillis) throws Throwable {
+        Span span = Span.start(attemptMillis, TimeUnit.MILLISECONDS);
+        synchronized (pendingSeqnos) {
+            while (seqsRequestFailure != null && !pendingSeqnos.isEmpty() && !span.elapsed()) {
+                pendingSeqnos.wait(span.remaining(TimeUnit.MILLISECONDS));
+            }
+        }
+        if (seqsRequestFailure != null) {
+            throw seqsRequestFailure;
+        }
+        if (!pendingSeqnos.isEmpty()) {
+            LOGGER.warn("{} elapsed before obtaining current seqnos ({} remaining {})", span, pendingSeqnos.size(),
+                    pendingSeqnos);
+            throw new TimeoutException("waitTillSeqnosUpdated");
+        }
     }
 }

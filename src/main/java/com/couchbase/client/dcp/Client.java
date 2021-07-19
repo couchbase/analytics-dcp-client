@@ -1,5 +1,11 @@
 /*
- * Copyright (c) 2016-2021 Couchbase, Inc.
+ * Copyright 2016-Present Couchbase, Inc.
+ *
+ * Use of this software is governed by the Business Source License included
+ * in the file licenses/BSL-Couchbase.txt.  As of the Change Date specified
+ * in that file, in accordance with the Business Source License, use of this
+ * software will be governed by the Apache License, Version 2.0, included in
+ * the file licenses/APL2.txt.
  */
 package com.couchbase.client.dcp;
 
@@ -34,6 +40,7 @@ import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
 import com.couchbase.client.dcp.message.RollbackMessage;
+import com.couchbase.client.dcp.state.SessionPartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamRequest;
@@ -129,9 +136,9 @@ public class Client {
      * @throws Throwable exception which occurred while awaiting for sequence numbers
      * @param streamId
      */
-    public void getSequenceNumbers(int streamId) throws Throwable {
-        conductor.requestSeqnos(streamId);
-        conductor.waitForSeqnos(streamId);
+    public void getSeqNos(int streamId) throws Throwable {
+        requestSeqNos(streamId);
+        waitForSeqNos(streamId);
     }
 
     /**
@@ -139,7 +146,7 @@ public class Client {
      *
      * @param streamId
      */
-    public void requestSequenceNumbers(int streamId) {
+    public void requestSeqNos(int streamId) {
         conductor.requestSeqnos(streamId);
     }
 
@@ -149,8 +156,33 @@ public class Client {
      * @throws Throwable exception which occurred while awaiting for sequence numbers
      * @param streamId
      */
-    public void waitForSequenceNumbers(int streamId) throws Throwable {
+    public void waitForSeqNos(int streamId) throws Throwable {
         conductor.waitForSeqnos(streamId);
+    }
+
+    /**
+     * Requests & waits for the current (bucket-wide) sequence numbers from all partitions. These will be
+     * available in each vbucket's {@link SessionPartitionState} (via {@link Client#sessionState()}).
+     */
+    public void getBucketSeqNos() throws Throwable {
+        requestBucketSeqNos();
+        waitForBucketSeqnos();
+    }
+
+    /**
+     * Requests the current (bucket-wide) sequence numbers from all partitions.
+     */
+    public void requestBucketSeqNos() {
+        conductor.requestBucketSeqnos();
+    }
+
+    /**
+     * Waits for the current (bucket-wide) sequence numbers from all partitions, previously requested via
+     * {@link #requestBucketSeqNos()}. After this method returns, the seqnos will be available in each
+     * vbucket's {@link SessionPartitionState} (via {@link Client#sessionState()}).
+     */
+    public void waitForBucketSeqnos() throws Throwable {
+        conductor.waitForBucketSeqnos();
     }
 
     /**

@@ -1,5 +1,11 @@
 /*
- * Copyright (c) 2016-2021 Couchbase, Inc.
+ * Copyright 2016-Present Couchbase, Inc.
+ *
+ * Use of this software is governed by the Business Source License included
+ * in the file licenses/BSL-Couchbase.txt.  As of the Change Date specified
+ * in that file, in accordance with the Business Source License, use of this
+ * software will be governed by the Apache License, Version 2.0, included in
+ * the file licenses/APL2.txt.
  */
 package com.couchbase.client.dcp.conductor;
 
@@ -202,6 +208,22 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         short status = MessageUtil.getStatus(buf);
         short reqId = MessageUtil.getOpaqueHi(buf);
         int streamId = MessageUtil.getOpaqueLo(buf);
+
+        if (streamId == 0) {
+            // global seqnos
+            if (status == MemcachedStatus.SUCCESS) {
+                ByteBuf content = MessageUtil.getContent(buf);
+                int size = content.readableBytes();
+                for (int offset = 0; offset < size; offset += 10) {
+                    short vbid = content.getShort(offset);
+                    long seq = content.getLong(offset + Short.BYTES);
+                    channel.getSessionState().handleSeqnoResponse(vbid, seq);
+                }
+            } else {
+                channel.getSessionState().seqnoRequestFailed(new CouchbaseException(MemcachedStatus.toString(status)));
+            }
+            return;
+        }
 
         if (status == MemcachedStatus.SUCCESS) {
             ByteBuf content = MessageUtil.getContent(buf);

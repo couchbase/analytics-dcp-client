@@ -1,5 +1,11 @@
 /*
- * Copyright (c) 2016-2021 Couchbase, Inc.
+ * Copyright 2016-Present Couchbase, Inc.
+ *
+ * Use of this software is governed by the Business Source License included
+ * in the file licenses/BSL-Couchbase.txt.  As of the Change Date specified
+ * in that file, in accordance with the Business Source License, use of this
+ * software will be governed by the Apache License, Version 2.0, included in
+ * the file licenses/APL2.txt.
  */
 package com.couchbase.client.dcp.conductor;
 
@@ -329,6 +335,24 @@ public class DcpChannel {
             DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE);
         }
         DcpGetPartitionSeqnosRequest.streamId(buffer, streamId);
+        channel.writeAndFlush(buffer);
+    }
+
+    /**
+     * Requests seqnos for all vbuckets on this channel for the supplied cids.  If no cids are supplied, retrieve
+     * the bucket-wide seqnos
+     */
+    public synchronized void requestSeqnos(int... cids) {
+        if (cids.length > 0) {
+            throw new IllegalArgumentException("NYI: cids");
+        }
+        if (getState() != State.CONNECTED) {
+            sessionState.seqnoRequestFailed(new NotConnectedException());
+            return;
+        }
+        ByteBuf buffer = Unpooled.buffer();
+        DcpGetPartitionSeqnosRequest.init(buffer);
+        DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE);
         channel.writeAndFlush(buffer);
     }
 

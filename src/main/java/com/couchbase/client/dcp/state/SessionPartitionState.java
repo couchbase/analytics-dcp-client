@@ -1,7 +1,15 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright 2016-Present Couchbase, Inc.
+ *
+ * Use of this software is governed by the Business Source License included
+ * in the file licenses/BSL-Couchbase.txt.  As of the Change Date specified
+ * in that file, in accordance with the Business Source License, use of this
+ * software will be governed by the Apache License, Version 2.0, included in
+ * the file licenses/APL2.txt.
  */
 package com.couchbase.client.dcp.state;
+
+import static com.couchbase.client.dcp.state.StreamPartitionState.INVALID_SEQNO;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,10 +39,18 @@ public class SessionPartitionState {
 
     private final FailoverLogUpdateEvent failoverLogUpdateEvent;
 
+    private long currentVBucketSeqnoInMaster = INVALID_SEQNO;
+
+    private Throwable seqsRequestFailure;
+
     public SessionPartitionState(short vbid) {
         this.vbid = vbid;
         failoverUpdated = false;
         failoverLogUpdateEvent = new FailoverLogUpdateEvent(this);
+    }
+
+    public void setSnapshotEndSeqno(long snapshotEndSeqno) {
+        currentVBucketSeqnoInMaster = Long.max(currentVBucketSeqnoInMaster, snapshotEndSeqno);
     }
 
     /**
@@ -118,6 +134,14 @@ public class SessionPartitionState {
 
     public short vbid() {
         return vbid;
+    }
+
+    public long getCurrentVBucketSeqnoInMaster() {
+        return currentVBucketSeqnoInMaster;
+    }
+
+    public void setCurrentVBucketSeqnoInMaster(long currentVBucketSeqnoInMaster) {
+        this.currentVBucketSeqnoInMaster = currentVBucketSeqnoInMaster;
     }
 
     public long uuid() {

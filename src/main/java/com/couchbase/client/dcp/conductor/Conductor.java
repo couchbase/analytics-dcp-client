@@ -1,5 +1,11 @@
 /*
- * Copyright (c) 2016-2021 Couchbase, Inc.
+ * Copyright 2016-Present Couchbase, Inc.
+ *
+ * Use of this software is governed by the Business Source License included
+ * in the file licenses/BSL-Couchbase.txt.  As of the Change Date specified
+ * in that file, in accordance with the Business Source License, use of this
+ * software will be governed by the Apache License, Version 2.0, included in
+ * the file licenses/APL2.txt.
  */
 package com.couchbase.client.dcp.conductor;
 
@@ -158,6 +164,29 @@ public class Conductor {
                 channel.requestSeqnos(streamState);
             }
         }
+    }
+
+    public void requestBucketSeqnos() {
+        LOGGER.debug("Requesting sequence numbers for all vbuckets");
+        sessionState.prepareForSeqnoRequest();
+        synchronized (channels) {
+            for (DcpChannel channel : channels.values()) {
+                channel.requestSeqnos();
+            }
+        }
+    }
+
+    public void waitForBucketSeqnos() throws Throwable {
+        MutableInt attempt = new MutableInt(1);
+        InvokeUtil.retryUntilSuccessOrExhausted(Span.start(WAIT_FOR_SEQNOS_TIMEOUT_SECS, TimeUnit.SECONDS), () -> {
+            if (attempt.getAndIncrement() > 1) {
+                requestBucketSeqnos();
+            }
+            long attemptMillis =
+                    TimeUnit.SECONDS.toMillis(WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS) * attempt.getValue() / 2;
+            sessionState.waitTillSeqnosUpdated(attemptMillis);
+            return null;
+        }, failure -> failure instanceof TimeoutException, i -> 0);
     }
 
     public void requestFailoverLog(short vbid) {
