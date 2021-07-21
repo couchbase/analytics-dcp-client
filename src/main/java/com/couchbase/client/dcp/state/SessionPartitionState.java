@@ -9,8 +9,6 @@
  */
 package com.couchbase.client.dcp.state;
 
-import static com.couchbase.client.dcp.state.StreamPartitionState.INVALID_SEQNO;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
@@ -27,9 +25,12 @@ import com.couchbase.client.dcp.events.FailoverLogUpdateEvent;
 
 public class SessionPartitionState {
     private static final Logger LOGGER = LogManager.getLogger();
+
     private final short vbid;
 
     private final List<FailoverLogEntry> failoverLog = new ArrayList<>();
+
+    private final FailoverLogUpdateEvent failoverLogUpdateEvent;
 
     private long uuid;
 
@@ -37,20 +38,10 @@ public class SessionPartitionState {
 
     private volatile Throwable failoverLogRequestFailure;
 
-    private final FailoverLogUpdateEvent failoverLogUpdateEvent;
-
-    private long currentVBucketSeqnoInMaster = INVALID_SEQNO;
-
-    private Throwable seqsRequestFailure;
-
     public SessionPartitionState(short vbid) {
         this.vbid = vbid;
         failoverUpdated = false;
         failoverLogUpdateEvent = new FailoverLogUpdateEvent(this);
-    }
-
-    public void setSnapshotEndSeqno(long snapshotEndSeqno) {
-        currentVBucketSeqnoInMaster = Long.max(currentVBucketSeqnoInMaster, snapshotEndSeqno);
     }
 
     /**
@@ -134,14 +125,6 @@ public class SessionPartitionState {
 
     public short vbid() {
         return vbid;
-    }
-
-    public long getCurrentVBucketSeqnoInMaster() {
-        return currentVBucketSeqnoInMaster;
-    }
-
-    public void setCurrentVBucketSeqnoInMaster(long currentVBucketSeqnoInMaster) {
-        this.currentVBucketSeqnoInMaster = currentVBucketSeqnoInMaster;
     }
 
     public long uuid() {

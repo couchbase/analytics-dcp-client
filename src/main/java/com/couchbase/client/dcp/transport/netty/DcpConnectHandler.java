@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.message.DcpOpenConnectionRequest;
 import com.couchbase.client.dcp.message.MessageUtil;
@@ -58,10 +59,13 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
      *
      * @param environment
      *            the generator of the connection names.
+     * @param dcpChannel
      */
-    DcpConnectHandler(final ClientEnvironment environment) {
+    DcpConnectHandler(final ClientEnvironment environment, DcpChannel dcpChannel) {
         bucket = environment.bucket();
-        connectionName = Unpooled.copiedBuffer(environment.connectionNameGenerator().name(), CharsetUtil.UTF_8);
+        final String connectionNameString = environment.connectionNameGenerator().name();
+        connectionName = Unpooled.copiedBuffer(connectionNameString, CharsetUtil.UTF_8);
+        dcpChannel.setConnectionName(connectionNameString);
     }
 
     /**

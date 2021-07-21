@@ -9,6 +9,7 @@
  */
 package com.couchbase.client.dcp.state;
 
+import static com.couchbase.client.dcp.message.MessageUtil.GET_SEQNOS_GLOBAL_COLLECTION_ID;
 import static it.unimi.dsi.fastutil.objects.ObjectArrays.ensureCapacity;
 
 import java.util.Objects;
@@ -16,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.apache.hyracks.util.Span;
@@ -28,11 +30,11 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.CollectionsUtil;
-import com.couchbase.client.dcp.util.ShortSortedBitSet;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
-import it.unimi.dsi.fastutil.shorts.ShortSortedSet;
-import it.unimi.dsi.fastutil.shorts.ShortSortedSets;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 
 /**
  * Holds the state information for the current session (all partitions involved).
@@ -58,16 +60,14 @@ public class SessionState {
 
     private volatile StreamState[] streams = new StreamState[0];
 
-    private final ShortSortedSet pendingSeqnos;
-
-    private Throwable seqsRequestFailure;
+    private final Int2ObjectMap<CollectionState> collectionStates =
+            Int2ObjectMaps.synchronize(new Int2ObjectOpenHashMap<>());
 
     public SessionState(CouchbaseBucketConfig config) {
         this.config = config;
         this.sessionPartitionState = new AtomicReferenceArray<>(config.numberOfPartitions());
         this.uuid = getUuid(config);
         setConnected(config);
-        pendingSeqnos = new ShortSortedBitSet(config.numberOfPartitions());
     }
 
     private SessionState() {
@@ -75,7 +75,6 @@ public class SessionState {
         this.sessionPartitionState = new AtomicReferenceArray<>(0);
         this.uuid = "";
         connected = true;
-        pendingSeqnos = ShortSortedSets.EMPTY_SET;
     }
 
     public static SessionState empty() {
@@ -102,7 +101,7 @@ public class SessionState {
         return "SessionState{" + "numPartitions=" + sessionPartitionState.length() + ", uuid='" + uuid + '\''
                 + ", streams=["
                 + Stream.of(streams)
-                        .map(ss -> "\"" + ss.streamId() + ":" + CollectionsUtil.displayCid(ss.collectionId()) + '"')
+                        .map(ss -> "\"" + ss.streamId() + ":" + CollectionsUtil.displayCids(ss.cids()) + '"')
                         .collect(Collectors.joining(", "))
                 + "]}";
     }
@@ -169,8 +168,8 @@ public class SessionState {
         return streamId > streams.length ? null : streams[streamId - 1];
     }
 
-    public synchronized StreamState newStream(int streamId, int cid, short... vbuckets) {
-        final StreamState streamState = new StreamState(streamId, cid, this, vbuckets);
+    public synchronized StreamState newStream(int streamId, int[] cids, short... vbuckets) {
+        final StreamState streamState = new StreamState(streamId, cids, this, vbuckets);
         streams = ensureCapacity(streams, streamId);
         streams[streamId - 1] = streamState;
         return streamState;
@@ -205,44 +204,65 @@ public class SessionState {
         return Conductor.getUuid(config.uri());
     }
 
-    public void prepareForSeqnoRequest() {
-        seqsRequestFailure = null;
-        for (short vbid = 0; vbid < sessionPartitionState.length(); vbid++) {
-            pendingSeqnos.add(vbid);
+    public void prepareForSeqnoRequest(int... cids) {
+        IntStream.of(cids).forEach(cid -> ensureCollectionState(cid).prepareForRequest());
+    }
+
+    public void waitForSeqnos(long attemptMillis, int... cids) throws Throwable {
+        final Span span = Span.start(attemptMillis, TimeUnit.MILLISECONDS);
+        for (int cid : cids) {
+            ensureCollectionState(cid).waitForSeqnos(span);
         }
     }
 
-    public void seqnoRequestFailed(Throwable th) {
-        seqsRequestFailure = th;
-        synchronized (pendingSeqnos) {
-            pendingSeqnos.notifyAll();
+    public boolean hasSeqnosPending(int... cids) {
+        return IntStream.of(cids).anyMatch(cid -> ensureCollectionState(cid).hasPendingSeqnos());
+    }
 
+    public void handleSeqnoResponse(int cid, ByteBuf content) {
+        ensureCollectionState(cid).handleSeqnoResponse(content);
+    }
+
+    public void seqnoRequestFailed(int cid, Throwable th) {
+        ensureCollectionState(cid).onFailure(th);
+    }
+
+    public long getMasterSeqno(int cid, short vbid) {
+        return ensureCollectionState(cid).getSeqno(vbid);
+    }
+
+    public long getBucketMasterSeqno(short vbid) {
+        return getMasterSeqno(GET_SEQNOS_GLOBAL_COLLECTION_ID, vbid);
+    }
+
+    public void ensureMaxCurrentVBucketSeqnoInMaster(short vbid, long seqno) {
+        ensureCollectionState(GET_SEQNOS_GLOBAL_COLLECTION_ID).ensureMaxSeqno(vbid, seqno);
+    }
+
+    public CollectionState getCollectionState(int cid) {
+        return ensureCollectionState(cid);
+    }
+
+    private CollectionState ensureCollectionState(int cid) {
+        return collectionStates.computeIfAbsent(cid, c -> new CollectionState(c, getNumOfPartitions()));
+    }
+
+    public void interruptPendingSeqnoRequests() {
+        final InterruptedException ex = new InterruptedException();
+        synchronized (collectionStates) {
+            collectionStates.values().forEach(state -> state.onFailure(ex));
         }
     }
 
-    public void handleSeqnoResponse(short vbid, long seq) {
-        if (pendingSeqnos.remove(vbid)) {
-            synchronized (pendingSeqnos) {
-                pendingSeqnos.notifyAll();
-            }
-        }
-        get(vbid).setCurrentVBucketSeqnoInMaster(seq);
+    public void recordItemCountResponse(int cid, long itemCount) {
+        ensureCollectionState(cid).recordItemCountResponse(itemCount);
     }
 
-    public void waitTillSeqnosUpdated(long attemptMillis) throws Throwable {
-        Span span = Span.start(attemptMillis, TimeUnit.MILLISECONDS);
-        synchronized (pendingSeqnos) {
-            while (seqsRequestFailure != null && !pendingSeqnos.isEmpty() && !span.elapsed()) {
-                pendingSeqnos.wait(span.remaining(TimeUnit.MILLISECONDS));
-            }
-        }
-        if (seqsRequestFailure != null) {
-            throw seqsRequestFailure;
-        }
-        if (!pendingSeqnos.isEmpty()) {
-            LOGGER.warn("{} elapsed before obtaining current seqnos ({} remaining {})", span, pendingSeqnos.size(),
-                    pendingSeqnos);
-            throw new TimeoutException("waitTillSeqnosUpdated");
-        }
+    public void initItemCountRequest(int... cids) {
+        IntStream.of(cids).forEach(cid -> ensureCollectionState(cid).resetItemCountRequest());
+    }
+
+    public void registerPendingCollectionItemCount(int... cids) {
+        IntStream.of(cids).forEach(cid -> ensureCollectionState(cid).registerItemResponse());
     }
 }

@@ -43,8 +43,7 @@ public class StreamPartitionState {
     public static final byte CONNECTED_OSO = 0x05;
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private volatile long currentVBucketSeqnoInMaster = INVALID_SEQNO;
-
+    private final StreamState streamState;
     private final short vbid;
 
     /**
@@ -77,7 +76,8 @@ public class StreamPartitionState {
     /**
      * Initialize a new partition state.
      */
-    public StreamPartitionState(short vbid) {
+    public StreamPartitionState(StreamState streamState, short vbid) {
+        this.streamState = streamState;
         this.vbid = vbid;
         state = DISCONNECTED;
     }
@@ -98,7 +98,7 @@ public class StreamPartitionState {
     @SuppressWarnings("NonAtomicOperationOnVolatileField")
     public void setSnapshotEndSeqno(long snapshotEndSeqno) {
         this.snapshotEndSeqno = snapshotEndSeqno;
-        currentVBucketSeqnoInMaster = maxUnsigned(currentVBucketSeqnoInMaster, snapshotEndSeqno);
+        streamState.getSessionState().ensureMaxCurrentVBucketSeqnoInMaster(vbid, snapshotEndSeqno);
     }
 
     /**
@@ -184,22 +184,13 @@ public class StreamPartitionState {
             if (SessionState.NO_END_SEQNO != streamEndSeq && Long.compareUnsigned(streamEndSeq, seqno) < 0) {
                 streamEndSeq = snapshotEndSeqno;
             }
-            this.streamRequest =
-                    new StreamRequest(vbid, seqno, streamEndSeq, sessionState.get(vbid).uuid(), snapshotStartSeqno,
-                            snapshotEndSeqno, manifestUid, streamState.streamId(), streamState.collectionId());
+            this.streamRequest = new StreamRequest(vbid, seqno, streamEndSeq, sessionState.get(vbid).uuid(),
+                    snapshotStartSeqno, snapshotEndSeqno, manifestUid, streamState.streamId(), streamState.cids());
         }
     }
 
     public short vbid() {
         return vbid;
-    }
-
-    public long getCurrentVBucketSeqnoInMaster() {
-        return currentVBucketSeqnoInMaster;
-    }
-
-    public void setCurrentVBucketSeqnoInMaster(long currentVBucketSeqnoInMaster) {
-        this.currentVBucketSeqnoInMaster = currentVBucketSeqnoInMaster;
     }
 
     public void useStreamRequest() {
@@ -219,7 +210,6 @@ public class StreamPartitionState {
     public Map<String, Object> toMap() {
         Map<String, Object> tree = new HashMap<>();
         tree.put("vbid", vbid);
-        tree.put("maxSeq", currentVBucketSeqnoInMaster);
         tree.put("seqno", seqno);
         tree.put("state", state);
         tree.put("osoMaxSeq", osoMaxSeqno);

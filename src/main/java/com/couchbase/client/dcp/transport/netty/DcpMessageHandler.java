@@ -104,6 +104,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     private final int ackWatermark;
     private final DcpChannel dcpChannel;
     private final ChannelFutureListener ackListener;
+    private final String connectionId;
 
     private static boolean ackSanity;
     private static final Set<AckKey> globalPendingAck = Collections.newSetFromMap(new ConcurrentHashMap<>());
@@ -129,6 +130,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         this.controlEventHandler = controlEventHandler;
         this.ackEnabled = env.dcpControl().ackEnabled();
         this.ackCounter = 0;
+        this.connectionId = env.connectionNameGenerator().displayForm(dcpChannel.getConnectionName());
         if (ackEnabled) {
             int bufferAckPercent = env.ackWaterMark();
             int bufferSize = Integer.parseInt(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
@@ -144,7 +146,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                 }
             };
             if (!ackSanity && LOGGER.isTraceEnabled()) {
-                LOGGER.warn("ACK sanity checks enabled; violations will be logged here");
+                LOGGER.warn("{} ACK sanity checks enabled; violations will be logged here", connectionId);
                 ackSanity = true; // NOSONAR: S3010 - assignment to static field in ctor
             }
         } else {
@@ -232,22 +234,22 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case FLEX_REQ_DCP_MUTATION:
             case FLEX_REQ_DCP_DELETION:
             case FLEX_REQ_DCP_EXPIRATION:
-                LOGGER.trace("{} sid {} vbid {} seq {} cid {} key {}", MessageUtil.humanizeOpcode(message),
-                        MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message),
-                        DcpDataMessage.bySeqno(message), CollectionsUtil.displayCid(MessageUtil.getCid(message)),
-                        LogRedactionUtil
+                LOGGER.trace("{} {} sid {} vbid {} seq {} cid {} key {}", connectionId,
+                        MessageUtil.humanizeOpcode(message), MessageUtil.streamId(message, -1),
+                        MessageUtil.getVbucket(message), DcpDataMessage.bySeqno(message),
+                        CollectionsUtil.displayCid(MessageUtil.getCid(message)), LogRedactionUtil
                                 .userData(MessageUtil.getKeyAsString(message, dcpChannel.isCollectionCapable())));
                 break;
             case REQ_DCP_MUTATION:
             case REQ_DCP_DELETION:
             case REQ_DCP_EXPIRATION:
-                LOGGER.trace("{} vbid {} seq {} cid {} key {}", MessageUtil.humanizeOpcode(message),
+                LOGGER.trace("{} {} vbid {} seq {} cid {} key {}", connectionId, MessageUtil.humanizeOpcode(message),
                         MessageUtil.getVbucket(message), DcpDataMessage.bySeqno(message),
                         CollectionsUtil.displayCid(MessageUtil.getCid(message)), LogRedactionUtil
                                 .userData(MessageUtil.getKeyAsString(message, dcpChannel.isCollectionCapable())));
                 break;
             case FLEX_REQ_OSO_SNAPSHOT_MARKER:
-                LOGGER.trace("{} sid {} vbid {} flags {}", MessageUtil.humanizeOpcode(message),
+                LOGGER.trace("{} {} sid {} vbid {} flags {}", connectionId, MessageUtil.humanizeOpcode(message),
                         MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message),
                         DcpOsoSnapshotMarkerMessage.humanizeFlags(message));
                 break;
@@ -256,11 +258,11 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case FLEX_REQ_SET_VBUCKET_STATE:
             case FLEX_REQ_SYSTEM_EVENT:
             case FLEX_REQ_SEQNO_ADVANCED:
-                LOGGER.trace("{} sid {} vbid {}", MessageUtil.humanizeOpcode(message),
+                LOGGER.trace("{} {} sid {} vbid {}", connectionId, MessageUtil.humanizeOpcode(message),
                         MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message));
                 break;
             case RES_STREAM_REQUEST:
-                LOGGER.trace("{} sid {} vbid {} status {}", MessageUtil.humanizeOpcode(message),
+                LOGGER.trace("{} {} sid {} vbid {} status {}", connectionId, MessageUtil.humanizeOpcode(message),
                         DcpOpenStreamResponse.streamId(message), DcpOpenStreamResponse.vbucket(message),
                         MemcachedStatus.toString(MessageUtil.getStatus(message)));
                 break;
@@ -273,14 +275,15 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             case RES_STREAM_CLOSE:
             case RES_GET_SEQNOS:
             case RES_DCP_COLLECTIONS_MANIFEST:
-                LOGGER.trace("{} vbid {}", MessageUtil.humanizeOpcode(message), MessageUtil.getVbucket(message));
+                LOGGER.trace("{} {} vbid {}", connectionId, MessageUtil.humanizeOpcode(message),
+                        MessageUtil.getVbucket(message));
                 break;
             case RES_FAILOVER_LOG:
-                LOGGER.trace("{} vbid {} status {}", MessageUtil.humanizeOpcode(message),
+                LOGGER.trace("{} {} vbid {} status {}", connectionId, MessageUtil.humanizeOpcode(message),
                         MessageUtil.getOpaque(message), MemcachedStatus.toString(MessageUtil.getStatus(message)));
                 break;
             case REQ_DCP_NOOP:
-                LOGGER.trace("{}", MessageUtil.humanizeOpcode(message));
+                LOGGER.trace("{} {}", connectionId, MessageUtil.humanizeOpcode(message));
                 break;
             default:
                 // no-op
@@ -322,14 +325,14 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             synchronized (ackHandle) {
                 ackCounter += ackBytes;
                 if (LOGGER.isTraceEnabled()) {
-                    LOGGER.trace("BufferAckCounter is now {} after += {} for opcode {}", ackCounter, ackBytes,
-                            MessageUtil.humanizeOpcode(message));
+                    LOGGER.trace("{} BufferAckCounter is now {} after += {} for opcode {}", connectionId, ackCounter,
+                            ackBytes, MessageUtil.humanizeOpcode(message));
                 }
                 if (ackCounter >= ackWatermark) {
                     env.flowControlCallback().bufferAckWaterMarkReached(ackHandle, dcpChannel, ackCounter,
                             ackWatermark);
-                    LOGGER.debug("BufferAckWatermark ({}) reached on {}, acking {} bytes now with the server",
-                            ackWatermark, channel.remoteAddress(), ackCounter);
+                    LOGGER.debug("{} BufferAckWatermark ({}) reached on {}, acking {} bytes now with the server",
+                            connectionId, ackWatermark, channel.remoteAddress(), ackCounter);
                     ByteBuf buffer = channel.alloc().buffer();
                     DcpBufferAckRequest.init(buffer);
                     DcpBufferAckRequest.ackBytes(buffer, ackCounter);
@@ -344,7 +347,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         if (cause instanceof IOException && cause.getMessage().contains("Connection reset by peer")) {
-            LOGGER.log(CouchbaseLogLevel.WARN, "Connection was closed by the other side", cause);
+            LOGGER.log(CouchbaseLogLevel.WARN, "{} connection was closed by the other side", connectionId, cause);
             ctx.close();
             return;
         }

@@ -20,10 +20,19 @@ package com.couchbase.client.dcp;
  * @author Michael Nitschinger
  * @since 1.0.0
  */
+@FunctionalInterface
 public interface ConnectionNameGenerator {
 
     /**
      * Generate the name for a DCP Connection.
      */
     String name();
+
+    /**
+     * Returns the supplied generated name in a human-readable fashion.  The results when a non-generated
+     * name is supplied to this method is undefined.
+     */
+    default String displayForm(String name) {
+        return name;
+    }
 }

@@ -9,13 +9,13 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import static com.couchbase.client.dcp.message.MessageUtil.GET_SEQNOS_GLOBAL_COLLECTION_ID;
 import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetry;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -80,10 +80,11 @@ public class DcpChannel {
     private volatile Channel channel;
     private final DcpChannelCloseListener closeListener;
     private final long deadConnectionDetectionIntervalNanos;
-    private Int2BooleanMap stateFetched = new Int2BooleanOpenHashMap();
+    private Int2BooleanMap seqnosFetched = new Int2BooleanOpenHashMap();
     private volatile long lastActivityNanoTime = System.currentTimeMillis();
     private boolean channelDroppedReported = false;
     private final boolean collectionCapable;
+    private String connectionName;
 
     public DcpChannel(InetSocketAddress inetAddress, String hostname, final ClientEnvironment env,
             final SessionState sessionState, int numOfPartitions, boolean collectionCapable) {
@@ -175,6 +176,7 @@ public class DcpChannel {
                 continue;
             }
             for (int streamId : openStreams[vbid]) {
+                // TODO(mblow): consolidate logging
                 LOGGER.debug("Opening a stream {} that was dropped for vbucket {}", streamId, vbid);
                 final StreamState streamState = sessionState.streamState(streamId);
                 StreamPartitionState ps = streamState.get(vbid);
@@ -187,12 +189,18 @@ public class DcpChannel {
         }
         for (int i = 0; i < failoverLogRequests.length; i++) {
             if (failoverLogRequests[i]) {
+                // TODO(mblow): consolidate logging (use ShortSortedBitSet)
                 LOGGER.debug("Re-requesting failover logs for vbucket " + i);
                 getFailoverLog((short) i);
             }
         }
-        sessionState.streamStream().filter(s -> !stateFetched.getOrDefault(s.streamId(), true))
-                .forEach(this::requestSeqnos);
+
+        int[] requestedCids = sessionState.streamStream().map(StreamState::cids).flatMapToInt(IntStream::of)
+                .filter(this::isMissingSeqnos).peek(this::requestSeqnos).toArray();
+        if (requestedCids.length > 0) {
+            LOGGER.debug("Re-requested seqnos for cids {}", CollectionsUtil.displayCids(requestedCids));
+        }
+
         channel.closeFuture().addListener(closeListener);
     }
 
@@ -252,12 +260,11 @@ public class DcpChannel {
             env.eventBus().publish(endEvent);
             return;
         }
-        LOGGER.debug(
+        LOGGER.trace(
                 "Opening stream {} against {} with vbid {} vbuuid {} startSeqno {} "
                         + "endSeqno {} snapshotStartSeqno {} snapshotEndSeqno {} manifestUid {} cids {}",
                 streamId, channel.remoteAddress(), vbid, vbuuid, startSeqno, endSeqno, snapshotStartSeqno,
-                snapshotEndSeqno, manifestUid,
-                IntStream.of(cids).mapToObj(CollectionsUtil::displayCid).collect(Collectors.toList()));
+                snapshotEndSeqno, manifestUid, CollectionsUtil.displayCids(cids));
         partitionState.setState(StreamPartitionState.CONNECTING);
         if (openStreams[vbid] == null) {
             openStreams[vbid] = new IntOpenHashSet();
@@ -317,51 +324,34 @@ public class DcpChannel {
     }
 
     /**
-     * Returns all seqnos for all vbuckets on that channel.
-     * @param streamState
-     */
-    public synchronized void requestSeqnos(StreamState streamState) {
-        final int streamId = streamState.streamId();
-        stateFetched.put(streamId, false);
-        if (getState() != State.CONNECTED) {
-            streamState.seqsRequestFailed(new NotConnectedException());
-            return;
-        }
-        ByteBuf buffer = Unpooled.buffer();
-        DcpGetPartitionSeqnosRequest.init(buffer);
-        if (collectionCapable) {
-            DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE, streamState.collectionId());
-        } else {
-            DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE);
-        }
-        DcpGetPartitionSeqnosRequest.streamId(buffer, streamId);
-        channel.writeAndFlush(buffer);
-    }
-
-    /**
-     * Requests seqnos for all vbuckets on this channel for the supplied cids.  If no cids are supplied, retrieve
-     * the bucket-wide seqnos
+     * Requests seqnos for all vbuckets on this channel for the supplied cids.  The special
+     * {@link MessageUtil#GET_SEQNOS_GLOBAL_COLLECTION_ID} is used to retrieve bucket-global seqnos
      */
     public synchronized void requestSeqnos(int... cids) {
-        if (cids.length > 0) {
-            throw new IllegalArgumentException("NYI: cids");
+        if (cids.length == 0) {
+            throw new IllegalArgumentException(
+                    "at least one cid (or GET_SEQNOS_GLOBAL_COLLECTION_ID) must be supplied");
         }
-        if (getState() != State.CONNECTED) {
-            sessionState.seqnoRequestFailed(new NotConnectedException());
-            return;
+        for (int cid : cids) {
+            if (getState() != State.CONNECTED) {
+                sessionState.seqnoRequestFailed(cid, new NotConnectedException());
+            } else {
+                ByteBuf buffer = Unpooled.buffer();
+                DcpGetPartitionSeqnosRequest.init(buffer);
+                DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE, cid);
+                channel.writeAndFlush(buffer);
+            }
         }
-        ByteBuf buffer = Unpooled.buffer();
-        DcpGetPartitionSeqnosRequest.init(buffer);
-        DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE);
-        channel.writeAndFlush(buffer);
     }
 
-    public void requestCollectionItemCounts(int streamId, int[] cids) {
+    public void requestCollectionItemCounts(int... cids) {
+        if (cids.length == 0) {
+            throw new IllegalArgumentException("at least one cid must be supplied");
+        }
         ByteBuf buffer = Unpooled.buffer();
         Stat.init(buffer);
         for (int cid : cids) {
             Stat.collectionsById(buffer, cid);
-            MessageUtil.setOpaqueHi((short) streamId, buffer);
             channel.writeAndFlush(buffer);
         }
     }
@@ -447,13 +437,17 @@ public class DcpChannel {
         return failoverLogRequests;
     }
 
-    public synchronized void stateFetched(int streamId) {
-        stateFetched.put(streamId, true);
+    public synchronized void seqnosFetched(int cid) {
+        seqnosFetched.put(cid, true);
         notifyAll();
     }
 
-    public boolean isStateFetched(int streamId) {
-        return stateFetched.getOrDefault(streamId, true);
+    public boolean isSeqnosFetched(int cid) {
+        return seqnosFetched.getOrDefault(cid, false);
+    }
+
+    public boolean isMissingSeqnos(int cid) {
+        return !isSeqnosFetched(cid);
     }
 
     public synchronized boolean anyStreamIsOpen() {
@@ -484,5 +478,13 @@ public class DcpChannel {
 
     public void setChannelDroppedReported(boolean b) {
         this.channelDroppedReported = b;
+    }
+
+    public void setConnectionName(String connectionName) {
+        this.connectionName = connectionName;
+    }
+
+    public String getConnectionName() {
+        return connectionName;
     }
 }

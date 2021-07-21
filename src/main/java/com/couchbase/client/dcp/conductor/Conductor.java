@@ -10,15 +10,17 @@
 package com.couchbase.client.dcp.conductor;
 
 import static com.couchbase.client.core.env.NetworkResolution.EXTERNAL;
+import static com.couchbase.client.dcp.message.MessageUtil.GET_SEQNOS_GLOBAL_COLLECTION_ID;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.IntStream;
 
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.hyracks.api.util.InvokeUtil;
 import org.apache.hyracks.util.NetworkUtil;
@@ -39,7 +41,7 @@ import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamRequest;
-import com.couchbase.client.dcp.state.StreamState;
+import com.couchbase.client.dcp.util.CollectionsUtil;
 
 public class Conductor {
 
@@ -136,57 +138,65 @@ public class Conductor {
         return configProvider.config().numberOfPartitions();
     }
 
-    public void waitForSeqnos(int streamId) throws Throwable {
+    public void waitForSeqnos(int... cids) throws Throwable {
         MutableInt attempt = new MutableInt(1);
         InvokeUtil.retryUntilSuccessOrExhausted(Span.start(WAIT_FOR_SEQNOS_TIMEOUT_SECS, TimeUnit.SECONDS), () -> {
+            int[] attemptCids;
             if (attempt.getAndIncrement() > 1) {
-                requestSeqnos(streamId, false);
+                attemptCids = IntStream.of(cids).filter(sessionState::hasSeqnosPending).toArray();
+                requestSeqnos(false, attemptCids);
+            } else {
+                attemptCids = cids;
             }
             long attemptMillis =
                     TimeUnit.SECONDS.toMillis(WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS) * attempt.getValue() / 2;
-            sessionState.streamState(streamId).waitTillCurrentSeqUpdated(attemptMillis);
+            sessionState.waitForSeqnos(attemptMillis, attemptCids);
             return null;
-        }, failure -> failure instanceof TimeoutException, i -> 0);
+        }, failure -> failure instanceof TimeoutException, i -> 0, (action, attempt1, isFinal, span, failure) -> {
+            if (isFinal) {
+                LOGGER.warn("failure executing waitForSeqnos (attempt: {}): {}", attempt1, failure);
+            } else {
+                LOGGER.warn("failure executing waitForSeqnos (attempt: {}, will retry): {}", attempt1,
+                        String.valueOf(failure));
+            }
+        });
     }
 
-    public void requestSeqnos(int streamId) {
-        requestSeqnos(streamId, true);
+    public void requestSeqnos(int... cids) {
+        requestSeqnos(true, cids);
     }
 
-    public void requestSeqnos(int streamId, boolean reset) {
-        final StreamState streamState = sessionState.streamState(streamId);
-        LOGGER.debug("Getting sequence numbers for vbuckets on sid {}", streamId);
+    private void requestSeqnos(boolean reset, int... cids) {
+        if (LOGGER.isDebugEnabled()) {
+            boolean bucketWide = ArrayUtils.contains(cids, GET_SEQNOS_GLOBAL_COLLECTION_ID);
+            if (bucketWide) {
+                LOGGER.debug("{} bucket-wide{} sequence numbers for all vbuckets",
+                        reset ? "Requesting" : "Re-requesting",
+                        cids.length > 1
+                                ? " & cids " + CollectionsUtil
+                                        .displayCids(ArrayUtils.removeElement(cids, GET_SEQNOS_GLOBAL_COLLECTION_ID))
+                                : "");
+            } else {
+                LOGGER.debug("{} cids {} sequence numbers for all vbuckets", reset ? "Requesting" : "Re-requesting",
+                        CollectionsUtil.displayCids(cids));
+            }
+        }
         synchronized (channels) {
             if (reset) {
-                streamState.resetSeqNoRequest(env.vbuckets().length);
+                sessionState.prepareForSeqnoRequest(cids);
             }
             for (DcpChannel channel : channels.values()) {
-                channel.requestSeqnos(streamState);
+                channel.requestSeqnos(cids);
             }
         }
     }
 
     public void requestBucketSeqnos() {
-        LOGGER.debug("Requesting sequence numbers for all vbuckets");
-        sessionState.prepareForSeqnoRequest();
-        synchronized (channels) {
-            for (DcpChannel channel : channels.values()) {
-                channel.requestSeqnos();
-            }
-        }
+        requestSeqnos(true, GET_SEQNOS_GLOBAL_COLLECTION_ID);
     }
 
     public void waitForBucketSeqnos() throws Throwable {
-        MutableInt attempt = new MutableInt(1);
-        InvokeUtil.retryUntilSuccessOrExhausted(Span.start(WAIT_FOR_SEQNOS_TIMEOUT_SECS, TimeUnit.SECONDS), () -> {
-            if (attempt.getAndIncrement() > 1) {
-                requestBucketSeqnos();
-            }
-            long attemptMillis =
-                    TimeUnit.SECONDS.toMillis(WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS) * attempt.getValue() / 2;
-            sessionState.waitTillSeqnosUpdated(attemptMillis);
-            return null;
-        }, failure -> failure instanceof TimeoutException, i -> 0);
+        waitForSeqnos(GET_SEQNOS_GLOBAL_COLLECTION_ID);
     }
 
     public void requestFailoverLog(short vbid) {
@@ -204,14 +214,14 @@ public class Conductor {
         sessionState.waitTillFailoverUpdated(vbid, partitionRequestsTimeout, timeUnit);
     }
 
-    public void requestCollectionItemCounts(int streamId, int... cids) {
-        LOGGER.debug("Getting item count(s) for sid {} cids {}", streamId, Arrays.toString(cids));
+    public void requestCollectionItemCounts(int... cids) {
+        LOGGER.debug("Getting item count(s) for cids {}", Arrays.toString(cids));
         synchronized (channels) {
-            Semaphore requestSemaphore = sessionState.streamState(streamId).initCollectionItemRequest();
+            sessionState.initItemCountRequest(cids);
             for (DcpChannel channel : channels.values()) {
                 if (channel.getState() == State.CONNECTED) {
-                    requestSemaphore.release();
-                    channel.requestCollectionItemCounts(streamId, cids);
+                    sessionState.registerPendingCollectionItemCount(cids);
+                    channel.requestCollectionItemCounts(cids);
                 }
             }
         }
