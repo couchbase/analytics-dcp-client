@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.conductor;
 
@@ -7,6 +7,7 @@ import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetry;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
@@ -46,6 +47,8 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 public class DcpChannel {
     private static final Logger LOGGER = LogManager.getLogger();
     private static final int DEFAULT_COLLECTION_ID = 0;
+    private static final byte[] DEFAULT_COLLECTION_STREAM_REQUEST_VALUE =
+            "{\"collections\":[\"0\"]}".getBytes(StandardCharsets.UTF_8);
     private volatile State state;
     private final ClientEnvironment env;
     private final String hostname;
@@ -236,6 +239,10 @@ public class DcpChannel {
         DcpOpenStreamRequest.endSeqno(buffer, endSeqno);
         DcpOpenStreamRequest.snapshotStartSeqno(buffer, snapshotStartSeqno);
         DcpOpenStreamRequest.snapshotEndSeqno(buffer, snapshotEndSeqno);
+
+        if (collectionCapable) {
+            DcpOpenStreamRequest.setValue(Unpooled.copiedBuffer(DEFAULT_COLLECTION_STREAM_REQUEST_VALUE), buffer);
+        }
         ChannelFuture future = channel.writeAndFlush(buffer);
         if (LOGGER.isDebugEnabled()) {
             future.addListener(f -> {

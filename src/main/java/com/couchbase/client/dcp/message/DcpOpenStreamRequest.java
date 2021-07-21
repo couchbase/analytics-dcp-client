@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Couchbase, Inc.
+ * Copyright (c) 2016-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.message;
 
@@ -63,6 +63,10 @@ public enum DcpOpenStreamRequest {
 
     public static void opaque(final ByteBuf buffer, int opaque) {
         MessageUtil.setOpaque(opaque, buffer);
+    }
+
+    public static void setValue(final ByteBuf value, final ByteBuf buffer) {
+        MessageUtil.setContent(value, buffer);
     }
 
     public static int flags(final ByteBuf buffer) {

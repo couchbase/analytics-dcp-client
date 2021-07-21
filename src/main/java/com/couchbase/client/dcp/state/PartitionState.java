@@ -152,6 +152,15 @@ public class PartitionState {
         this.seqno = seqno;
     }
 
+    /**
+     * Allows to set the current sequence number.
+     */
+    public void advanceSeqno(long seqno) {
+        setSeqno(seqno);
+        setSnapshotStartSeqno(seqno);
+        setSnapshotEndSeqno(seqno);
+    }
+
     public byte getState() {
         return state;
     }
