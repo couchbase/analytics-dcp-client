@@ -118,8 +118,10 @@ public class StreamPartitionState {
             osoMaxSeqno = maxUnsigned(seqno, osoMaxSeqno);
         } else {
             if (Long.compareUnsigned(seqno, this.seqno) <= 0 && this.seqno != INVALID_SEQNO) {
-                LOGGER.warn("new seqno received (0x{}) <= the previous seqno(0x{}) for vbid: {}",
-                        Long.toUnsignedString(seqno, 16), Long.toUnsignedString(this.seqno, 16), vbid);
+                LOGGER.log(seqno == this.seqno ? Level.DEBUG : Level.WARN,
+                        "new seqno received ({}) <= the previous seqno({}) for vbid: {}", Long.toUnsignedString(seqno),
+                        Long.toUnsignedString(this.seqno), vbid);
+                return;
             }
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("setting seqno to {} for vbid {} on setSeqno", seqno, vbid);
