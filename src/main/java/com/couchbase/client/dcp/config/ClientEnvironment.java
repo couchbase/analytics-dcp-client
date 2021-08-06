@@ -52,6 +52,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      * Other defaults
      */
     public static final boolean DEFAULT_SSL_ENABLED = false;
+    public static final boolean DEFAULT_SSL_INCLUDE_KEY_MATERIAL = true;
     public static final int BOOTSTRAP_HTTP_DIRECT_PORT = 8091;
     public static final int BOOTSTRAP_HTTP_SSL_PORT = 18091;
     public static final long DEFAULT_PARTITION_REQUESTS_TIMEOUT = TimeUnit.SECONDS.toMillis(15);
@@ -148,6 +149,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
 
     private final EventBus eventBus;
     private final boolean sslEnabled;
+    private final boolean sslIncludeKeyMaterial;
     private final String sslKeystoreFile;
     private final String sslKeystorePassword;
     private final KeyStore sslKeystore;
@@ -183,6 +185,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         bootstrapHttpDirectPort = builder.bootstrapHttpDirectPort;
         bootstrapHttpSslPort = builder.bootstrapHttpSslPort;
         sslEnabled = builder.sslEnabled;
+        sslIncludeKeyMaterial = builder.sslIncludeKeyMaterial;
         sslKeystoreFile = builder.sslKeystoreFile;
         sslKeystorePassword = builder.sslKeystorePassword;
         sslKeystore = builder.sslKeystore;
@@ -373,6 +376,11 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     }
 
     @Override
+    public boolean sslIncludeKeyMaterial() {
+        return sslIncludeKeyMaterial;
+    }
+
+    @Override
     public String sslKeystoreFile() {
         return sslKeystoreFile;
     }
@@ -411,6 +419,7 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         private int bufferAckWatermark;
         private EventBus eventBus;
         private boolean sslEnabled = DEFAULT_SSL_ENABLED;
+        private boolean sslIncludeKeyMaterial = DEFAULT_SSL_INCLUDE_KEY_MATERIAL;
         private String sslKeystoreFile;
         private String sslKeystorePassword;
         private KeyStore sslKeystore;
@@ -542,6 +551,14 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
         }
 
         /**
+         * Set if SSL should consider key material in keystore when SSL is enabled (default value {@value #DEFAULT_SSL_INCLUDE_KEY_MATERIAL}).
+         */
+        public Builder setSslIncludeKeyMaterial(final boolean sslIncludeKeyMaterial) {
+            this.sslIncludeKeyMaterial = sslIncludeKeyMaterial;
+            return this;
+        }
+
+        /**
          * Defines the location of the SSL Keystore file (default value null, none).
          *
          * You can either specify a file or the keystore directly via {@link #setSslKeystore(KeyStore)}. If the explicit
@@ -651,9 +668,10 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
                 + dcpChannelTotalTimeout + ", dcpChannelsReconnectDelay=" + dcpChannelsReconnectDelay
                 + ", configProviderAttemptTimeout=" + configProviderAttemptTimeout + ", configProviderTotalTimeout="
                 + configProviderTotalTimeout + ", configProviderReconnectDelay=" + configProviderReconnectDelay
-                + ", sslEnabled=" + sslEnabled + ", sslKeystoreFile='" + sslKeystoreFile + '\''
-                + ", sslKeystorePassword=" + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty())
-                + ", sslKeystore=" + sslKeystore + '}';
+                + ", sslEnabled=" + sslEnabled + ", sslIncludeKeyMaterial=" + sslIncludeKeyMaterial
+                + ", sslKeystoreFile='" + sslKeystoreFile + '\'' + ", sslKeystorePassword="
+                + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty()) + ", sslKeystore=" + sslKeystore
+                + '}';
     }
 
     public Delay dcpChannelsReconnectDelay() {

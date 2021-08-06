@@ -14,6 +14,13 @@ public interface SecureEnvironment {
     boolean sslEnabled();
 
     /**
+     * Identifies if SSL configuration should include the key material in the keystore file.
+     *
+     * @return true if the key material should be included, false otherwise.
+     */
+    boolean sslIncludeKeyMaterial();
+
+    /**
      * Identifies the filepath to the ssl keystore.
      *
      * @return the path to the keystore file.

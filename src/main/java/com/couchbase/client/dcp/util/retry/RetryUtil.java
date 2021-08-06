@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Couchbase, Inc.
+ * Copyright 2020-2021 Couchbase, Inc.
  */
 package com.couchbase.client.dcp.util.retry;
 
@@ -18,6 +18,6 @@ public class RetryUtil {
         Throwable root = ExceptionUtils.getRootCause(th);
         return !((root instanceof BucketNotFoundException) || (root instanceof MasterDcpChannelNotFoundException)
                 || (root instanceof CouchbaseException && root.getMessage().contains("Unauthorized"))
-                || (root.getMessage().contains("36: No access")));
+                || (root.getMessage() != null && root.getMessage().contains("36: No access")));
     }
 }
