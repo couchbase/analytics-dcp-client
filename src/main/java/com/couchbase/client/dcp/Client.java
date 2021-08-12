@@ -105,12 +105,12 @@ public class Client {
                 .setDcpChannelAttemptTimeout(builder.dcpChannelAttemptTimeout())
                 .setDcpChannelsReconnectDelay(builder.dcpChannelsReconnectDelay())
                 .setDcpChannelTotalTimeout(builder.dcpChannelTotalTimeout()).setEventBus(builder.eventBus())
-                .setSslEnabled(builder.sslEnabled()).setSslKeystoreFile(builder.sslKeystoreFile())
-                .setSslKeystorePassword(builder.sslKeystorePassword()).setSslKeystore(builder.sslKeystore())
-                .setBootstrapHttpDirectPort(builder.configPort()).setBootstrapHttpSslPort(builder.sslConfigPort())
-                .setVbuckets(builder.vbuckets()).setClusterAt(builder.clusterAt())
-                .setFlowControlCallback(builder.flowControlCallback()).setUuid(builder.uuid())
-                .setDynamicConfigurationNodes(builder.dynamicConfigurationNodes())
+                .setSslEnabled(builder.sslEnabled()).setSslIncludeKeyMaterial(builder.sslIncludeKeyMaterial())
+                .setSslKeystoreFile(builder.sslKeystoreFile()).setSslKeystorePassword(builder.sslKeystorePassword())
+                .setSslKeystore(builder.sslKeystore()).setBootstrapHttpDirectPort(builder.configPort())
+                .setBootstrapHttpSslPort(builder.sslConfigPort()).setVbuckets(builder.vbuckets())
+                .setClusterAt(builder.clusterAt()).setFlowControlCallback(builder.flowControlCallback())
+                .setUuid(builder.uuid()).setDynamicConfigurationNodes(builder.dynamicConfigurationNodes())
                 .setNetworkResolution(builder.networkResolution()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
@@ -480,7 +480,7 @@ public class Client {
      */
     public static class Builder {
         private List<InetSocketAddress> clusterAt =
-                Collections.singletonList(InetSocketAddress.createUnresolved("127.0.0.1", 0));;
+                Collections.singletonList(InetSocketAddress.createUnresolved("127.0.0.1", 0));
         private CredentialsProvider credentialsProvider;
         private String connectionString;
         private EventLoopGroup eventLoopGroup;
@@ -494,6 +494,7 @@ public class Client {
         private boolean poolBuffers = true;
         private EventBus eventBus;
         private boolean sslEnabled = ClientEnvironment.DEFAULT_SSL_ENABLED;
+        private boolean sslIncludeKeyMaterial = ClientEnvironment.DEFAULT_SSL_INCLUDE_KEY_MATERIAL;
         private String sslKeystoreFile;
         private String sslKeystorePassword;
         private KeyStore sslKeystore;
@@ -765,6 +766,14 @@ public class Client {
         }
 
         /**
+         * Set if SSL should be consider key material found in the keystore (default value {@value ClientEnvironment#DEFAULT_SSL_INCLUDE_KEY_MATERIAL}).
+         */
+        public Builder sslIncludeKeyMaterial(final boolean sslIncludeKeyMaterial) {
+            this.sslIncludeKeyMaterial = sslIncludeKeyMaterial;
+            return this;
+        }
+
+        /**
          * Defines the location of the SSL Keystore file (default value null, none).
          *
          * You can either specify a file or the keystore directly via {@link #sslKeystore(KeyStore)}. If the explicit
@@ -901,6 +910,10 @@ public class Client {
 
         public boolean sslEnabled() {
             return sslEnabled;
+        }
+
+        public boolean sslIncludeKeyMaterial() {
+            return sslIncludeKeyMaterial;
         }
 
         public String sslKeystoreFile() {
