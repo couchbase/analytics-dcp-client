@@ -10,6 +10,7 @@
 package com.couchbase.client.dcp.transport.netty;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
@@ -157,19 +158,20 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
             SaslStepRequest.challengeResponse(content, request);
 
             ChannelFuture future = ctx.writeAndFlush(request);
-            future.addListener(new GenericFutureListener<Future<Void>>() {
-                @Override
-                public void operationComplete(Future<Void> future) throws Exception {
-                    if (!future.isSuccess()) {
-                        LOGGER.warn("Error during SASL Auth negotiation phase.", future);
-                        originalPromise().setFailure(future.cause());
-                    }
-                }
-            });
+            addFailureListener(future);
         } else {
             throw new AuthenticationException("SASL Challenge evaluation returned null.");
         }
 
+    }
+
+    private void addFailureListener(ChannelFuture future) {
+        future.addListener((GenericFutureListener<Future<Void>>) f -> {
+            if (!f.isSuccess()) {
+                LOGGER.warn("Error during SASL Auth negotiation phase", f.cause());
+                originalPromise().setFailure(f.cause());
+            }
+        });
     }
 
     /**
@@ -197,11 +199,15 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
     private void handleListMechsResponse(final ChannelHandlerContext ctx, final ByteBuf msg) throws Exception {
         String remote = ctx.channel().remoteAddress().toString();
         String[] supportedMechanisms = SaslListMechsResponse.supportedMechs(msg);
-        if (supportedMechanisms == null || supportedMechanisms.length == 0) {
+        if (supportedMechanisms.length == 0) {
             throw new AuthenticationException("Received empty SASL mechanisms list from server: " + remote);
         }
 
         saslClient = Sasl.createSaslClient(supportedMechanisms, null, "couchbase", remote, null, this);
+        if (saslClient == null) {
+            throw new AuthenticationException("No supported SASL mechanisms from server " + remote
+                    + " found; server sent: " + Arrays.toString(supportedMechanisms));
+        }
         selectedMechanism = saslClient.getMechanismName();
 
         byte[] bytePayload = saslClient.hasInitialResponse() ? saslClient.evaluateChallenge(new byte[] {}) : null;
@@ -214,15 +220,7 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
         payload.release();
 
         ChannelFuture future = ctx.writeAndFlush(request);
-        future.addListener(new GenericFutureListener<Future<Void>>() {
-            @Override
-            public void operationComplete(Future<Void> future) throws Exception {
-                if (!future.isSuccess()) {
-                    LOGGER.warn("Error during SASL Auth negotiation phase.", future);
-                    originalPromise().setFailure(future.cause());
-                }
-            }
-        });
+        addFailureListener(future);
     }
 
     /**

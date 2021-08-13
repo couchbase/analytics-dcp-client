@@ -12,6 +12,7 @@ package com.couchbase.client.dcp.config;
 import java.io.FileInputStream;
 import java.security.KeyStore;
 
+import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
@@ -62,13 +63,18 @@ public class SSLEngineFactory {
                 ks.load(new FileInputStream(ksFile), password);
             }
             String defaultAlgorithm = KeyManagerFactory.getDefaultAlgorithm();
-            KeyManagerFactory kmf = KeyManagerFactory.getInstance(defaultAlgorithm);
             TrustManagerFactory tmf = TrustManagerFactory.getInstance(defaultAlgorithm);
-            kmf.init(ks, password);
             tmf.init(ks);
-
+            final KeyManager[] keyManagers;
+            if (env.sslIncludeKeyMaterial()) {
+                KeyManagerFactory kmf = KeyManagerFactory.getInstance(defaultAlgorithm);
+                kmf.init(ks, password);
+                keyManagers = kmf.getKeyManagers();
+            } else {
+                keyManagers = null;
+            }
             SSLContext ctx = SSLContext.getInstance("TLS");
-            ctx.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+            ctx.init(keyManagers, tmf.getTrustManagers(), null);
 
             SSLEngine engine = ctx.createSSLEngine();
             engine.setUseClientMode(true);
