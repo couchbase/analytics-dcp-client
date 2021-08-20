@@ -26,19 +26,20 @@ public enum DcpGetPartitionSeqnosRequest {
         MessageUtil.initRequest(GET_ALL_VB_SEQNOS_OPCODE, buffer);
     }
 
-    public static void vbucketStateAndCid(final ByteBuf buffer, VbucketState vbucketState, int cid) {
+    public static void vbucketStateAndCid(final ByteBuf buffer, VbucketState vbucketState, int cid,
+            boolean collectionCapable) {
 
         MessageUtil.setOpaque(cid, buffer);
-
+        boolean encodeCid = collectionCapable && cid != GET_SEQNOS_GLOBAL_COLLECTION_ID;
         switch (vbucketState) {
             case ANY:
             case ACTIVE:
             case REPLICA:
             case PENDING:
             case DEAD:
-                ByteBuf extras = Unpooled.buffer(cid == GET_SEQNOS_GLOBAL_COLLECTION_ID ? 4 : 8);
+                ByteBuf extras = Unpooled.buffer(encodeCid ? 8 : 4);
                 extras.writeInt(vbucketState.value());
-                if (cid != GET_SEQNOS_GLOBAL_COLLECTION_ID) {
+                if (encodeCid) {
                     extras.writeInt(cid);
                 }
                 MessageUtil.setExtras(extras, buffer);
@@ -48,5 +49,4 @@ public enum DcpGetPartitionSeqnosRequest {
                 throw new IllegalStateException("nyi: " + vbucketState);
         }
     }
-
 }

@@ -333,12 +333,16 @@ public class DcpChannel {
                     "at least one cid (or GET_SEQNOS_GLOBAL_COLLECTION_ID) must be supplied");
         }
         for (int cid : cids) {
+            if (!collectionCapable && (cid != 0 && cid != GET_SEQNOS_GLOBAL_COLLECTION_ID)) {
+                throw new IllegalArgumentException("illegal cid (" + CollectionsUtil.displayCid(cid)
+                        + ") supplied for collections-unaware cluster");
+            }
             if (getState() != State.CONNECTED) {
                 sessionState.seqnoRequestFailed(cid, new NotConnectedException());
             } else {
                 ByteBuf buffer = Unpooled.buffer();
                 DcpGetPartitionSeqnosRequest.init(buffer);
-                DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE, cid);
+                DcpGetPartitionSeqnosRequest.vbucketStateAndCid(buffer, VbucketState.ACTIVE, cid, collectionCapable);
                 channel.writeAndFlush(buffer);
             }
         }
