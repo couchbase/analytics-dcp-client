@@ -39,6 +39,7 @@ import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.dcp.util.ShortSortedBitSet;
 import com.couchbase.client.dcp.util.ShortUtil;
+import com.couchbase.client.dcp.util.retry.RetryUtil;
 
 import it.unimi.dsi.fastutil.ints.IntSet;
 
@@ -375,7 +376,7 @@ public class Fixer implements Runnable, SystemEventHandler {
 
     private boolean shouldRetry(StreamEndEvent streamEndEvent, Throwable th) {
         streamEndEvent.incrementAttempts();
-        if (streamEndEvent.getAttempts() > MAX_REATTEMPTS_ON_EXCEPTION) {
+        if (streamEndEvent.getAttempts() > MAX_REATTEMPTS_ON_EXCEPTION || !RetryUtil.shouldRetry(th)) {
             LOGGER.warn(this + " failed to fix a vbucket stream " + streamEndEvent.getAttempts() + " times. Giving up",
                     th);
             return false;
