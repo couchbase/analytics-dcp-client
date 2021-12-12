@@ -136,8 +136,10 @@ public class StreamPartitionState {
      */
     public void advanceSeqno(long seqno) {
         setSeqno(seqno);
-        setSnapshotStartSeqno(seqno);
-        setSnapshotEndSeqno(seqno);
+        if (state != CONNECTED_OSO) {
+            setSnapshotStartSeqno(seqno);
+            setSnapshotEndSeqno(seqno);
+        }
     }
 
     public byte getState() {

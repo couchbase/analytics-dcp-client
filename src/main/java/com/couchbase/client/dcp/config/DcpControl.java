@@ -21,6 +21,8 @@ import java.util.Map;
  */
 public class DcpControl implements Iterable<Map.Entry<String, String>> {
 
+    public static final String OSO_TRUE_WITH_SEQNO_ADVANCED = "true_with_seqno_advanced";
+
     /**
      * Stores the params to negotiate in a map.
      */
