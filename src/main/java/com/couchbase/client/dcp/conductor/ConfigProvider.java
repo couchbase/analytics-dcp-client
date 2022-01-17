@@ -49,9 +49,4 @@ public interface ConfigProvider {
      * @return the last acquired configuration
      */
     CouchbaseBucketConfig config();
-
-    /**
-     * @return true if the kv supports collections
-     */
-    boolean isCollectionCapable();
 }

@@ -328,7 +328,7 @@ public class Conductor {
                 return;
             }
             DcpChannel channel = new DcpChannel(address, node.hostname(), env, sessionState,
-                    configProvider.config().numberOfPartitions(), configProvider.isCollectionCapable());
+                    config.numberOfPartitions(), config.capabilities().contains(BucketCapabilities.COLLECTIONS));
             LOGGER.debug("Adding DCP Channel against {}", node);
             channel.connect(attemptTimeout, totalTimeout, delay);
             channels.put(address, channel);

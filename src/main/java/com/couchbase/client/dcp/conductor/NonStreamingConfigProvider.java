@@ -28,7 +28,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.config.AlternateAddress;
-import com.couchbase.client.core.config.BucketCapabilities;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.service.ServiceType;
@@ -216,10 +215,5 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
         LOGGER.log(Level.WARN, "Failed getting bucket config", throwable);
         cause = throwable;
         notifyAll();
-    }
-
-    @Override
-    public boolean isCollectionCapable() {
-        return config().capabilities().contains(BucketCapabilities.COLLECTIONS);
     }
 }
