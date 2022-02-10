@@ -152,7 +152,7 @@ public class Conductor {
                     TimeUnit.SECONDS.toMillis(WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS) * attempt.getValue() / 2;
             sessionState.waitForSeqnos(attemptMillis, attemptCids);
             return null;
-        }, failure -> failure instanceof TimeoutException, i -> 0, (action, attempt1, isFinal, span, failure) -> {
+        }, TimeoutException.class::isInstance, i -> 0, (action, attempt1, isFinal, span, failure) -> {
             if (isFinal) {
                 LOGGER.warn("failure executing waitForSeqnos (attempt: {}): {}", attempt1, failure);
             } else {
@@ -160,6 +160,12 @@ public class Conductor {
                         String.valueOf(failure));
             }
         });
+    }
+
+    public synchronized void failPendingSeqnos(Throwable failure, int... cids) {
+        if (sessionState != null) {
+            IntStream.of(cids).forEach(cid -> sessionState.seqnoRequestFailIfPending(cid, failure));
+        }
     }
 
     public void requestSeqnos(int... cids) {
@@ -335,7 +341,7 @@ public class Conductor {
         }
     }
 
-    public void setSessionState(SessionState sessionState) {
+    public synchronized void setSessionState(SessionState sessionState) {
         this.sessionState = sessionState;
     }
 

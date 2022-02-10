@@ -163,6 +163,13 @@ public class Client {
     }
 
     /**
+     * Fails any pending seqno requests for the specified cid(s) with the specified failure
+     */
+    public void failPendingSeqnos(Throwable failure, int... cids) {
+        conductor.failPendingSeqnos(failure, cids);
+    }
+
+    /**
      * Requests & waits for the current (bucket-wide) sequence numbers from all partitions. These will be
      * available in each vbucket's {@link SessionPartitionState} (via {@link Client#sessionState()}).
      */

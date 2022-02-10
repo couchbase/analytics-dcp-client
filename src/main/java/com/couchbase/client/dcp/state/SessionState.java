@@ -227,6 +227,16 @@ public class SessionState {
         ensureCollectionState(cid).onFailure(th);
     }
 
+    @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
+    public void seqnoRequestFailIfPending(int cid, Throwable th) {
+        CollectionState collectionState = ensureCollectionState(cid);
+        synchronized (collectionState) {
+            if (collectionState.hasPendingSeqnos()) {
+                collectionState.onFailure(th);
+            }
+        }
+    }
+
     public long getMasterSeqno(int cid, short vbid) {
         return ensureCollectionState(cid).getSeqno(vbid);
     }
