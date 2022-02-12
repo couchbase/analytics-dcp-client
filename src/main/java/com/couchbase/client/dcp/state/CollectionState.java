@@ -20,6 +20,7 @@ import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.client.dcp.util.MathUtil;
 import com.couchbase.client.dcp.util.ShortSortedBitSet;
 import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
@@ -48,7 +49,7 @@ public class CollectionState {
     }
 
     public void ensureMaxSeqno(short vbid, long seqno) {
-        seqnos[vbid] = Math.max(seqno, seqnos[vbid]);
+        seqnos[vbid] = MathUtil.maxUnsigned(seqno, seqnos[vbid]);
     }
 
     public synchronized void prepareForRequest() {

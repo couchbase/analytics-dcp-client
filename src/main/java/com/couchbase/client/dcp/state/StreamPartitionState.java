@@ -9,6 +9,8 @@
  */
 package com.couchbase.client.dcp.state;
 
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayCids;
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayManifestUid;
 import static com.couchbase.client.dcp.util.MathUtil.maxUnsigned;
 import static org.apache.hyracks.util.Span.ELAPSED;
 
@@ -23,8 +25,6 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.dcp.message.DcpDataMessage;
-import com.couchbase.client.dcp.message.DcpSystemEvent;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
@@ -112,7 +112,7 @@ public class StreamPartitionState {
      * Allows to set the current sequence number.
      */
     @GuardedBy("operations on a vbucket do not interleave")
-    @SuppressWarnings("NonAtomicOperationOnVolatileField")
+    @SuppressWarnings({ "NonAtomicOperationOnVolatileField", "java:S3078" })
     public void setSeqno(long seqno) {
         if (state == CONNECTED_OSO) {
             osoMaxSeqno = maxUnsigned(seqno, osoMaxSeqno);
@@ -129,15 +129,6 @@ public class StreamPartitionState {
             seqnoAdvances += this.seqno != INVALID_SEQNO ? (seqno - this.seqno) : seqno;
             this.seqno = seqno;
         }
-    }
-
-    /**
-     * Allows to set the current sequence number.
-     */
-    public void advanceSeqno(long seqno) {
-        setSeqno(seqno);
-        setSnapshotStartSeqno(seqno);
-        setSnapshotEndSeqno(seqno);
     }
 
     public byte getState() {
@@ -170,12 +161,19 @@ public class StreamPartitionState {
 
     public void setStreamRequest(StreamRequest streamRequest) {
         this.streamRequest = streamRequest;
-        LOGGER.trace("setting seqno to {} for vbid {} on setStreamRequest", seqno, vbid);
         seqno = streamRequest.getStartSeqno();
         streamEndSeq = streamRequest.getEndSeqno();
         snapshotStartSeqno = streamRequest.getSnapshotStartSeqno();
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
         manifestUid = streamRequest.getManifestUid();
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug(
+                    "setStreamRequest sid {} vbid {} seqno {} endseqno {} snapstart {} snapend {} manifestUid {} cids {}",
+                    streamRequest.getStreamId(), vbid, Long.toUnsignedString(seqno),
+                    Long.toUnsignedString(streamEndSeq), Long.toUnsignedString(snapshotStartSeqno),
+                    Long.toUnsignedString(snapshotEndSeqno), displayManifestUid(manifestUid),
+                    displayCids(streamRequest.getCids()));
+        }
     }
 
     public void prepareNextStreamRequest(SessionState sessionState, StreamState streamState) {
@@ -186,8 +184,8 @@ public class StreamPartitionState {
             if (SessionState.NO_END_SEQNO != streamEndSeq && Long.compareUnsigned(streamEndSeq, seqno) < 0) {
                 streamEndSeq = snapshotEndSeqno;
             }
-            this.streamRequest = new StreamRequest(vbid, seqno, streamEndSeq, sessionState.get(vbid).uuid(),
-                    snapshotStartSeqno, snapshotEndSeqno, manifestUid, streamState.streamId(), streamState.cids());
+            setStreamRequest(new StreamRequest(vbid, seqno, streamEndSeq, sessionState.get(vbid).uuid(),
+                    snapshotStartSeqno, snapshotEndSeqno, manifestUid, streamState.streamId(), streamState.cids()));
         }
     }
 
@@ -249,9 +247,8 @@ public class StreamPartitionState {
         return seqnoAdvances;
     }
 
-    public void onSystemEvent(DcpSystemEvent event) {
-        setSeqno(event.getSeqno());
-        manifestUid = event.getManifestUid();
+    public void setManifestUid(long manifestUid) {
+        this.manifestUid = manifestUid;
     }
 
     public void calculateNextDelay(short status) {
@@ -292,11 +289,9 @@ public class StreamPartitionState {
             case MessageUtil.DCP_DELETION_OPCODE:
             case MessageUtil.DCP_EXPIRATION_OPCODE:
                 deletionsProcessed++;
-                setSeqno(DcpDataMessage.bySeqno(event));
                 break;
             case MessageUtil.DCP_MUTATION_OPCODE:
                 mutationsProcessed++;
-                setSeqno(DcpDataMessage.bySeqno(event));
                 break;
             default:
                 LOGGER.error("unrecognized data event {}", MessageUtil.humanize(event));
