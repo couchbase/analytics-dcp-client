@@ -30,7 +30,6 @@ import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
 import com.couchbase.client.dcp.message.DcpOsoSnapshotMarkerMessage;
 import com.couchbase.client.dcp.message.DcpSeqnoAdvancedMessage;
-import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
 import com.couchbase.client.dcp.message.DcpStreamEndMessage;
 import com.couchbase.client.dcp.message.DcpSystemEvent;
 import com.couchbase.client.dcp.message.DcpSystemEventMessage;
@@ -118,13 +117,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleDcpSnapshotMarker(ByteBuf buf) {
-        short vbucket = DcpSnapshotMarkerRequest.partition(buf);
-        long start = DcpSnapshotMarkerRequest.startSeqno(buf);
-        long end = DcpSnapshotMarkerRequest.endSeqno(buf);
-        StreamPartitionState ps = MessageUtil.streamState(buf, channel).get(vbucket);
-        ps.useStreamRequest();
-        ps.setSnapshotStartSeqno(start);
-        ps.setSnapshotEndSeqno(end);
+        // TODO(mblow): trace log
     }
 
     private void handleOpenStreamResponse(ByteBuf buf) {
@@ -252,28 +245,24 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     }
 
     private void handleSeqnoAdvanced(ByteBuf buf) {
-        short vbid = MessageUtil.getVbucket(buf);
-        long seqno = DcpSeqnoAdvancedMessage.getSeqno(buf);
         if (LOGGER.isTraceEnabled()) {
+            short vbid = MessageUtil.getVbucket(buf);
+            long seqno = DcpSeqnoAdvancedMessage.getSeqno(buf);
             LOGGER.trace("Seqno for vbucket {} advanced to {}", vbid, seqno);
         }
-        MessageUtil.streamState(buf, channel).get(vbid).advanceSeqno(seqno);
     }
 
     private void handleSystemEvent(ByteBuf buf) {
-        short vbid = MessageUtil.getVbucket(buf);
-        long seqno = DcpSystemEventMessage.seqno(buf);
-        DcpSystemEvent event = DcpSystemEvent.parse(buf);
-        StreamPartitionState ps = MessageUtil.streamState(buf, channel).get(event.getVbucket());
-        LOGGER.trace("received {}", event);
         if (LOGGER.isTraceEnabled()) {
+            short vbid = MessageUtil.getVbucket(buf);
+            long seqno = DcpSystemEventMessage.seqno(buf);
+            DcpSystemEvent event = DcpSystemEvent.parse(buf);
+            LOGGER.trace("received {}", event);
             LOGGER.trace("Seqno for vbucket {} advanced to {} on system event", vbid, seqno);
         }
-        ps.onSystemEvent(event);
     }
 
     private void handleOsoSnapshotMarker(ByteBuf buf) {
-        short vbid = DcpOsoSnapshotMarkerMessage.vbucket(buf);
         boolean begin = DcpOsoSnapshotMarkerMessage.begin(buf);
         boolean end = DcpOsoSnapshotMarkerMessage.end(buf);
         if (!begin && !end) {
@@ -283,13 +272,6 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         }
         if (LOGGER.isTraceEnabled()) {
             LOGGER.trace("Received {}", DcpOsoSnapshotMarkerMessage.toString(buf));
-        }
-        if (begin) {
-            MessageUtil.streamState(buf, channel).get(vbid).beginOutOfOrder();
-        } else {
-            long maxSeqNo = MessageUtil.streamState(buf, channel).get(vbid).endOutOfOrder();
-            // we store the max sequence number in the message as it may be needed by other event
-            DcpOsoSnapshotMarkerMessage.setMaxSeqNo(maxSeqNo, buf);
         }
     }
 
