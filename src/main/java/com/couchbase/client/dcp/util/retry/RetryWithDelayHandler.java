@@ -11,9 +11,8 @@ package com.couchbase.client.dcp.util.retry;
 
 import java.util.concurrent.TimeUnit;
 
-import com.couchbase.client.core.annotations.InterfaceAudience;
-import com.couchbase.client.core.annotations.InterfaceStability;
-import com.couchbase.client.core.lang.Tuple2;
+import org.apache.commons.lang3.tuple.Pair;
+
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.core.time.ExponentialDelay;
 
@@ -33,9 +32,7 @@ import rx.functions.Func1;
  * @author Simon Baslé
  * @since 1.0.0
  */
-@InterfaceStability.Committed
-@InterfaceAudience.Public
-public class RetryWithDelayHandler implements Func1<Tuple2<Integer, Throwable>, Observable<?>> {
+public class RetryWithDelayHandler implements Func1<Pair<Integer, Throwable>, Observable<?>> {
 
     protected final int maxAttempts;
     protected final Delay retryDelay;
@@ -94,9 +91,9 @@ public class RetryWithDelayHandler implements Func1<Tuple2<Integer, Throwable>, 
     }
 
     @Override
-    public Observable<?> call(Tuple2<Integer, Throwable> attemptError) {
-        final int errorNumber = attemptError.value1();
-        final Throwable error = attemptError.value2();
+    public Observable<?> call(Pair<Integer, Throwable> attemptError) {
+        final int errorNumber = attemptError.getLeft();
+        final Throwable error = attemptError.getRight();
 
         if (errorNumber > maxAttempts) {
             return Observable.error(new CannotRetryException(messageForMaxAttempts(errorNumber - 1), error));

@@ -11,7 +11,7 @@ package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_STREAM_CLOSE_OPCODE;
 
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 
 public enum DcpCloseStreamResponse {
     ;

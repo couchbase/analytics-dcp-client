@@ -11,8 +11,8 @@ package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_SET_VBUCKET_STATE_OPCODE;
 
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.buffer.Unpooled;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
 
 /**
  * This message is used during the VBucket takeover process to hand off ownership of a VBucket between two nodes.

@@ -9,7 +9,7 @@
  */
 package com.couchbase.client.dcp.error;
 
-import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.error.CouchbaseException;
 
 /**
  * This exception indicates an error during bootstrap. See the cause and message for more details.
@@ -18,7 +18,7 @@ import com.couchbase.client.core.CouchbaseException;
  * @since 1.0.0
  */
 public class BootstrapException extends CouchbaseException {
-    private static final long serialVersionUID = 4129369535195239711L;
+    private static final long serialVersionUID = 2L;
 
     public BootstrapException() {
     }

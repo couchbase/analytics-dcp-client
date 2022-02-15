@@ -23,8 +23,8 @@ licenses/APL2.txt.
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <core.version>1.7.14</core.version>
-    <client.version>2.7.14</client.version>
+    <core.version>2.2.5</core.version>
+    <client.version>3.2.5</client.version>
     <maven.javadoc.skip>true</maven.javadoc.skip>
   </properties>
   <name>Couchbase Java DCP Client</name>
@@ -108,6 +108,11 @@ licenses/APL2.txt.
       <groupId>org.apache.httpcomponents</groupId>
       <artifactId>httpclient</artifactId>
       <version>4.5.13</version>
+    </dependency>
+    <dependency>
+      <groupId>io.reactivex</groupId>
+      <artifactId>rxjava</artifactId>
+      <version>1.3.8</version>
     </dependency>
   </dependencies>
   <build>

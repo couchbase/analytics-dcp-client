@@ -12,13 +12,14 @@ package com.couchbase.client.dcp.message;
 
 import java.io.Serializable;
 
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 
 public abstract class DcpSystemEvent implements Serializable {
     private static final long serialVersionUID = 1L;
-    private static final CouchbaseLogger log = CouchbaseLoggerFactory.getInstance(DcpSystemEvent.class.getName());
+    private static final Logger LOGGER = LogManager.getLogger();
 
     public enum Type {
         COLLECTION_CREATED(0),
@@ -93,7 +94,7 @@ public abstract class DcpSystemEvent implements Serializable {
             case 5:
                 return new CollectionChanged(vbucket, seqno, version, buffer);
             default:
-                log.debug("unrecognized DCP system event type {}", typeCode);
+                LOGGER.debug("unrecognized DCP system event type {}", typeCode);
                 return new UnknownSystemEvent(vbucket, seqno, version, buffer);
         }
 

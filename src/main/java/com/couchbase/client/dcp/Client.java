@@ -20,12 +20,15 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hyracks.util.Span;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.config.BucketCapabilities;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.channel.EventLoopGroup;
+import com.couchbase.client.core.deps.io.netty.channel.nio.NioEventLoopGroup;
 import com.couchbase.client.core.env.NetworkResolution;
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.conductor.Conductor;
 import com.couchbase.client.dcp.conductor.ConfigProvider;
@@ -48,9 +51,6 @@ import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.dcp.util.ShortUtil;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
-import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
 
 import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntLists;
@@ -69,7 +69,7 @@ public class Client {
     /**
      * The logger used.
      */
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Client.class);
+    private static final Logger LOGGER = LogManager.getLogger();
 
     /**
      * The {@link Conductor} handles channels and streams. It's the orchestrator of everything.
@@ -364,7 +364,7 @@ public class Client {
     }
 
     public CollectionsManifest getCollectionsManifest() throws Throwable {
-        if (!config().capabilities().contains(BucketCapabilities.COLLECTIONS)) {
+        if (!config().bucketCapabilities().contains(BucketCapabilities.COLLECTIONS)) {
             return CollectionsManifest.DEFAULT;
         }
         return conductor.getCollectionsManifest();
@@ -439,7 +439,7 @@ public class Client {
     }
 
     public boolean isCollectionCapable() {
-        return config().capabilities().contains(BucketCapabilities.COLLECTIONS);
+        return config().bucketCapabilities().contains(BucketCapabilities.COLLECTIONS);
     }
 
     public synchronized void establishDcpConnections() throws Throwable {

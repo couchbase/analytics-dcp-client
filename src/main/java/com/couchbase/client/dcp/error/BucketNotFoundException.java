@@ -9,11 +9,11 @@
  */
 package com.couchbase.client.dcp.error;
 
-import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.error.CouchbaseException;
 
 public class BucketNotFoundException extends CouchbaseException {
 
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
     public BucketNotFoundException(String message) {
         super(message);

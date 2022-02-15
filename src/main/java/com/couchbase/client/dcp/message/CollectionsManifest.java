@@ -22,9 +22,9 @@ import java.util.Objects;
 import java.util.stream.Stream;
 
 import org.apache.hyracks.util.fastutil.Collectors;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,8 +42,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
  */
 public class CollectionsManifest {
 
-    private static final CouchbaseLogger LOGGER =
-            CouchbaseLoggerFactory.getInstance(CollectionsManifest.class.getName());
+    private static final Logger LOGGER = LogManager.getLogger();
     /**
      * A manifest with just the default scope and default collection.
      */

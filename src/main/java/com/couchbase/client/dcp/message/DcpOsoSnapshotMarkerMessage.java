@@ -12,7 +12,7 @@ package com.couchbase.client.dcp.message;
 import java.util.ArrayList;
 import java.util.Collection;
 
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 
 public class DcpOsoSnapshotMarkerMessage {
     private static final int FLAG_BEGIN = 1;

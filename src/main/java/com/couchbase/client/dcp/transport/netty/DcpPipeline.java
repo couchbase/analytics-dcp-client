@@ -12,21 +12,21 @@ package com.couchbase.client.dcp.transport.netty;
 import java.net.InetSocketAddress;
 
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.core.deps.io.netty.channel.Channel;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelInitializer;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelPipeline;
+import com.couchbase.client.core.deps.io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import com.couchbase.client.core.deps.io.netty.handler.logging.LogLevel;
+import com.couchbase.client.core.deps.io.netty.handler.logging.LoggingHandler;
+import com.couchbase.client.core.deps.io.netty.handler.ssl.SslHandler;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.SSLEngineFactory;
 import com.couchbase.client.dcp.message.MessageUtil;
-import com.couchbase.client.deps.io.netty.channel.Channel;
-import com.couchbase.client.deps.io.netty.channel.ChannelInitializer;
-import com.couchbase.client.deps.io.netty.channel.ChannelPipeline;
-import com.couchbase.client.deps.io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import com.couchbase.client.deps.io.netty.handler.logging.LogLevel;
-import com.couchbase.client.deps.io.netty.handler.logging.LoggingHandler;
-import com.couchbase.client.deps.io.netty.handler.ssl.SslHandler;
 
 /**
  * Sets up the pipeline for the actual DCP communication channels.
@@ -39,7 +39,7 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
     /**
      * The logger used.
      */
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpPipeline.class);
+    private static final Logger LOGGER = LogManager.getLogger();
 
     /**
      * The stateful environment.

@@ -14,11 +14,12 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import java.io.IOException;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.core.CouchbaseException;
-import com.couchbase.client.core.logging.CouchbaseLogLevel;
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
+import com.couchbase.client.core.error.CouchbaseException;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DcpAckHandle;
 import com.couchbase.client.dcp.events.OpenStreamResponse;
@@ -43,14 +44,11 @@ import com.couchbase.client.dcp.transport.netty.DcpMessageHandler;
 import com.couchbase.client.dcp.transport.netty.Stat;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.buffer.Unpooled;
 
 import it.unimi.dsi.fastutil.ints.IntSet;
 
 public class DcpChannelControlMessageHandler implements ControlEventHandler {
-    private static final CouchbaseLogger LOGGER =
-            CouchbaseLoggerFactory.getInstance(DcpChannelControlMessageHandler.class.getName());
+    private static final Logger LOGGER = LogManager.getLogger();
     private final DcpChannel channel;
 
     public DcpChannelControlMessageHandler(DcpChannel channel) {
@@ -127,7 +125,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         StreamPartitionState partitionState = ss.get(vbid);
         short status = MessageUtil.getStatus(buf);
         OpenStreamResponse response;
-        if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
+        if (LOGGER.isTraceEnabled()) {
             LOGGER.trace("OpenStream {} (0x{}) for vbucket {} on stream {}", MemcachedStatus.toString(status),
                     Integer.toHexString(status), vbid, ss.streamId());
         }
@@ -162,14 +160,14 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private void handleFailoverLogResponse(ByteBuf buf) {
         short vbid = (short) MessageUtil.getOpaque(buf);
         short status = MessageUtil.getStatus(buf);
-        if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
+        if (LOGGER.isTraceEnabled()) {
             LOGGER.trace("FailoverLog {} (0x{}) for vbucket {}", MemcachedStatus.toString(status),
                     Integer.toHexString(status), vbid);
         }
         if (status == MemcachedStatus.SUCCESS) {
             handleFailoverLogResponseSuccess(buf, vbid);
         } else {
-            if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
+            if (LOGGER.isWarnEnabled()) {
                 LOGGER.warn("FailoverLog unexpected response: {} (0x{}) for vbucket {}",
                         MemcachedStatus.toString(status), Integer.toHexString(status), vbid);
             }
@@ -218,7 +216,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         StreamEndReason reason = DcpStreamEndMessage.reason(buf);
         StreamPartitionState state = streamState.get(vbid);
         StreamEndEvent endEvent = new StreamEndEvent(state, streamState, reason);
-        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+        if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Server closed Stream on vbid {} with reason {}", vbid, reason);
         }
         if (channel.getEnv().eventBus() != null) {
@@ -239,7 +237,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         short vbid = (short) MessageUtil.getOpaque(buf);
         clearOpen(MessageUtil.streamState(buf, channel), vbid);
         MessageUtil.streamState(buf, channel).get(vbid).setState(StreamPartitionState.DISCONNECTED);
-        if (LOGGER.isEnabled(CouchbaseLogLevel.DEBUG)) {
+        if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getAddress(), vbid);
         }
     }

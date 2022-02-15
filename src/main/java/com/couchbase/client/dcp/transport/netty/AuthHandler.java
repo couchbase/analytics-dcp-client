@@ -17,12 +17,20 @@ import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
+import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 
-import com.couchbase.client.core.endpoint.kv.AuthenticationException;
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
-import com.couchbase.client.core.security.sasl.Sasl;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelFuture;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelHandlerContext;
+import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
+import com.couchbase.client.core.deps.io.netty.util.concurrent.Future;
+import com.couchbase.client.core.deps.io.netty.util.concurrent.GenericFutureListener;
+import com.couchbase.client.core.error.AuthenticationFailureException;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.SaslAuthRequest;
 import com.couchbase.client.dcp.message.SaslAuthResponse;
@@ -30,13 +38,6 @@ import com.couchbase.client.dcp.message.SaslListMechsRequest;
 import com.couchbase.client.dcp.message.SaslListMechsResponse;
 import com.couchbase.client.dcp.message.SaslStepRequest;
 import com.couchbase.client.dcp.message.SaslStepResponse;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.buffer.Unpooled;
-import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
-import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
-import com.couchbase.client.deps.io.netty.util.concurrent.Future;
-import com.couchbase.client.deps.io.netty.util.concurrent.GenericFutureListener;
 
 /**
  * Performs SASL authentication against the socket and once complete removes itself.
@@ -59,7 +60,7 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
     /**
      * The logger used for the auth handler.
      */
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(AuthHandler.class);
+    private static final Logger LOGGER = LogManager.getLogger();
 
     /**
      * Username used to authenticate against the bucket (likely to be the bucket name itself).
@@ -160,7 +161,7 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
             ChannelFuture future = ctx.writeAndFlush(request);
             addFailureListener(future);
         } else {
-            throw new AuthenticationException("SASL Challenge evaluation returned null.");
+            throw new AuthenticationFailureException("SASL Challenge evaluation returned null.", null, null);
         }
 
     }
@@ -186,10 +187,12 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
                 ctx.fireChannelActive();
                 break;
             case AUTH_ERROR:
-                originalPromise().setFailure(new AuthenticationException("SASL Authentication Failure"));
+                originalPromise()
+                        .setFailure(new AuthenticationFailureException("SASL Authentication Failure", null, null));
                 break;
             default:
-                originalPromise().setFailure(new AuthenticationException("Unhandled SASL auth status: " + status));
+                originalPromise().setFailure(
+                        new AuthenticationFailureException("Unhandled SASL auth status: " + status, null, null));
         }
     }
 
@@ -200,13 +203,14 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
         String remote = ctx.channel().remoteAddress().toString();
         String[] supportedMechanisms = SaslListMechsResponse.supportedMechs(msg);
         if (supportedMechanisms.length == 0) {
-            throw new AuthenticationException("Received empty SASL mechanisms list from server: " + remote);
+            throw new AuthenticationFailureException("Received empty SASL mechanisms list from server: " + remote, null,
+                    null);
         }
 
         saslClient = Sasl.createSaslClient(supportedMechanisms, null, "couchbase", remote, null, this);
         if (saslClient == null) {
-            throw new AuthenticationException("No supported SASL mechanisms from server " + remote
-                    + " found; server sent: " + Arrays.toString(supportedMechanisms));
+            throw new AuthenticationFailureException("No supported SASL mechanisms from server " + remote
+                    + " found; server sent: " + Arrays.toString(supportedMechanisms), null, null);
         }
         selectedMechanism = saslClient.getMechanismName();
 
@@ -234,7 +238,8 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
             } else if (callback instanceof PasswordCallback) {
                 ((PasswordCallback) callback).setPassword(password.toCharArray());
             } else {
-                throw new AuthenticationException("SASLClient requested unsupported callback: " + callback);
+                throw new AuthenticationFailureException("SASLClient requested unsupported callback: " + callback, null,
+                        null);
             }
         }
     }

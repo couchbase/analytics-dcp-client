@@ -23,7 +23,6 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
-import com.couchbase.client.core.state.NotConnectedException;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.SystemEventHandler;
 import com.couchbase.client.dcp.error.BucketNotFoundException;
@@ -205,7 +204,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                             try {
                                 synchronized (conductor.getChannels()) {
                                     CouchbaseBucketConfig config = conductor.config();
-                                    int index = config.nodeIndexForMaster(response.getPartitionState().vbid(), false);
+                                    int index = config.nodeIndexForActive(response.getPartitionState().vbid(), false);
                                     NodeInfo node = config.nodeAtIndex(index);
                                     conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
                                     restartStream(response);
@@ -305,9 +304,9 @@ public class Fixer implements Runnable, SystemEventHandler {
             refreshConfig();
             CouchbaseBucketConfig config = conductor.config();
             StreamPartitionState state = streamEndEvent.getState();
-            short index = config.nodeIndexForMaster(streamEndEvent.partition(), false);
+            short index = config.nodeIndexForActive(streamEndEvent.partition(), false);
             if (index < 0) {
-                LOGGER.info(this + " vbucket " + streamEndEvent.partition() + " has no master at the moment");
+                LOGGER.info(this + " vbucket " + streamEndEvent.partition() + " has no active node at the moment");
                 retry(streamEndEvent);
                 return;
             }

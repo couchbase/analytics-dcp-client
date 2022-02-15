@@ -18,8 +18,6 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.TrustManagerFactory;
 
-import com.couchbase.client.core.endpoint.SSLException;
-
 /**
  * Creates a {@link SSLEngine} which will be passed into the handler if SSL is enabled.
  *
@@ -80,7 +78,7 @@ public class SSLEngineFactory {
             engine.setUseClientMode(true);
             return engine;
         } catch (Exception ex) {
-            throw new SSLException("Could not create SSLEngine.", ex);
+            throw new IllegalStateException("Could not create SSLEngine.", ex);
         }
     }
 }

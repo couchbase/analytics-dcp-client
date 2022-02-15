@@ -25,12 +25,12 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.dcp.conductor.Conductor;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.CollectionsUtil;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;

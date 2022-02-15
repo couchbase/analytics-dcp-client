@@ -9,8 +9,8 @@
  */
 package com.couchbase.client.dcp.message;
 
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Code describing why producer decided to close the stream.
@@ -69,7 +69,7 @@ public enum StreamEndReason {
      */
     LOST_PRIVILEGES;
 
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(StreamEndReason.class);
+    private static final Logger LOGGER = LogManager.getLogger();
     private static final int ORDINAL_OFFSET = 2;
 
     static StreamEndReason of(int value) {

@@ -11,18 +11,19 @@ package com.couchbase.client.dcp.transport.netty;
 
 import java.nio.charset.StandardCharsets;
 
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelHandlerContext;
+import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.error.BucketNotFoundException;
 import com.couchbase.client.dcp.message.DcpOpenConnectionRequest;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.buffer.Unpooled;
-import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
 /**
  * Opens the DCP connection on the channel and once established removes itself.
@@ -40,7 +41,7 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
     /**
      * The logger used.
      */
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpConnectHandler.class);
+    private static final Logger LOGGER = LogManager.getLogger();
 
     private static final byte VERSION = 0;
     private static final byte HELO = 1;

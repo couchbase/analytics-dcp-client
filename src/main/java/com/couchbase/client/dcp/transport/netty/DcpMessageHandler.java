@@ -47,10 +47,16 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.hyracks.util.LogRedactionUtil;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.core.logging.CouchbaseLogLevel;
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.channel.Channel;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelDuplexHandler;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelFuture;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelFutureListener;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelHandlerContext;
+import com.couchbase.client.core.deps.io.netty.util.ReferenceCountUtil;
 import com.couchbase.client.dcp.ControlEventHandler;
 import com.couchbase.client.dcp.DataEventHandler;
 import com.couchbase.client.dcp.DcpAckHandle;
@@ -68,13 +74,6 @@ import com.couchbase.client.dcp.message.DcpSystemEventMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.channel.Channel;
-import com.couchbase.client.deps.io.netty.channel.ChannelDuplexHandler;
-import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
-import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
-import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
-import com.couchbase.client.deps.io.netty.util.ReferenceCountUtil;
 
 /**
  * Handles the "business logic" of incoming DCP mutation and control messages.
@@ -89,7 +88,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     /**
      * The logger used.
      */
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpMessageHandler.class);
+    private static final Logger LOGGER = LogManager.getLogger();
 
     /**
      * The data callback where the events are fed to the user.
@@ -142,7 +141,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             ackHandle = this;
             ackListener = future -> {
                 if (!future.isSuccess()) {
-                    LOGGER.log(CouchbaseLogLevel.WARN, "Failed to send the ack to the dcp producer", future.cause());
+                    LOGGER.warn("Failed to send the ack to the dcp producer", future.cause());
                     ch.close();
                 } else {
                     env.flowControlCallback().ackFlushedThroughNetwork(ackHandle, this.dcpChannel);
@@ -375,7 +374,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         if (cause instanceof IOException && cause.getMessage().contains("Connection reset by peer")) {
-            LOGGER.log(CouchbaseLogLevel.WARN, "{} connection was closed by the other side", connectionId, cause);
+            LOGGER.warn("{} connection was closed by the other side", connectionId, cause);
             ctx.close();
             return;
         }

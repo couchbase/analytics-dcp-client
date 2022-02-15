@@ -11,16 +11,17 @@ package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_FAILOVER_LOG_OPCODE;
 
-import com.couchbase.client.core.logging.CouchbaseLogLevel;
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.dcp.state.SessionPartitionState;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public enum DcpFailoverLogResponse {
     ;
 
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpFailoverLogResponse.class);
+    private static final Logger LOGGER = LogManager.getLogger();
 
     public static boolean is(final ByteBuf buffer) {
         return buffer.getByte(0) == MessageUtil.MAGIC_RES && buffer.getByte(1) == DCP_FAILOVER_LOG_OPCODE;
@@ -66,9 +67,8 @@ public enum DcpFailoverLogResponse {
     public static void fill(final ByteBuf buffer, SessionPartitionState ss) {
         ss.clearFailoverLog();
         int numEntries = numLogEntries(buffer);
-        if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
-            LOGGER.log(CouchbaseLogLevel.TRACE,
-                    "Failover log response for vbucket " + ss.vbid() + " contains " + numEntries + " entries");
+        if (LOGGER.isEnabled(Level.TRACE)) {
+            LOGGER.trace("Failover log response for vbucket " + ss.vbid() + " contains " + numEntries + " entries");
         }
         for (int i = numEntries - 1; i >= 0; i--) {
             long seq = seqnoEntry(buffer, i);

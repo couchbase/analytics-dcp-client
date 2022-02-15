@@ -10,8 +10,8 @@
 
 package com.couchbase.client.dcp.message;
 
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.dcp.util.CollectionsUtil;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public class CollectionChanged extends DcpSystemEvent {
     private static final long serialVersionUID = 1L;

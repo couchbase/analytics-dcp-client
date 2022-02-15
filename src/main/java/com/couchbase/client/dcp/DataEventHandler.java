@@ -9,7 +9,7 @@
  */
 package com.couchbase.client.dcp;
 
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 
 /**
  * This interface acts as a callback on the {@link Client#dataEventHandler(DataEventHandler)} API

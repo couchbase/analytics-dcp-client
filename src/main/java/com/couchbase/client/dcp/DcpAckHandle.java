@@ -9,7 +9,7 @@
  */
 package com.couchbase.client.dcp;
 
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 
 @FunctionalInterface
 public interface DcpAckHandle {

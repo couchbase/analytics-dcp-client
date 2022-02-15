@@ -9,10 +9,10 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
+import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.dcp.message.MessageUtil;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.buffer.Unpooled;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
 public class BucketSelectionRequest {
     private BucketSelectionRequest() {

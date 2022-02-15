@@ -30,17 +30,17 @@ import org.apache.logging.log4j.Logger;
 import com.couchbase.client.core.config.AlternateAddress;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
+import com.couchbase.client.core.deps.io.netty.bootstrap.Bootstrap;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBufAllocator;
+import com.couchbase.client.core.deps.io.netty.buffer.PooledByteBufAllocator;
+import com.couchbase.client.core.deps.io.netty.buffer.UnpooledByteBufAllocator;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelFuture;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelOption;
 import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.error.BadBucketConfigException;
 import com.couchbase.client.dcp.transport.netty.ChannelUtils;
-import com.couchbase.client.deps.io.netty.bootstrap.Bootstrap;
-import com.couchbase.client.deps.io.netty.buffer.ByteBufAllocator;
-import com.couchbase.client.deps.io.netty.buffer.PooledByteBufAllocator;
-import com.couchbase.client.deps.io.netty.buffer.UnpooledByteBufAllocator;
-import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
-import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 
 public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
@@ -172,7 +172,7 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
         if (env.dynamicConfigurationNodes()) {
             List<InetSocketAddress> configNodes = new ArrayList<>(config.nodes().size());
             for (NodeInfo node : config.nodes()) {
-                int port = (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.CONFIG);
+                int port = (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.MANAGER);
                 InetSocketAddress address = new InetSocketAddress(node.hostname(), port);
                 if (env.networkResolution().equals(EXTERNAL)) {
                     AlternateAddress aa = node.alternateAddresses().get(EXTERNAL.name());
@@ -181,8 +181,8 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
                         continue;
                     }
                     Map<ServiceType, Integer> services = env.sslEnabled() ? aa.sslServices() : aa.services();
-                    if (services.containsKey(ServiceType.CONFIG)) {
-                        int altPort = services.get(ServiceType.CONFIG);
+                    if (services.containsKey(ServiceType.MANAGER)) {
+                        int altPort = services.get(ServiceType.MANAGER);
                         InetSocketAddress altAddress = new InetSocketAddress(aa.hostname(), altPort);
                         LOGGER.info("Adding a config node {} at alternate address {}", address, altAddress);
                         configNodes.add(altAddress);

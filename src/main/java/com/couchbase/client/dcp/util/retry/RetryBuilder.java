@@ -13,8 +13,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import com.couchbase.client.core.annotations.InterfaceAudience;
-import com.couchbase.client.core.annotations.InterfaceStability;
 import com.couchbase.client.core.time.Delay;
 
 import rx.Scheduler;
@@ -35,8 +33,6 @@ import rx.functions.Func1;
  * @author Simon Baslé
  * @since 1.0.0
  */
-@InterfaceStability.Committed
-@InterfaceAudience.Public
 public class RetryBuilder {
 
     private int maxAttempts;

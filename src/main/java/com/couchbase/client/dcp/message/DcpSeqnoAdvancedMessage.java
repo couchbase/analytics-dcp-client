@@ -9,7 +9,7 @@
  */
 package com.couchbase.client.dcp.message;
 
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 
 public class DcpSeqnoAdvancedMessage {
     private DcpSeqnoAdvancedMessage() {

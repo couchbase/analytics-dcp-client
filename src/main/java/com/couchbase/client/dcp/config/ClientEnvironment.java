@@ -14,10 +14,8 @@ import java.security.KeyStore;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import com.couchbase.client.core.env.ConfigParserEnvironment;
+import com.couchbase.client.core.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.core.env.NetworkResolution;
-import com.couchbase.client.core.node.DefaultMemcachedHashingStrategy;
-import com.couchbase.client.core.node.MemcachedHashingStrategy;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.ConnectionNameGenerator;
 import com.couchbase.client.dcp.ControlEventHandler;
@@ -29,7 +27,6 @@ import com.couchbase.client.dcp.config.DcpControl.Names;
 import com.couchbase.client.dcp.events.DefaultEventBus;
 import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.dcp.util.FlowControlCallback;
-import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 
 import rx.Completable;
 import rx.Observable;
@@ -41,7 +38,7 @@ import rx.Observable;
  * @author Michael Nitschinger
  * @since 1.0.0
  */
-public class ClientEnvironment implements SecureEnvironment, ConfigParserEnvironment {
+public class ClientEnvironment implements SecureEnvironment {
     /*
      * Config provider connection
      */
@@ -410,12 +407,6 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
     @Override
     public KeyStore sslKeystore() {
         return sslKeystore;
-    }
-
-    @Override
-    public MemcachedHashingStrategy memcachedHashingStrategy() {
-        // This is hardcoded, because memcached nodes do not support DCP anyway.
-        return DefaultMemcachedHashingStrategy.INSTANCE;
     }
 
     public NetworkResolution networkResolution() {

@@ -11,10 +11,8 @@ package com.couchbase.client.dcp.util.retry;
 
 import java.util.concurrent.TimeUnit;
 
-import com.couchbase.client.core.annotations.InterfaceAudience;
-import com.couchbase.client.core.annotations.InterfaceStability;
-import com.couchbase.client.core.lang.Tuple;
-import com.couchbase.client.core.lang.Tuple2;
+import org.apache.commons.lang3.tuple.Pair;
+
 import com.couchbase.client.core.time.Delay;
 
 import rx.Observable;
@@ -26,8 +24,6 @@ import rx.functions.Func2;
  * @author Simon Baslé
  * @since 1.0.0
  */
-@InterfaceStability.Committed
-@InterfaceAudience.Public
 public class Retry {
 
     public static final Delay DEFAULT_DELAY = Delay.fixed(1, TimeUnit.MILLISECONDS);
@@ -94,17 +90,12 @@ public class Retry {
      * @param expectedAttempts
      *            the maximum of combinations to make (for retry, should be the maximum number of
      *            authorized retries + 1).
-     * @return an Observable that combines the index/attempt number of each error with its error in a {@link Tuple2}.
+     * @return an Observable that combines the index/attempt number of each error with its error in a {@link Pair}.
      */
-    protected static Observable<Tuple2<Integer, Throwable>> errorsWithAttempts(Observable<? extends Throwable> errors,
+    protected static Observable<Pair<Integer, Throwable>> errorsWithAttempts(Observable<? extends Throwable> errors,
             final int expectedAttempts) {
         return errors.zipWith(Observable.range(1, expectedAttempts),
-                new Func2<Throwable, Integer, Tuple2<Integer, Throwable>>() {
-                    @Override
-                    public Tuple2<Integer, Throwable> call(Throwable error, Integer attempt) {
-                        return Tuple.create(attempt, error);
-                    }
-                });
+                (Func2<Throwable, Integer, Pair<Integer, Throwable>>) (error, attempt) -> Pair.of(attempt, error));
     }
 
 }

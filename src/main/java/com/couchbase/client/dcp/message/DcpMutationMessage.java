@@ -11,8 +11,8 @@ package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_MUTATION_OPCODE;
 
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.dcp.util.CollectionsUtil;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 public class DcpMutationMessage extends DcpDataMessage {
 

@@ -13,9 +13,9 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.couchbase.client.deps.com.fasterxml.jackson.annotation.JsonCreator;
-import com.couchbase.client.deps.com.fasterxml.jackson.annotation.JsonProperty;
-import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
+import com.couchbase.client.core.deps.com.fasterxml.jackson.annotation.JsonCreator;
+import com.couchbase.client.core.deps.com.fasterxml.jackson.annotation.JsonProperty;
+import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Represents a single entry in a failover log per partition state.

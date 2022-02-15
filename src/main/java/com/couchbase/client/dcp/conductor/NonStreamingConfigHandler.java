@@ -18,16 +18,17 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.config.BucketConfigParser;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
-import com.couchbase.client.core.config.parser.BucketConfigParser;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelHandlerContext;
+import com.couchbase.client.core.deps.io.netty.channel.SimpleChannelInboundHandler;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpContent;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpObject;
+import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
+import com.couchbase.client.core.env.CoreEnvironment;
+import com.couchbase.client.core.error.CouchbaseException;
 import com.couchbase.client.dcp.config.ClientEnvironment;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
-import com.couchbase.client.deps.io.netty.channel.SimpleChannelInboundHandler;
-import com.couchbase.client.deps.io.netty.handler.codec.http.HttpContent;
-import com.couchbase.client.deps.io.netty.handler.codec.http.HttpObject;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
 public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
     public static final Logger LOGGER = LogManager.getLogger();
@@ -42,7 +43,7 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
      */
     private final MutableObject<CouchbaseBucketConfig> config;
     private final MutableObject<Throwable> failure;
-    private final ClientEnvironment environment;
+    private final CoreEnvironment environment;
 
     /**
      * The current aggregated chunk of the JSON config.
@@ -52,18 +53,18 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
     /**
      * Creates a new config handler.
      *
-     * @param configStream
-     *            config stream where to send the configs.
      * @param address
      *            address of the remote server.
      * @param environment
+     * @param config
+     *            config stream where to send the configs.
      */
     NonStreamingConfigHandler(final InetSocketAddress address, ClientEnvironment environment,
             MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
         this.address = address;
         this.config = config;
         this.failure = failure;
-        this.environment = environment;
+        this.environment = CoreEnvironment.create();
     }
 
     /**

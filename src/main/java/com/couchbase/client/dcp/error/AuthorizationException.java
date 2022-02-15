@@ -9,7 +9,7 @@
  */
 package com.couchbase.client.dcp.error;
 
-import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.error.CouchbaseException;
 
 public class AuthorizationException extends CouchbaseException {
 

@@ -9,10 +9,10 @@
  */
 package com.couchbase.client.dcp.conductor;
 
-import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.error.CouchbaseException;
 
 public class MasterDcpChannelNotFoundException extends CouchbaseException {
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
     public MasterDcpChannelNotFoundException(String message) {
         super(message);

@@ -9,7 +9,7 @@
  */
 package com.couchbase.client.dcp.util.retry;
 
-import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.error.CouchbaseException;
 
 /**
  * A {@link CouchbaseException} that denotes that a retry cycle failed because the maximum allowed attempt
@@ -20,7 +20,7 @@ import com.couchbase.client.core.CouchbaseException;
  * @since 1.0.0
  */
 public class CannotRetryException extends CouchbaseException {
-    private static final long serialVersionUID = 6216622075438962790L;
+    private static final long serialVersionUID = 2L;
 
     public CannotRetryException(String message) {
         super(message);

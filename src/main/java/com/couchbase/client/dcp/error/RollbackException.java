@@ -9,7 +9,7 @@
  */
 package com.couchbase.client.dcp.error;
 
-import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.error.CouchbaseException;
 
 /**
  * Indicates a rollback happened, used as an internal messaging event.
@@ -18,7 +18,7 @@ import com.couchbase.client.core.CouchbaseException;
  * @since 1.0.0
  */
 public class RollbackException extends CouchbaseException {
-    private static final long serialVersionUID = -3116060802712271509L;
+    private static final long serialVersionUID = 2L;
 
     public RollbackException() {
     }

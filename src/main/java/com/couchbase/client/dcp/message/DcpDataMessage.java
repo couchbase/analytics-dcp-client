@@ -11,8 +11,8 @@ package com.couchbase.client.dcp.message;
 
 import java.nio.charset.Charset;
 
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 
 @SuppressWarnings("squid:S1610")
 public abstract class DcpDataMessage {

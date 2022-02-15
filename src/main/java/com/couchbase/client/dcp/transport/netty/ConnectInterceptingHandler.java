@@ -11,12 +11,12 @@ package com.couchbase.client.dcp.transport.netty;
 
 import java.net.SocketAddress;
 
-import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
-import com.couchbase.client.deps.io.netty.channel.ChannelOutboundHandler;
-import com.couchbase.client.deps.io.netty.channel.ChannelPromise;
-import com.couchbase.client.deps.io.netty.channel.SimpleChannelInboundHandler;
-import com.couchbase.client.deps.io.netty.util.concurrent.Future;
-import com.couchbase.client.deps.io.netty.util.concurrent.GenericFutureListener;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelHandlerContext;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelOutboundHandler;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelPromise;
+import com.couchbase.client.core.deps.io.netty.channel.SimpleChannelInboundHandler;
+import com.couchbase.client.core.deps.io.netty.util.concurrent.Future;
+import com.couchbase.client.core.deps.io.netty.util.concurrent.GenericFutureListener;
 
 /**
  * Helper class which intercepts the connect promise and stores it for later reuse.

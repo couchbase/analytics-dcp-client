@@ -20,9 +20,9 @@ import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.dcp.util.MathUtil;
 import com.couchbase.client.dcp.util.ShortSortedBitSet;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 import it.unimi.dsi.fastutil.shorts.ShortSortedSet;
 

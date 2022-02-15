@@ -9,20 +9,20 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
-import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelHandlerContext;
+import com.couchbase.client.core.deps.io.netty.handler.codec.base64.Base64;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.DefaultFullHttpRequest;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.FullHttpRequest;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpHeaders;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpMethod;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpRequest;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpResponse;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpVersion;
+import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
+import com.couchbase.client.core.error.CouchbaseException;
 import com.couchbase.client.dcp.error.AuthorizationException;
 import com.couchbase.client.dcp.error.BucketNotFoundException;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
-import com.couchbase.client.deps.io.netty.handler.codec.base64.Base64;
-import com.couchbase.client.deps.io.netty.handler.codec.http.DefaultFullHttpRequest;
-import com.couchbase.client.deps.io.netty.handler.codec.http.FullHttpRequest;
-import com.couchbase.client.deps.io.netty.handler.codec.http.HttpHeaders;
-import com.couchbase.client.deps.io.netty.handler.codec.http.HttpMethod;
-import com.couchbase.client.deps.io.netty.handler.codec.http.HttpRequest;
-import com.couchbase.client.deps.io.netty.handler.codec.http.HttpResponse;
-import com.couchbase.client.deps.io.netty.handler.codec.http.HttpVersion;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
 /**
  * This handler intercepts the bootstrap of the config stream, sending the initial request

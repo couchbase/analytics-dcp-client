@@ -9,13 +9,13 @@
  */
 package com.couchbase.client.dcp.conductor;
 
-import com.couchbase.client.core.CouchbaseException;
+import com.couchbase.client.core.error.CouchbaseException;
 
 /**
  * Created by daschl on 01/09/16.
  */
 public class NotMyVbucketException extends CouchbaseException {
-    private static final long serialVersionUID = 728931767913343314L;
+    private static final long serialVersionUID = 2L;
 
     public NotMyVbucketException() {
     }

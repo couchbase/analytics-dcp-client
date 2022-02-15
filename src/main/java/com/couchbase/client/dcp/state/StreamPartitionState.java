@@ -25,10 +25,10 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.ObjectMapper;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
-import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
 
 /**
  * Represents the individual current session state for a given partition.

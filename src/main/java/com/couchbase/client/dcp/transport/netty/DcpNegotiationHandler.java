@@ -12,15 +12,16 @@ package com.couchbase.client.dcp.transport.netty;
 import java.util.Iterator;
 import java.util.Map;
 
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelHandlerContext;
+import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.message.DcpControlRequest;
 import com.couchbase.client.dcp.message.MessageUtil;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.buffer.Unpooled;
-import com.couchbase.client.deps.io.netty.channel.ChannelHandlerContext;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
 /**
  * Negotiates DCP control flags once connected and removes itself afterwards.
@@ -38,7 +39,7 @@ public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
     /**
      * The logger used.
      */
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpNegotiationHandler.class);
+    private static final Logger LOGGER = LogManager.getLogger();
 
     /**
      * Stores an iterator over the control settings that need to be negotiated.

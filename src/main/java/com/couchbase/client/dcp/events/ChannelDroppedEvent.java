@@ -16,8 +16,8 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.ObjectMapper;
 import com.couchbase.client.dcp.conductor.DcpChannel;
-import com.couchbase.client.deps.com.fasterxml.jackson.databind.ObjectMapper;
 
 public class ChannelDroppedEvent implements DcpEvent {
     private static final Logger LOGGER = LogManager.getLogger();

@@ -17,15 +17,15 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
+import com.couchbase.client.core.deps.io.netty.channel.Channel;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelInitializer;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelPipeline;
+import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpClientCodec;
+import com.couchbase.client.core.deps.io.netty.handler.logging.LogLevel;
+import com.couchbase.client.core.deps.io.netty.handler.logging.LoggingHandler;
+import com.couchbase.client.core.deps.io.netty.handler.ssl.SslHandler;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.SSLEngineFactory;
-import com.couchbase.client.deps.io.netty.channel.Channel;
-import com.couchbase.client.deps.io.netty.channel.ChannelInitializer;
-import com.couchbase.client.deps.io.netty.channel.ChannelPipeline;
-import com.couchbase.client.deps.io.netty.handler.codec.http.HttpClientCodec;
-import com.couchbase.client.deps.io.netty.handler.logging.LogLevel;
-import com.couchbase.client.deps.io.netty.handler.logging.LoggingHandler;
-import com.couchbase.client.deps.io.netty.handler.ssl.SslHandler;
 
 public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
 

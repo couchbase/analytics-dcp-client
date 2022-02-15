@@ -9,9 +9,6 @@
  */
 package com.couchbase.client.dcp.util.retry;
 
-import com.couchbase.client.core.annotations.InterfaceAudience;
-import com.couchbase.client.core.annotations.InterfaceStability;
-
 import rx.Observable;
 import rx.functions.Func1;
 
@@ -25,8 +22,6 @@ import rx.functions.Func1;
  * @author Simon Baslé
  * @since 1.0.0
  */
-@InterfaceStability.Committed
-@InterfaceAudience.Public
 public class RetryWhenFunction implements Func1<Observable<? extends Throwable>, Observable<?>> {
 
     protected RetryWithDelayHandler handler;

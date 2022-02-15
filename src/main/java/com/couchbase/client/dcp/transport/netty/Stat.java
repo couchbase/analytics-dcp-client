@@ -14,11 +14,11 @@ import static com.couchbase.client.dcp.transport.netty.Stat.Kind.COLLECTIONS_BYI
 import java.util.Collections;
 import java.util.Map;
 
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
+import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.CollectionsUtil;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.buffer.Unpooled;
-import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 
 public class Stat {
 

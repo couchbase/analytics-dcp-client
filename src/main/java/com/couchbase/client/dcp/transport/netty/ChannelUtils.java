@@ -9,13 +9,13 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
-import com.couchbase.client.deps.io.netty.channel.Channel;
-import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
-import com.couchbase.client.deps.io.netty.channel.epoll.EpollEventLoopGroup;
-import com.couchbase.client.deps.io.netty.channel.epoll.EpollSocketChannel;
-import com.couchbase.client.deps.io.netty.channel.oio.OioEventLoopGroup;
-import com.couchbase.client.deps.io.netty.channel.socket.nio.NioSocketChannel;
-import com.couchbase.client.deps.io.netty.channel.socket.oio.OioSocketChannel;
+import com.couchbase.client.core.deps.io.netty.channel.Channel;
+import com.couchbase.client.core.deps.io.netty.channel.EventLoopGroup;
+import com.couchbase.client.core.deps.io.netty.channel.epoll.EpollEventLoopGroup;
+import com.couchbase.client.core.deps.io.netty.channel.epoll.EpollSocketChannel;
+import com.couchbase.client.core.deps.io.netty.channel.oio.OioEventLoopGroup;
+import com.couchbase.client.core.deps.io.netty.channel.socket.nio.NioSocketChannel;
+import com.couchbase.client.core.deps.io.netty.channel.socket.oio.OioSocketChannel;
 
 /**
  * Various netty channel related utility methods.

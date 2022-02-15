@@ -11,11 +11,11 @@ package com.couchbase.client.dcp.message;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBufUtil;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamState;
-import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.deps.io.netty.buffer.ByteBufUtil;
 
 public class MessageUtil {
 

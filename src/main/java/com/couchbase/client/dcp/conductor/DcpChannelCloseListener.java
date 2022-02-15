@@ -9,15 +9,16 @@
  */
 package com.couchbase.client.dcp.conductor;
 
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import com.couchbase.client.core.deps.io.netty.channel.ChannelFuture;
+import com.couchbase.client.core.deps.io.netty.channel.ChannelFutureListener;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.events.ImpossibleEvent;
-import com.couchbase.client.deps.io.netty.channel.ChannelFuture;
-import com.couchbase.client.deps.io.netty.channel.ChannelFutureListener;
 
 public class DcpChannelCloseListener implements ChannelFutureListener {
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(DcpChannelCloseListener.class);
+    private static final Logger LOGGER = LogManager.getLogger();
 
     private final DcpChannel channel;
 

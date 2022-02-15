@@ -25,15 +25,14 @@ import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.hyracks.api.util.InvokeUtil;
 import org.apache.hyracks.util.NetworkUtil;
 import org.apache.hyracks.util.Span;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-import com.couchbase.client.core.CouchbaseException;
 import com.couchbase.client.core.config.AlternateAddress;
 import com.couchbase.client.core.config.BucketCapabilities;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
-import com.couchbase.client.core.logging.CouchbaseLogLevel;
-import com.couchbase.client.core.logging.CouchbaseLogger;
-import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
+import com.couchbase.client.core.error.CouchbaseException;
 import com.couchbase.client.core.service.ServiceType;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.config.ClientEnvironment;
@@ -45,7 +44,7 @@ import com.couchbase.client.dcp.util.CollectionsUtil;
 
 public class Conductor {
 
-    private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Conductor.class);
+    private static final Logger LOGGER = LogManager.getLogger();
     public static final String KEY_BUCKET_UUID = "bucket_uuid=";
     private static final long WAIT_FOR_SEQNOS_TIMEOUT_SECS = 120;
     private static final long WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS = 5;
@@ -252,10 +251,10 @@ public class Conductor {
     private DcpChannel masterChannelByPartition(short partition) {
         synchronized (channels) {
             CouchbaseBucketConfig config = configProvider.config();
-            int index = config.nodeIndexForMaster(partition, false);
+            int index = config.nodeIndexForActive(partition, false);
             if (index < 0) {
                 throw new CouchbaseException(
-                        "partition " + partition + " does not have a master node; nodes=" + config.nodes());
+                        "partition " + partition + " does not have an active node; nodes=" + config.nodes());
             }
             return dcpChannelForNode(partition, config.nodeAtIndex(index));
         }
@@ -269,7 +268,7 @@ public class Conductor {
                         + " does not provide an external alternate address!");
             }
             Map<ServiceType, Integer> services = env.sslEnabled() ? aa.sslServices() : aa.services();
-            int altPort = services.getOrDefault(ServiceType.BINARY, -1);
+            int altPort = services.getOrDefault(ServiceType.KV, -1);
             if (altPort == -1) {
                 throw new CouchbaseException("partition " + partition + " master node " + node
                         + " does not provide the KV service on its external alternate address " + aa.hostname() + "!");
@@ -278,7 +277,7 @@ public class Conductor {
             return ensureDcpChannelForPartition(altAddress, partition);
         } else {
             InetSocketAddress address = new InetSocketAddress(node.hostname(),
-                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.BINARY));
+                    (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.KV));
             return ensureDcpChannelForPartition(address, partition);
         }
     }
@@ -311,30 +310,30 @@ public class Conductor {
                 AlternateAddress aa = node.alternateAddresses().get(EXTERNAL.name());
                 if (aa == null) {
                     LOGGER.warn("node {} does not provide an external alternate address",
-                            NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.CONFIG)));
+                            NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.MANAGER)));
                     return;
                 }
                 Map<ServiceType, Integer> services = env.sslEnabled() ? aa.sslServices() : aa.services();
-                if (!services.containsKey(ServiceType.BINARY)) {
+                if (!services.containsKey(ServiceType.KV)) {
                     LOGGER.warn("node {} does not provide the KV service on its external alternate address {}",
-                            NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.CONFIG)),
+                            NetworkUtil.toHostPort(node.hostname(), node.services().get(ServiceType.MANAGER)),
                             aa.hostname());
                     return;
                 }
-                int altPort = services.get(ServiceType.BINARY);
+                int altPort = services.get(ServiceType.KV);
                 address = new InetSocketAddress(aa.hostname(), altPort);
             } else {
                 final Map<ServiceType, Integer> services = env.sslEnabled() ? node.sslServices() : node.services();
-                if (!services.containsKey(ServiceType.BINARY)) {
+                if (!services.containsKey(ServiceType.KV)) {
                     return;
                 }
-                address = new InetSocketAddress(node.hostname(), services.get(ServiceType.BINARY));
+                address = new InetSocketAddress(node.hostname(), services.get(ServiceType.KV));
             }
             if (channels.containsKey(address)) {
                 return;
             }
             DcpChannel channel = new DcpChannel(address, node.hostname(), env, sessionState,
-                    config.numberOfPartitions(), config.capabilities().contains(BucketCapabilities.COLLECTIONS));
+                    config.numberOfPartitions(), config.bucketCapabilities().contains(BucketCapabilities.COLLECTIONS));
             LOGGER.debug("Adding DCP Channel against {}", node);
             channel.connect(attemptTimeout, totalTimeout, delay);
             channels.put(address, channel);
@@ -370,7 +369,7 @@ public class Conductor {
     }
 
     public CollectionsManifest getCollectionsManifest() throws InterruptedException, TimeoutException {
-        if (config().capabilities().contains(BucketCapabilities.COLLECTIONS)) {
+        if (config().bucketCapabilities().contains(BucketCapabilities.COLLECTIONS)) {
             synchronized (channels) {
                 sessionState.requestCollectionsManifest(channels.values().iterator().next());
             }
@@ -405,15 +404,14 @@ public class Conductor {
                                 channel.connect(attemptTimeout, totalTimeout, delay);
                             } catch (Throwable e) {
                                 // Disconnect succeeded but connect failed
-                                LOGGER.log(CouchbaseLogLevel.WARN,
+                                LOGGER.warn(
                                         "Dead connection detected, channel was disconnected successfully but connecting failed. Creating a channel dropped event",
                                         e);
                                 channel.setState(State.CONNECTED);
                                 env.eventBus().publish(new ChannelDroppedEvent(channel, e));
                             }
                         } catch (Exception e) {
-                            LOGGER.log(CouchbaseLogLevel.WARN,
-                                    "Failure disconnecting a dead dcp channel. ignoring till next round", e);
+                            LOGGER.warn("Failure disconnecting a dead dcp channel. ignoring till next round", e);
                         }
                     }
                 }
