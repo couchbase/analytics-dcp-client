@@ -62,6 +62,9 @@ import com.couchbase.client.dcp.message.DcpDataMessage;
 import com.couchbase.client.dcp.message.DcpNoopResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
 import com.couchbase.client.dcp.message.DcpOsoSnapshotMarkerMessage;
+import com.couchbase.client.dcp.message.DcpSeqnoAdvancedMessage;
+import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
+import com.couchbase.client.dcp.message.DcpSystemEventMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
@@ -253,25 +256,50 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                         MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message),
                         DcpOsoSnapshotMarkerMessage.humanizeFlags(message));
                 break;
-            case FLEX_REQ_STREAM_END:
             case FLEX_REQ_SNAPSHOT_MARKER:
+                LOGGER.trace("{} {} sid {} vbid {} startseq {} endseq {}", connectionId,
+                        MessageUtil.humanizeOpcode(message), MessageUtil.streamId(message, -1),
+                        MessageUtil.getVbucket(message), DcpSnapshotMarkerRequest.startSeqno(message),
+                        DcpSnapshotMarkerRequest.endSeqno(message));
+                break;
+            case FLEX_REQ_STREAM_END:
             case FLEX_REQ_SET_VBUCKET_STATE:
-            case FLEX_REQ_SYSTEM_EVENT:
-            case FLEX_REQ_SEQNO_ADVANCED:
                 LOGGER.trace("{} {} sid {} vbid {}", connectionId, MessageUtil.humanizeOpcode(message),
                         MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message));
                 break;
+            case FLEX_REQ_SYSTEM_EVENT:
+                LOGGER.trace("{} {} sid {} vbid {} seq {}", connectionId, MessageUtil.humanizeOpcode(message),
+                        MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message),
+                        DcpSystemEventMessage.seqno(message));
+                break;
+            case FLEX_REQ_SEQNO_ADVANCED:
+                LOGGER.trace("{} {} sid {} vbid {} seq {}", connectionId, MessageUtil.humanizeOpcode(message),
+                        MessageUtil.streamId(message, -1), MessageUtil.getVbucket(message),
+                        DcpSeqnoAdvancedMessage.getSeqno(message));
+                break;
             case RES_STREAM_REQUEST:
-                LOGGER.trace("{} {} sid {} vbid {} status {}", connectionId, MessageUtil.humanizeOpcode(message),
+                LOGGER.trace("{} {} sid {} vbid {} status {}{}", connectionId, MessageUtil.humanizeOpcode(message),
                         DcpOpenStreamResponse.streamId(message), DcpOpenStreamResponse.vbucket(message),
-                        MemcachedStatus.toString(MessageUtil.getStatus(message)));
+                        MemcachedStatus.toString(MessageUtil.getStatus(message)),
+                        (MessageUtil.getStatus(message) == MemcachedStatus.ROLLBACK
+                                ? "rollbackseq " + DcpOpenStreamResponse.rollbackSeqno(message) : ""));
+                break;
+            case REQ_SNAPSHOT_MARKER:
+                LOGGER.trace("{} {} vbid {} startseq {} endseq {}", connectionId, MessageUtil.humanizeOpcode(message),
+                        MessageUtil.getVbucket(message), DcpSnapshotMarkerRequest.startSeqno(message),
+                        DcpSnapshotMarkerRequest.endSeqno(message));
+                break;
+            case REQ_SYSTEM_EVENT:
+                LOGGER.trace("{} {} vbid {} seq {}", connectionId, MessageUtil.humanizeOpcode(message),
+                        MessageUtil.getVbucket(message), DcpSystemEventMessage.seqno(message));
+                break;
+            case REQ_SEQNO_ADVANCED:
+                LOGGER.trace("{} {} vbid {} seq {}", connectionId, MessageUtil.humanizeOpcode(message),
+                        MessageUtil.getVbucket(message), DcpSeqnoAdvancedMessage.getSeqno(message));
                 break;
             case REQ_STREAM_END:
-            case REQ_SNAPSHOT_MARKER:
             case REQ_SET_VBUCKET_STATE:
             case REQ_OSO_SNAPSHOT_MARKER:
-            case REQ_SYSTEM_EVENT:
-            case REQ_SEQNO_ADVANCED:
             case RES_STREAM_CLOSE:
             case RES_GET_SEQNOS:
             case RES_DCP_COLLECTIONS_MANIFEST:
