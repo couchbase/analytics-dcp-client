@@ -23,8 +23,8 @@ licenses/APL2.txt.
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <core.version>2.2.5</core.version>
-    <client.version>3.2.5</client.version>
+    <core.version>2.3.2</core.version>
+    <client.version>3.3.2</client.version>
     <maven.javadoc.skip>true</maven.javadoc.skip>
   </properties>
   <name>Couchbase Java DCP Client</name>
