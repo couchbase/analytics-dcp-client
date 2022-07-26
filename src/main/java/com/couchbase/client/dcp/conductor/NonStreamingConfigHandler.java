@@ -85,8 +85,7 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
     }
 
     @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-
+    public void channelInactive(ChannelHandlerContext ctx) {
         synchronized (config) {
             if (failure.getValue() == null) {
                 String rawConfig = null;
@@ -109,6 +108,7 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
                 config.notifyAll();
             }
         }
+        environment.shutdown();
         ctx.fireChannelInactive();
     }
 
