@@ -195,10 +195,11 @@ public class DcpChannel {
             }
         }
 
-        int[] requestedCids = sessionState.streamStream().map(StreamState::cids).flatMapToInt(IntStream::of)
-                .filter(this::isMissingSeqnos).peek(this::requestSeqnos).toArray();
-        if (requestedCids.length > 0) {
-            LOGGER.debug("Re-requested seqnos for cids {}", CollectionsUtil.displayCids(requestedCids));
+        int[] missingSeqnosCids = sessionState.streamStream().map(StreamState::cids).flatMapToInt(IntStream::of)
+                .filter(this::isMissingSeqnos).toArray();
+        if (missingSeqnosCids.length > 0) {
+            requestSeqnos(missingSeqnosCids);
+            LOGGER.debug("Re-requested seqnos for cids {}", CollectionsUtil.displayCids(missingSeqnosCids));
         }
 
         channel.closeFuture().addListener(closeListener);
