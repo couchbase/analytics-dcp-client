@@ -284,6 +284,8 @@ public class Fixer implements Runnable, SystemEventHandler {
                 doReconnect(streamEndEvent);
                 break;
             case STATE_CHANGED:
+                LOGGER.info(this + " vbucket state has changed");
+                break;
             case BACKFILL_FAIL:
             case CHANNEL_DROPPED:
                 // update the config and attempt to resume
