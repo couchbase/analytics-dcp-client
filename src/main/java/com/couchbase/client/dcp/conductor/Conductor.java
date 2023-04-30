@@ -143,7 +143,9 @@ public class Conductor {
             int[] attemptCids;
             if (attempt.getAndIncrement() > 1) {
                 attemptCids = IntStream.of(cids).filter(sessionState::hasSeqnosPending).toArray();
-                requestSeqnos(false, attemptCids);
+                if (attemptCids.length > 0) {
+                    requestSeqnos(false, attemptCids);
+                }
             } else {
                 attemptCids = cids;
             }

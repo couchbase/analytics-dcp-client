@@ -121,7 +121,6 @@ public class StreamPartitionState {
                 LOGGER.log(seqno == this.seqno ? Level.DEBUG : Level.WARN,
                         "new seqno received ({}) <= the previous seqno({}) for vbid: {}", Long.toUnsignedString(seqno),
                         Long.toUnsignedString(this.seqno), vbid);
-                return;
             }
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("setting seqno to {} for vbid {} on setSeqno", seqno, vbid);
