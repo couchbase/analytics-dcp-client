@@ -20,7 +20,6 @@ import com.couchbase.client.core.deps.io.netty.channel.ChannelHandlerContext;
 import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
-import com.couchbase.client.dcp.error.BucketNotFoundException;
 import com.couchbase.client.dcp.message.DcpOpenConnectionRequest;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
@@ -111,15 +110,9 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
                     break;
             }
         } else {
-            Exception failure;
-            if (status == MemcachedStatus.NOT_FOUND) {
-                LOGGER.debug("Failed in the {} step due to bucket {} not found ({})", toString(step), bucket,
-                        MemcachedStatus.toString(status));
-                failure = new BucketNotFoundException("Bucket " + bucket + " does not exist");
-            } else {
-                failure = new IllegalStateException("Could not open DCP Connection: Failed in the " + toString(step)
-                        + " step, response status is " + MemcachedStatus.toString(status));
-            }
+            Exception failure = new IllegalStateException(
+                    "Could not open DCP Connection to " + ctx.channel().remoteAddress() + ": Failed in the "
+                            + toString(step) + " step, response status is " + MemcachedStatus.toString(status));
             originalPromise().setFailure(failure);
         }
     }
