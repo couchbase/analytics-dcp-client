@@ -17,7 +17,7 @@ public interface FlowControlCallback {
     final FlowControlCallback NOOP = new FlowControlCallback() {
         @Override
         public void bufferAckWaterMarkReached(DcpAckHandle handle, DcpChannel dcpChannel, int ackCounter,
-                int ackWatermark) {
+                long ackWatermark) {
             // No Op
         }
 
@@ -27,7 +27,7 @@ public interface FlowControlCallback {
         }
     };
 
-    void bufferAckWaterMarkReached(DcpAckHandle handle, DcpChannel dcpChannel, int ackCounter, int ackWatermark);
+    void bufferAckWaterMarkReached(DcpAckHandle handle, DcpChannel dcpChannel, int ackCounter, long ackWatermark);
 
     void ackFlushedThroughNetwork(DcpAckHandle handle, DcpChannel dcpChannel);
 
