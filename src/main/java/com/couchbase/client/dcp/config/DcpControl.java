@@ -65,7 +65,7 @@ public class DcpControl implements Iterable<Map.Entry<String, String>> {
      */
     public boolean ackEnabled() {
         String bufSize = values.get(Names.CONNECTION_BUFFER_SIZE.value());
-        return bufSize != null && Integer.parseInt(bufSize) > 0;
+        return bufSize != null && Long.parseLong(bufSize) > 0;
     }
 
     /**
