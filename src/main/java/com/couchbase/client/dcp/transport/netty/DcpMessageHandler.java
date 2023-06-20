@@ -103,7 +103,7 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
     private final boolean ackEnabled;
     private final DcpAckHandle ackHandle;
     private int ackCounter;
-    private final int ackWatermark;
+    private final long ackWatermark;
     private final DcpChannel dcpChannel;
     private final ChannelFutureListener ackListener;
     private final String connectionId;
@@ -135,8 +135,8 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
         this.connectionId = env.connectionNameGenerator().displayForm(dcpChannel.getConnectionName());
         if (ackEnabled) {
             int bufferAckPercent = env.ackWaterMark();
-            int bufferSize = Integer.parseInt(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
-            this.ackWatermark = (int) Math.round(bufferSize / 100.0 * bufferAckPercent);
+            long bufferSize = Long.parseLong(env.dcpControl().get(DcpControl.Names.CONNECTION_BUFFER_SIZE));
+            this.ackWatermark = Math.round(bufferSize / 100.0 * bufferAckPercent);
             LOGGER.debug("BufferAckWatermark absolute is {}", ackWatermark);
             ackHandle = this;
             ackListener = future -> {
