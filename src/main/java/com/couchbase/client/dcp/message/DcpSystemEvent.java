@@ -99,4 +99,7 @@ public abstract class DcpSystemEvent implements Serializable {
 
     }
 
+    public static long getSeqno(ByteBuf event) {
+        return MessageUtil.getExtras(event).readLong();
+    }
 }
