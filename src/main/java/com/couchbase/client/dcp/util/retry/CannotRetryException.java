@@ -15,7 +15,6 @@ import com.couchbase.client.core.CouchbaseException;
  * A {@link CouchbaseException} that denotes that a retry cycle failed because the maximum allowed attempt
  * count was reached.
  *
- * @see Retry
  * @author Simon Baslé
  * @since 1.0.0
  */

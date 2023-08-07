@@ -12,6 +12,8 @@ package com.couchbase.client.dcp.config;
 import java.net.InetSocketAddress;
 import java.security.KeyStore;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import com.couchbase.client.core.env.ConfigParserEnvironment;
@@ -30,9 +32,6 @@ import com.couchbase.client.dcp.events.DefaultEventBus;
 import com.couchbase.client.dcp.events.EventBus;
 import com.couchbase.client.dcp.util.FlowControlCallback;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
-
-import rx.Completable;
-import rx.Observable;
 
 /**
  * The {@link ClientEnvironment} is responsible to carry various configuration and
@@ -657,22 +656,14 @@ public class ClientEnvironment implements SecureEnvironment, ConfigParserEnviron
      * especially if a custom event loop group is passed in it needs to be shut down
      * separately.
      *
-     * @return a {@link Completable} indicating completion of the shutdown process.
+     * @return a {@link Future} indicating completion of the shutdown process.
      */
-    public Completable shutdown() {
-        Observable<Boolean> loopShutdown = Observable.empty();
-
+    @SuppressWarnings("java:S1452")
+    public Future<?> shutdown() {
         if (eventLoopGroupIsPrivate) {
-            loopShutdown = Completable.create(subscriber -> eventLoopGroup
-                    .shutdownGracefully(0, 10, TimeUnit.MILLISECONDS).addListener(future -> {
-                        if (future.isSuccess()) {
-                            subscriber.onCompleted();
-                        } else {
-                            subscriber.onError(future.cause());
-                        }
-                    })).toObservable();
+            return eventLoopGroup.shutdownGracefully(0, 10, TimeUnit.MILLISECONDS);
         }
-        return loopShutdown.toCompletable();
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override
