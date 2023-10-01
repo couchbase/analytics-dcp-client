@@ -26,7 +26,6 @@ import com.couchbase.client.core.deps.io.netty.channel.SimpleChannelInboundHandl
 import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpContent;
 import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpObject;
 import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
-import com.couchbase.client.core.env.CoreEnvironment;
 import com.couchbase.client.core.error.CouchbaseException;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 
@@ -43,7 +42,6 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
      */
     private final MutableObject<CouchbaseBucketConfig> config;
     private final MutableObject<Throwable> failure;
-    private final CoreEnvironment environment;
 
     /**
      * The current aggregated chunk of the JSON config.
@@ -64,7 +62,6 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
         this.address = address;
         this.config = config;
         this.failure = failure;
-        this.environment = CoreEnvironment.create();
     }
 
     /**
@@ -97,8 +94,7 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
                 }
                 if (rawConfig != null && !rawConfig.isEmpty()) {
                     try {
-                        config.setValue(
-                                (CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment, hostAddress));
+                        config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, null, hostAddress));
                     } catch (Exception e) {
                         failure.setValue(e);
                     }
@@ -108,7 +104,6 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
                 config.notifyAll();
             }
         }
-        environment.shutdown();
         ctx.fireChannelInactive();
     }
 
