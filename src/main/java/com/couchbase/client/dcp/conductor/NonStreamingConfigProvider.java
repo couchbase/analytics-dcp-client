@@ -139,7 +139,7 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
             if (elapsed(startTime, totalTimeout)) {
                 return false;
             }
-            Thread.sleep(delay.calculate(attempt));
+            delay.unit().sleep(delay.calculate(attempt));
         }
     }
 
