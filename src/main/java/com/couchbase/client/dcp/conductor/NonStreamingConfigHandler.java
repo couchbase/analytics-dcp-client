@@ -86,7 +86,7 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
         synchronized (config) {
             if (failure.getValue() == null) {
                 String rawConfig = null;
-                String hostAddress = address.getAddress().getHostAddress();
+                String hostAddress = address.getHostString();
                 if (responseContent != null) {
                     rawConfig = responseContent.toString(CharsetUtil.UTF_8).replace("$HOST",
                             encodeIPv6LiteralHost(hostAddress));
