@@ -166,7 +166,7 @@ public class DcpChannel {
                     setState(State.DISCONNECTED);
                     throw failure; // NOSONAR failure is not nullable
                 }
-                Thread.sleep(delay.calculate(attempt));
+                delay.unit().sleep(delay.calculate(attempt));
             }
         }
         // attempt to restart the dropped streams
