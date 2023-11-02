@@ -32,20 +32,28 @@ public enum StreamFlags {
      */
     LATEST(0x04),
     /**
-     * Specifies that the server should stream only item key and metadata in the mutations
-     * and not stream the value of the item.
-     */
-    NO_VALUE(0x08),
-    /**
-     * Indicates if the server is collection capable.
-     */
-    FEATURES_COLLECTION(0x12),
-    /**
      * Indicate the server to add stream only if the VBucket is active.
-     * If the VBucket is not active, the stream request fails with ERR_NOT_MY_VBUCKET (0x07)
+     * If the VBucket is not active, the stream request fails with ERR_NOT_MY_VBUCKET (0x07).
      */
-    ACTIVE_VB_ONLY(0x16);
-
+    /*@SinceCouchbase("5.0")*/ ACTIVE_VB_ONLY(0x10),
+    /**
+     * Specifies that the server should check for vb_uuid match even at start_seqno 0 before
+     * adding the stream. Upon mismatch the sever should return ENGINE_ROLLBACK error.
+     */
+    /*@SinceCouchbase("5.1")*/ STRICT_VBUUID_MATCH(0x20),
+    /**
+     * Specifies that the server should stream mutations from the current sequence number, this
+     * means the start parameter is ignored.
+     */
+    /*@SinceCouchbase("7.2")*/ FROM_LATEST(0x40),
+    /**
+     * Specifies that the server should skip rollback if the client is behind the purge seqno, but
+     * the request is otherwise satisfiable (i.e. no other rollback checks such as UUID mismatch
+     * fail). The client could end up missing purged tombstones (and hence could end up never being
+     * told about a document deletion). The intent of this flag is to allow clients who ignore
+     * deletes to avoid rollbacks to zero which are solely due to them being behind the purge seqno.
+     */
+    /*@SinceCouchbase("7.2")*/ IGNORE_PURGED_TOMBSTONES(0x80);
     private final int value;
 
     StreamFlags(int value) {

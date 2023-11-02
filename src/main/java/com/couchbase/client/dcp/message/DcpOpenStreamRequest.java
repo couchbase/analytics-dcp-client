@@ -105,16 +105,16 @@ public enum DcpOpenStreamRequest {
     }
 
     /**
-     * Set {@link StreamFlags#NO_VALUE} flag for the stream.
-     */
-    public static void noValue(final ByteBuf buffer) {
-        flags(buffer, flags(buffer) | StreamFlags.NO_VALUE.value());
-    }
-
-    /**
      * Set {@link StreamFlags#ACTIVE_VB_ONLY} flag for the stream.
      */
     public static void activeVbucketOnly(final ByteBuf buffer) {
         flags(buffer, flags(buffer) | StreamFlags.ACTIVE_VB_ONLY.value());
+    }
+
+    /**
+     * Set {@link StreamFlags#STRICT_VBUUID_MATCH} flag for the stream.
+     */
+    public static void strictVBUuidMatch(final ByteBuf buffer) {
+        flags(buffer, flags(buffer) | StreamFlags.STRICT_VBUUID_MATCH.value());
     }
 }

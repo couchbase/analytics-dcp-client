@@ -279,6 +279,7 @@ public class DcpChannel {
         DcpOpenStreamRequest.endSeqno(buffer, endSeqno);
         DcpOpenStreamRequest.snapshotStartSeqno(buffer, snapshotStartSeqno);
         DcpOpenStreamRequest.snapshotEndSeqno(buffer, snapshotEndSeqno);
+        DcpOpenStreamRequest.activeVbucketOnly(buffer);
 
         if (collectionCapable) {
             ObjectMapper om = new ObjectMapper();
