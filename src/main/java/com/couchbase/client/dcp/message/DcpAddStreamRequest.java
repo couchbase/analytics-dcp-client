@@ -50,13 +50,6 @@ public enum DcpAddStreamRequest {
     }
 
     /**
-     * Check if {@link StreamFlags#NO_VALUE} flag requested for the stream.
-     */
-    public static boolean noValue(final ByteBuf buffer) {
-        return StreamFlags.NO_VALUE.isSet(flags(buffer));
-    }
-
-    /**
      * Check if {@link StreamFlags#ACTIVE_VB_ONLY} flag requested for the stream.
      */
     public static boolean activeVbucketOnly(final ByteBuf buffer) {
