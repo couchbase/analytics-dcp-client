@@ -9,6 +9,7 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayCid;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.IOException;
@@ -206,7 +207,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         if (status == MemcachedStatus.SUCCESS) {
             sessionState.handleSeqnoResponse(cid, MessageUtil.getContent(buf));
         } else {
-            sessionState.seqnoRequestFailed(cid, new CouchbaseException(MemcachedStatus.toString(status)));
+            sessionState.seqnoRequestFailed(cid,
+                    new CouchbaseException(MemcachedStatus.toString(status) + " for cid " + displayCid(cid)));
         }
         channel.seqnosFetched(cid);
     }
