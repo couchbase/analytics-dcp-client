@@ -158,20 +158,18 @@ public class StreamPartitionState {
         return streamRequest;
     }
 
-    public void setStreamRequest(StreamRequest streamRequest) {
+    public void setStreamRequest(StreamRequest streamRequest, boolean shouldLog) {
         this.streamRequest = streamRequest;
         seqno = streamRequest.getStartSeqno();
         streamEndSeq = streamRequest.getEndSeqno();
         snapshotStartSeqno = streamRequest.getSnapshotStartSeqno();
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
         manifestUid = streamRequest.getManifestUid();
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug(
-                    "setStreamRequest sid {} vbid {} seqno {} endseqno {} snapstart {} snapend {} manifestUid {} cids {}",
-                    streamRequest.getStreamId(), vbid, Long.toUnsignedString(seqno),
-                    Long.toUnsignedString(streamEndSeq), Long.toUnsignedString(snapshotStartSeqno),
-                    Long.toUnsignedString(snapshotEndSeqno), displayManifestUid(manifestUid),
-                    displayCids(streamRequest.getCids()));
+        if (shouldLog && LOGGER.isDebugEnabled()) {
+            LOGGER.debug("setStreamRequest: sid {} manifestUid {} cids {} vbid {} {}-{} snap {}-{}",
+                    streamRequest.getStreamId(), displayManifestUid(manifestUid), displayCids(streamRequest.getCids()),
+                    vbid, Long.toUnsignedString(seqno), Long.toUnsignedString(streamEndSeq),
+                    Long.toUnsignedString(snapshotStartSeqno), Long.toUnsignedString(snapshotEndSeqno));
         }
     }
 
@@ -184,7 +182,8 @@ public class StreamPartitionState {
                 streamEndSeq = snapshotEndSeqno;
             }
             setStreamRequest(new StreamRequest(vbid, seqno, streamEndSeq, sessionState.get(vbid).uuid(),
-                    snapshotStartSeqno, snapshotEndSeqno, manifestUid, streamState.streamId(), streamState.cids()));
+                    snapshotStartSeqno, snapshotEndSeqno, manifestUid, streamState.streamId(), streamState.cids()),
+                    true);
         }
     }
 
