@@ -139,6 +139,9 @@ public class Conductor {
     }
 
     public void waitForSeqnos(int... cids) throws Throwable {
+        if (cids.length == 0) {
+            return;
+        }
         MutableInt attempt = new MutableInt(1);
         InvokeUtil.retryUntilSuccessOrExhausted(Span.start(WAIT_FOR_SEQNOS_TIMEOUT_SECS, TimeUnit.SECONDS), () -> {
             int[] attemptCids;
