@@ -54,6 +54,7 @@ import com.couchbase.client.dcp.transport.netty.ChannelUtils;
 import com.couchbase.client.dcp.transport.netty.DcpPipeline;
 import com.couchbase.client.dcp.transport.netty.Stat;
 import com.couchbase.client.dcp.util.CollectionsUtil;
+import com.couchbase.client.dcp.util.ShortSortedBitSet;
 
 import it.unimi.dsi.fastutil.ints.Int2BooleanMap;
 import it.unimi.dsi.fastutil.ints.Int2BooleanOpenHashMap;
@@ -107,8 +108,7 @@ public class DcpChannel {
 
     public synchronized void connect(long attemptTimeout, long totalTimeout, Delay delay) throws Throwable {
         if (getState() != State.DISCONNECTED) {
-            throw new IllegalArgumentException(
-                    "Dcp Channel is already connected or is trying to connect. State = " + getState().name());
+            throw new IllegalArgumentException("Channel is already connected or is trying to connect: " + this);
         }
         setState(State.CONNECTING);
         int attempt = 0;
@@ -120,8 +120,8 @@ public class DcpChannel {
             ChannelFuture connectFuture = null;
             try {
                 if (infoEnabled) {
-                    LOGGER.info("DcpChannel connect attempt #" + attempt + " with socket connect timeout = "
-                            + (int) env.dcpChannelAttemptTimeout());
+                    LOGGER.info("Connect attempt #{} with socket connect timeout {} to {}", attempt, attemptTimeout,
+                            inetAddress);
                 }
                 ByteBufAllocator allocator =
                         env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
@@ -137,12 +137,12 @@ public class DcpChannel {
                 if (!connectFuture.isSuccess()) {
                     throw connectFuture.cause();
                 }
-                LOGGER.debug("Connection established");
+                LOGGER.debug("Connection to {} established", inetAddress);
                 channel = connectFuture.channel();
                 setState(State.CONNECTED);
                 break;
             } catch (InterruptedException e) {
-                LOGGER.warn("Connection was interrupted while attempting to establish DCP connection", e);
+                LOGGER.warn("Connection attempt #{} to {} was interrupted", attempt, inetAddress);
                 if (connectFuture != null) {
                     final ChannelFuture cf = connectFuture;
                     connectFuture.addListener(f -> {
@@ -156,15 +156,16 @@ public class DcpChannel {
                 setState(State.DISCONNECTED);
                 throw e;
             } catch (Throwable e) {
-                LOGGER.warn("Connection failed", e);
                 if (failure == null) {
                     failure = e;
                 }
                 if (!shouldRetry(e) || System.currentTimeMillis() - startTime > totalTimeout) {
-                    LOGGER.warn("Connection FAILED " + attempt + " times");
+                    LOGGER.warn("Connection to {} FAILED after {} attempts; giving up", inetAddress, attempt);
                     channel = null;
                     setState(State.DISCONNECTED);
                     throw failure; // NOSONAR failure is not nullable
+                } else {
+                    LOGGER.warn("Connection attempt #{} to {} failed", attempt, inetAddress, e);
                 }
                 delay.unit().sleep(delay.calculate(attempt));
             }
@@ -186,12 +187,15 @@ public class DcpChannel {
                         req.getCids());
             }
         }
-        for (int i = 0; i < failoverLogRequests.length; i++) {
+        ShortSortedBitSet requested = new ShortSortedBitSet();
+        for (short i = 0; i < failoverLogRequests.length; i++) {
             if (failoverLogRequests[i]) {
-                // TODO(mblow): consolidate logging (use ShortSortedBitSet)
-                LOGGER.debug("Re-requesting failover logs for vbucket " + i);
-                getFailoverLog((short) i);
+                requested.add(i);
+                getFailoverLog(i);
             }
+        }
+        if (!requested.isEmpty()) {
+            LOGGER.debug("Re-requested failover logs for vbuckets {}", requested);
         }
 
         int[] missingSeqnosCids = sessionState.streamStream().map(StreamState::cids).flatMapToInt(IntStream::of)
