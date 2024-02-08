@@ -10,6 +10,7 @@
 package com.couchbase.client.dcp.transport.netty;
 
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
@@ -22,6 +23,7 @@ import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.message.DcpControlRequest;
 import com.couchbase.client.dcp.message.MessageUtil;
+import com.couchbase.client.dcp.util.MemcachedStatus;
 
 /**
  * Negotiates DCP control flags once connected and removes itself afterwards.
@@ -46,6 +48,8 @@ public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
      */
     private final Iterator<Map.Entry<String, String>> controlSettings;
 
+    private final LinkedHashMap<String, String> negotiatedSettings = new LinkedHashMap<>();
+
     /**
      * Create a new dcp control handler.
      *
@@ -63,8 +67,7 @@ public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
     private void negotiate(final ChannelHandlerContext ctx) {
         if (controlSettings.hasNext()) {
             Map.Entry<String, String> setting = controlSettings.next();
-
-            LOGGER.debug("Negotiating DCP Control {}: {}", setting.getKey(), setting.getValue());
+            negotiatedSettings.put(setting.getKey(), setting.getValue());
             ByteBuf request = ctx.alloc().buffer();
             DcpControlRequest.init(request);
             DcpControlRequest.key(Unpooled.copiedBuffer(setting.getKey(), CharsetUtil.UTF_8), request);
@@ -75,7 +78,7 @@ public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
             originalPromise().setSuccess();
             ctx.pipeline().remove(this);
             ctx.fireChannelActive();
-            LOGGER.debug("Negotiated all DCP Control settings against Node {}", ctx.channel().remoteAddress());
+            LOGGER.debug("negotiated {} against {}", negotiatedSettings, ctx.channel().remoteAddress());
         }
     }
 
@@ -97,7 +100,10 @@ public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
         if (status == CONTROL_SUCCESS) {
             negotiate(ctx);
         } else {
-            originalPromise().setFailure(new IllegalStateException("Could not configure DCP Controls: " + status));
+            Map.Entry<String, String> failed =
+                    negotiatedSettings.entrySet().stream().reduce((first, second) -> second).orElseThrow();
+            originalPromise().setFailure(new IllegalStateException(
+                    "Failed to configure DCP Control " + failed + ": " + MemcachedStatus.toString(status)));
         }
     }
 
