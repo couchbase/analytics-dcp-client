@@ -93,13 +93,14 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
                 if (responseContent != null) {
                     rawConfig = responseContent.toString(CharsetUtil.UTF_8).replace("$HOST",
                             encodeIPv6LiteralHost(hostAddress));
-                    LOGGER.log(Level.DEBUG, "Received Config: {}", rawConfig);
+                    LOGGER.log(Level.TRACE, "received config: {}", rawConfig);
                 }
                 if (rawConfig != null && !rawConfig.isEmpty()) {
                     try {
                         config.setValue(
                                 (CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, environment, hostAddress));
                     } catch (Exception e) {
+                        LOGGER.error("failed to parse raw config: {}", rawConfig);
                         failure.setValue(e);
                     }
                 } else {
