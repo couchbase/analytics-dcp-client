@@ -210,6 +210,11 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
         }
         selectedMechanism = saslClient.getMechanismName();
 
+        if (!selectedMechanism.startsWith("SCRAM-SHA")) {
+            throw new AuthenticationException("No supported SASL mechanisms from server " + remote
+                    + " found; server sent: " + Arrays.toString(supportedMechanisms));
+        }
+
         byte[] bytePayload = saslClient.hasInitialResponse() ? saslClient.evaluateChallenge(new byte[] {}) : null;
         ByteBuf payload = bytePayload != null ? ctx.alloc().buffer().writeBytes(bytePayload) : Unpooled.EMPTY_BUFFER;
 
