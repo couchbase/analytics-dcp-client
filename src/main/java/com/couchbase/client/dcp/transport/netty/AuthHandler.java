@@ -17,7 +17,6 @@ import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
-import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 
 import org.apache.logging.log4j.LogManager;
@@ -31,6 +30,7 @@ import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.core.deps.io.netty.util.concurrent.Future;
 import com.couchbase.client.core.deps.io.netty.util.concurrent.GenericFutureListener;
 import com.couchbase.client.core.error.AuthenticationFailureException;
+import com.couchbase.client.core.io.netty.kv.sasl.CouchbaseSaslClientFactory;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.message.SaslAuthRequest;
 import com.couchbase.client.dcp.message.SaslAuthResponse;
@@ -61,6 +61,7 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
      * The logger used for the auth handler.
      */
     private static final Logger LOGGER = LogManager.getLogger();
+    private static final CouchbaseSaslClientFactory SASL_CLIENT_FACTORY = new CouchbaseSaslClientFactory();
 
     /**
      * Username used to authenticate against the bucket (likely to be the bucket name itself).
@@ -207,12 +208,17 @@ class AuthHandler extends ConnectInterceptingHandler<ByteBuf> implements Callbac
                     null);
         }
 
-        saslClient = Sasl.createSaslClient(supportedMechanisms, null, "couchbase", remote, null, this);
+        saslClient = SASL_CLIENT_FACTORY.createSaslClient(supportedMechanisms, null, "couchbase", remote, null, this);
         if (saslClient == null) {
             throw new AuthenticationFailureException("No supported SASL mechanisms from server " + remote
                     + " found; server sent: " + Arrays.toString(supportedMechanisms), null, null);
         }
         selectedMechanism = saslClient.getMechanismName();
+
+        if (!selectedMechanism.startsWith("SCRAM-SHA")) {
+            throw new AuthenticationFailureException("No supported SASL mechanisms from server " + remote
+                    + " found; server sent: " + Arrays.toString(supportedMechanisms), null, null);
+        }
 
         byte[] bytePayload = saslClient.hasInitialResponse() ? saslClient.evaluateChallenge(new byte[] {}) : null;
         ByteBuf payload = bytePayload != null ? ctx.alloc().buffer().writeBytes(bytePayload) : Unpooled.EMPTY_BUFFER;
