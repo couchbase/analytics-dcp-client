@@ -17,6 +17,8 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamState;
 
+import it.unimi.dsi.fastutil.ints.IntIntPair;
+
 public class MessageUtil {
 
     /**
@@ -389,6 +391,15 @@ public class MessageUtil {
         buffer.writerIndex(HEADER_SIZE + framingExtrasLength + bodyLength);
 
         // todo: what if old body with different size is there?
+    }
+
+    public static IntIntPair getKeyContentLength(ByteBuf buffer) {
+        short framingExtrasLength = getFramingExtrasSize(buffer);
+        short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
+        byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
+        // The size of the value is total body length - key length - extras length - framing extras
+        return IntIntPair.of(keyLength,
+                buffer.getInt(BODY_LENGTH_OFFSET) - keyLength - extrasLength - framingExtrasLength);
     }
 
     public static ByteBuf getContent(ByteBuf buffer) {

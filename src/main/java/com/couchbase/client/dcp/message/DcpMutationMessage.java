@@ -14,6 +14,8 @@ import static com.couchbase.client.dcp.message.MessageUtil.DCP_MUTATION_OPCODE;
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 
+import it.unimi.dsi.fastutil.ints.IntIntPair;
+
 public class DcpMutationMessage extends DcpDataMessage {
 
     private DcpMutationMessage() {
@@ -26,14 +28,12 @@ public class DcpMutationMessage extends DcpDataMessage {
                 && (magic == MessageUtil.MAGIC_REQ || magic == MessageUtil.MAGIC_REQ_FLEX);
     }
 
-    public static ByteBuf content(final ByteBuf buffer) {
-        return MessageUtil.getContent(buffer);
+    public static IntIntPair keyContentLength(final ByteBuf buffer) {
+        return MessageUtil.getKeyContentLength(buffer);
     }
 
-    public static byte[] contentBytes(final ByteBuf buffer) {
-        byte[] bytes = new byte[buffer.readableBytes()];
-        content(buffer).getBytes(0, bytes);
-        return bytes;
+    public static ByteBuf content(final ByteBuf buffer) {
+        return MessageUtil.getContent(buffer);
     }
 
     public static int flags(final ByteBuf buffer) {
