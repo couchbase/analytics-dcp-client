@@ -14,6 +14,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+import it.unimi.dsi.fastutil.ints.IntAVLTreeSet;
+import it.unimi.dsi.fastutil.ints.IntSet;
+
 /**
  * Holds the state information for the current session (all partitions involved).
  */
@@ -110,5 +113,9 @@ public class StreamState {
 
     public int[] cids() {
         return cids;
+    }
+
+    public IntSet cidsSet() {
+        return new IntAVLTreeSet(cids);
     }
 }
