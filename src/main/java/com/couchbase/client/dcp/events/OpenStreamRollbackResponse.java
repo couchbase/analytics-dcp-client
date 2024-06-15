@@ -30,6 +30,10 @@ public class OpenStreamRollbackResponse extends OpenStreamResponse {
         return rollbackSeq;
     }
 
+    public boolean isFullRollback() {
+        return rollbackSeq == 0;
+    }
+
     @Override
     public String toString() {
         return "{\"vbucket\":" + state.vbid() + ", \"open-stream-response\":\"" + MemcachedStatus.toString(status)

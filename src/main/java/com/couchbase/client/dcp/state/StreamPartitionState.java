@@ -280,6 +280,10 @@ public class StreamPartitionState {
         return deletionsProcessed;
     }
 
+    public StreamState getStreamState() {
+        return streamState;
+    }
+
     @GuardedBy("operations on a vbucket do not interleave")
     @SuppressWarnings("NonAtomicOperationOnVolatileField")
     public void processDataEvent(ByteBuf event) {
