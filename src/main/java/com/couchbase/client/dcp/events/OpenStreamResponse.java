@@ -41,8 +41,8 @@ public class OpenStreamResponse implements PartitionDcpEvent {
 
     @Override
     public String toString() {
-        return "{\"vbucket\":" + state.vbid() + ", \"open-stream-response\":\"" + MemcachedStatus.toString(status)
-                + "\"}";
+        return "{\"sid\":" + state.getStreamState().streamId() + ",\"vbucket\":" + state.vbid()
+                + ",\"open-stream-response\":\"" + MemcachedStatus.toString(status) + "}";
     }
 
     @Override

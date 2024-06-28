@@ -129,8 +129,8 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         short status = MessageUtil.getStatus(buf);
         OpenStreamResponse response;
         if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
-            LOGGER.trace("OpenStream {} (0x{}) for vbucket {} on stream {}", MemcachedStatus.toString(status),
-                    Integer.toHexString(status), vbid, ss.streamId());
+            LOGGER.trace("OpenStream {} for vbucket {} on stream {}", MemcachedStatus.toString(status), vbid,
+                    ss.streamId());
         }
         if (status == MemcachedStatus.SUCCESS) {
             response = new OpenStreamResponse(partitionState, status);
@@ -164,18 +164,17 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         short vbid = (short) MessageUtil.getOpaque(buf);
         short status = MessageUtil.getStatus(buf);
         if (LOGGER.isEnabled(CouchbaseLogLevel.TRACE)) {
-            LOGGER.trace("FailoverLog {} (0x{}) for vbucket {}", MemcachedStatus.toString(status),
-                    Integer.toHexString(status), vbid);
+            LOGGER.trace("FailoverLog {} for vbucket {}", MemcachedStatus.toString(status), vbid);
         }
         if (status == MemcachedStatus.SUCCESS) {
             handleFailoverLogResponseSuccess(buf, vbid);
         } else {
             if (LOGGER.isEnabled(CouchbaseLogLevel.WARN)) {
-                LOGGER.warn("FailoverLog unexpected response: {} (0x{}) for vbucket {}",
-                        MemcachedStatus.toString(status), Integer.toHexString(status), vbid);
+                LOGGER.warn("FailoverLog unexpected response: {} for vbucket {}", MemcachedStatus.toString(status),
+                        vbid);
             }
-            channel.getSessionState().get(vbid).failoverLogsRequestFailed(new Exception("Failover response "
-                    + MemcachedStatus.toString(status) + "(0x" + Integer.toHexString(status) + ")"));
+            channel.getSessionState().get(vbid).failoverLogsRequestFailed(
+                    new Exception("Failover response " + MemcachedStatus.toString(status) + ")"));
         }
     }
 

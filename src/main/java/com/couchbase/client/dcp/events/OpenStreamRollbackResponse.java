@@ -36,7 +36,8 @@ public class OpenStreamRollbackResponse extends OpenStreamResponse {
 
     @Override
     public String toString() {
-        return "{\"vbucket\":" + state.vbid() + ", \"open-stream-response\":\"" + MemcachedStatus.toString(status)
-                + "\", " + "\"rollback-seq\":" + Long.toUnsignedString(rollbackSeq) + "}";
+        return "{\"sid\":" + state.getStreamState().streamId() + ",\"vbucket\":" + state.vbid()
+                + ",\"open-stream-response\":\"" + MemcachedStatus.toString(status) + "\"," + "\"rollback-seq\":"
+                + Long.toUnsignedString(rollbackSeq) + "}";
     }
 }
