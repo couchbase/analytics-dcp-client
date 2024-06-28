@@ -54,7 +54,7 @@ public class MemcachedStatus {
     }
 
     public static String toString(short response) {
-        return "status (code 0x" + Integer.toHexString(response) + "):" + description(response);
+        return description(response) + " (0x" + Integer.toHexString(response) + ")";
     }
 
     private static String description(short response) {
