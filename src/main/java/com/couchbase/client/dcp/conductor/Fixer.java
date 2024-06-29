@@ -171,11 +171,6 @@ public class Fixer implements Runnable, SystemEventHandler {
                     LOGGER.info("Handling {}", event);
                     fixDroppedChannel((ChannelDroppedEvent) event);
                     break;
-                case OPEN_STREAM_ROLLBACK_RESPONSE:
-                    LOGGER.info("Handling {}", event);
-                    // abort all, close the channels
-                    conductor.disconnect(true);
-                    break;
                 case OPEN_STREAM_RESPONSE:
                     OpenStreamResponse response = (OpenStreamResponse) event;
                     if (response.getStatus() == MemcachedStatus.MANIFEST_IS_AHEAD) {
