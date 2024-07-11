@@ -479,9 +479,7 @@ public class Fixer implements Runnable, SystemEventHandler {
     @Override
     public void onEvent(DcpEvent event) {
         if (running) {
-            if (event.getType() == DcpEvent.Type.OPEN_STREAM_ROLLBACK_RESPONSE) {
-                inbox.clear();
-            } else if (event.getType() == DcpEvent.Type.OPEN_STREAM_RESPONSE) {
+            if (event.getType() == DcpEvent.Type.OPEN_STREAM_RESPONSE) {
                 OpenStreamResponse response = (OpenStreamResponse) event;
                 if (response.getStatus() == MemcachedStatus.SUCCESS) {
                     return;
