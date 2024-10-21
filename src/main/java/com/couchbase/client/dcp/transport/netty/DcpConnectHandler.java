@@ -15,6 +15,7 @@ import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.config.ClientEnvironment;
+import com.couchbase.client.dcp.error.BucketNotFoundException;
 import com.couchbase.client.dcp.message.DcpOpenConnectionRequest;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
@@ -109,19 +110,14 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
                     break;
             }
         } else {
-            /*
-             * MB-63488: memcached reports bucket NOT_FOUND if we ask for the bucket while memcached is in the warmup
-             * stage because it does not know about the buckets yet. The source of truth will be what ns_server reports
-             * for bucket presence.
-             * To do that, we need to continue retrying to connect to the bucket until ns_server reports that the bucket
-             * is NOT_FOUND. Throwing BucketNotFoundException here was causing us to stop retrying, which is incorrect
-             * as we might have received a false-positive NOT_FOUND. Throwing an IllegalStateException instead will
-             * cause a retry and part of the retry lifecycle we check with ns_server if the bucket is still present or
-             * not, and we will stop retrying only if ns_server reports bucket NOT_FOUND.
-             */
-            Exception failure = new IllegalStateException(
-                    "Could not open DCP Connection to " + ctx.channel().remoteAddress() + ": Failed in the "
-                            + toString(step) + " step, response status is " + MemcachedStatus.toString(status));
+            Exception failure;
+            if (step == SELECT && status == MemcachedStatus.NOT_FOUND) {
+                failure = new BucketNotFoundException(bucket);
+            } else {
+                failure = new IllegalStateException(
+                        "Could not open DCP Connection to " + ctx.channel().remoteAddress() + ": Failed in the "
+                                + toString(step) + " step, response status is " + MemcachedStatus.toString(status));
+            }
             originalPromise().setFailure(failure);
         }
     }
