@@ -9,10 +9,8 @@
  */
 package com.couchbase.client.dcp.state;
 
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
-import com.couchbase.client.dcp.util.CollectionsUtil;
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayCids;
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayManifestUid;
 
 public class StreamRequest {
     private final short partition;
@@ -21,18 +19,20 @@ public class StreamRequest {
     private final long vbucketUuid;
     private final long snapshotStartSeqno;
     private final long snapshotEndSeqno;
+    private final long purgeSeqno;
     private final long manifestUid;
     private final int streamId;
     private final int[] cids;
 
     public StreamRequest(short partition, long startSeqno, long endSeqno, long vbucketUuid, long snapshotStartSeq,
-            long snapshotEndSeq, long manifestUid, int streamId, int... cids) {
+            long snapshotEndSeq, long purgeSeqno, long manifestUid, int streamId, int... cids) {
         this.partition = partition;
         this.startSeqno = startSeqno;
         this.endSeqno = endSeqno;
         this.vbucketUuid = vbucketUuid;
         this.snapshotStartSeqno = snapshotStartSeq;
         this.snapshotEndSeqno = snapshotEndSeq;
+        this.purgeSeqno = purgeSeqno;
         this.manifestUid = manifestUid;
         this.streamId = streamId;
         this.cids = cids;
@@ -58,6 +58,10 @@ public class StreamRequest {
         return snapshotEndSeqno;
     }
 
+    public long getPurgeSeqno() {
+        return purgeSeqno;
+    }
+
     public short getPartition() {
         return partition;
     }
@@ -76,9 +80,9 @@ public class StreamRequest {
 
     @Override
     public String toString() {
-        return "partition = " + partition + " startSeqno = " + startSeqno + " endSeqno = " + endSeqno
-                + " vbucketUuid = " + vbucketUuid + " snapshotStartSeqno = " + snapshotStartSeqno
-                + " snapshotEndSeqno = " + snapshotEndSeqno + " manifestUid = " + manifestUid + " sid = " + streamId
-                + " cids = " + IntStream.of(cids).mapToObj(CollectionsUtil::displayCid).collect(Collectors.toList());
+        return String.format("sid %d vbid %d manifestUid %s cids %s %s-%s snap %s-%s purge %s", streamId, partition,
+                displayManifestUid(manifestUid), displayCids(cids), Long.toUnsignedString(startSeqno),
+                Long.toUnsignedString(endSeqno), Long.toUnsignedString(snapshotStartSeqno),
+                Long.toUnsignedString(snapshotEndSeqno), Long.toUnsignedString(purgeSeqno));
     }
 }

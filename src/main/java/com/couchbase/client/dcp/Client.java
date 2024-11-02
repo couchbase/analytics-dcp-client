@@ -111,7 +111,8 @@ public class Client {
                 .setBootstrapHttpSslPort(builder.sslConfigPort()).setVbuckets(builder.vbuckets())
                 .setClusterAt(builder.clusterAt()).setFlowControlCallback(builder.flowControlCallback())
                 .setUuid(builder.uuid()).setDynamicConfigurationNodes(builder.dynamicConfigurationNodes())
-                .setNetworkResolution(builder.networkResolution()).build();
+                .setNetworkResolution(builder.networkResolution())
+                .setDcpSteamRequestIncludePurgeSeqnos(builder.isDcpSteamRequestIncludePurgeSeqnos()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
         if (ackEnabled && env.ackWaterMark() == 0) {
@@ -518,6 +519,8 @@ public class Client {
         private long dcpChannelTotalTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT;
         private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
         private IntList cids = IntLists.EMPTY_LIST;
+        private boolean dcpSteamRequestIncludePurgeSeqnos =
+                ClientEnvironment.DEFAULT_DCP_STREAM_REQUEST_INCLUDE_PURGE_SEQNOS;
 
         /**
          * The buffer acknowledge watermark in percent.
@@ -837,6 +840,11 @@ public class Client {
             return this;
         }
 
+        public Builder includePurgeSeqnosInStreamRequests(boolean dcpSteamRequestIncludePurgeSeqnos) {
+            this.dcpSteamRequestIncludePurgeSeqnos = dcpSteamRequestIncludePurgeSeqnos;
+            return this;
+        }
+
         /**
          * Create the client instance ready to use.
          *
@@ -962,6 +970,10 @@ public class Client {
 
         public NetworkResolution networkResolution() {
             return networkResolution;
+        }
+
+        public boolean isDcpSteamRequestIncludePurgeSeqnos() {
+            return dcpSteamRequestIncludePurgeSeqnos;
         }
     }
 

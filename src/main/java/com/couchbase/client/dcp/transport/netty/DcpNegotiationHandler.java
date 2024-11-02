@@ -9,6 +9,7 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -50,6 +51,8 @@ public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
 
     private final LinkedHashMap<String, String> negotiatedSettings = new LinkedHashMap<>();
 
+    private final LinkedHashMap<String, String> failedSettings = new LinkedHashMap<>();
+
     /**
      * Create a new dcp control handler.
      *
@@ -78,7 +81,8 @@ public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
             originalPromise().setSuccess();
             ctx.pipeline().remove(this);
             ctx.fireChannelActive();
-            LOGGER.debug("negotiated {} against {}", negotiatedSettings, ctx.channel().remoteAddress());
+            LOGGER.debug("negotiated {} (failed {}) against {}", negotiatedSettings, failedSettings,
+                    ctx.channel().remoteAddress());
         }
     }
 
@@ -97,14 +101,21 @@ public class DcpNegotiationHandler extends ConnectInterceptingHandler<ByteBuf> {
     @Override
     protected void channelRead0(final ChannelHandlerContext ctx, final ByteBuf msg) throws Exception {
         short status = MessageUtil.getStatus(msg);
-        if (status == CONTROL_SUCCESS) {
-            negotiate(ctx);
-        } else {
+        if (status != CONTROL_SUCCESS) {
             Map.Entry<String, String> failed =
                     negotiatedSettings.entrySet().stream().reduce((first, second) -> second).orElseThrow();
-            originalPromise().setFailure(new IllegalStateException(
-                    "Failed to configure DCP Control " + failed + ": " + MemcachedStatus.toString(status)));
+            failedSettings.put(failed.getKey(), failed.getValue());
+            negotiatedSettings.remove(failed.getKey());
+            LOGGER.warn("Failed to configure DCP Control {}: {}", failed, MemcachedStatus.toString(status));
         }
+        negotiate(ctx);
     }
 
+    public Map<String, String> getNegotiatedSettings() {
+        return Collections.unmodifiableMap(negotiatedSettings);
+    }
+
+    public Map<String, String> getFailedSettings() {
+        return Collections.unmodifiableMap(failedSettings);
+    }
 }

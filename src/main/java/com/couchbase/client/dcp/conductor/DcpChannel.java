@@ -38,6 +38,7 @@ import com.couchbase.client.core.deps.io.netty.channel.ChannelFutureListener;
 import com.couchbase.client.core.deps.io.netty.channel.ChannelOption;
 import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.config.ClientEnvironment;
+import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.DcpCloseStreamRequest;
 import com.couchbase.client.dcp.message.DcpFailoverLogRequest;
@@ -86,6 +87,7 @@ public class DcpChannel {
     private boolean channelDroppedReported = false;
     private final boolean collectionCapable;
     private String connectionName;
+    private boolean includePurgeSeqnos;
 
     public DcpChannel(InetSocketAddress inetAddress, String hostname, final ClientEnvironment env,
             final SessionState sessionState, int numOfPartitions, boolean collectionCapable) {
@@ -126,11 +128,11 @@ public class DcpChannel {
                 }
                 ByteBufAllocator allocator =
                         env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
+                DcpPipeline dcpPipeline = new DcpPipeline(this, hostname, inetAddress.getPort(), env, controlHandler);
                 final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
                         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) attemptTimeout)
                         .remoteAddress(inetAddress.getHostString(), inetAddress.getPort())
-                        .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup()))
-                        .handler(new DcpPipeline(this, hostname, inetAddress.getPort(), env, controlHandler))
+                        .channel(ChannelUtils.channelForEventLoopGroup(env.eventLoopGroup())).handler(dcpPipeline)
                         .group(env.eventLoopGroup());
                 connectFuture = bootstrap.connect();
                 connectFuture.await(attemptTimeout + 100);
@@ -138,6 +140,10 @@ public class DcpChannel {
                 if (!connectFuture.isSuccess()) {
                     throw connectFuture.cause();
                 }
+                includePurgeSeqnos = env.isDcpSteamRequestIncludePurgeSeqnos() && dcpPipeline.getDcpNegotiationHandler()
+                        .getNegotiatedSettings().getOrDefault(DcpControl.Names.MAX_MARKER_VERSION.value(), "")
+                        .equals(DcpControl.MAX_MARKER_VERSION_2_2);
+
                 LOGGER.debug("Connection to {} established", inetAddress);
                 channel = connectFuture.channel();
                 setState(State.CONNECTED);
@@ -184,8 +190,8 @@ public class DcpChannel {
                 ps.prepareNextStreamRequest(sessionState, streamState);
                 StreamRequest req = ps.getStreamRequest();
                 openStream(vbid, req.getVbucketUuid(), req.getStartSeqno(), req.getEndSeqno(),
-                        req.getSnapshotStartSeqno(), req.getSnapshotEndSeqno(), req.getManifestUid(), req.getStreamId(),
-                        req.getCids());
+                        req.getSnapshotStartSeqno(), req.getSnapshotEndSeqno(), req.getPurgeSeqno(),
+                        req.getManifestUid(), req.getStreamId(), req.getCids());
             }
         }
         ShortSortedBitSet requested = new ShortSortedBitSet();
@@ -249,7 +255,8 @@ public class DcpChannel {
     }
 
     public synchronized void openStream(final short vbid, final long vbuuid, final long startSeqno, final long endSeqno,
-            final long snapshotStartSeqno, final long snapshotEndSeqno, long manifestUid, int streamId, int[] cids) {
+            final long snapshotStartSeqno, final long snapshotEndSeqno, long purgeSeqno, long manifestUid, int streamId,
+            int[] cids) {
         final StreamState streamState = sessionState.streamState(streamId);
         StreamPartitionState partitionState = streamState.get(vbid);
         if (getState() != State.CONNECTED) {
@@ -295,6 +302,9 @@ public class DcpChannel {
             }
             if (streamId > 0) {
                 json.put("sid", streamId);
+            }
+            if (purgeSeqno != 0L && includePurgeSeqnos) {
+                json.put("purge_seqno", Long.toUnsignedString(purgeSeqno));
             }
             try {
                 byte[] value = om.writeValueAsBytes(json);

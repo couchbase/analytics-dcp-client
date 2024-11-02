@@ -11,62 +11,146 @@ package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_SNAPSHOT_MARKER_OPCODE;
 
+import java.util.OptionalLong;
+
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 
 public enum DcpSnapshotMarkerRequest {
     ;
+    public static long startSeqno(ByteBuf buffer) {
+        return handler(buffer).startSeqno(buffer);
+    }
 
-    public static boolean is(final ByteBuf buffer) {
+    public static long endSeqno(ByteBuf buffer) {
+        return handler(buffer).endSeqno(buffer);
+    }
+
+    static boolean is(final ByteBuf buffer) {
         return buffer.getByte(0) == MessageUtil.MAGIC_REQ && buffer.getByte(1) == DCP_SNAPSHOT_MARKER_OPCODE;
     }
 
-    public static int flags(final ByteBuf buffer) {
-        return MessageUtil.getExtras(buffer).getInt(16);
+    public static VersionSpecificHandler handler(final ByteBuf buffer) {
+        if (MessageUtil.getExtras(buffer).capacity() > 1) {
+            return V1.INSTANCE;
+        } else if (MessageUtil.getExtras(buffer).getByte(0) == 0x02) {
+            return V2_2.INSTANCE;
+        } else {
+            throw new IllegalArgumentException("Unknown DCP snapshot marker version");
+        }
     }
 
-    /**
-     * Check if {@link SnapshotMarkerFlags#MEMORY} flag set for snapshot marker.
-     */
-    public static boolean memory(final ByteBuf buffer) {
-        return SnapshotMarkerFlags.MEMORY.isSet(flags(buffer));
+    public interface VersionSpecificHandler {
+        default short partition(final ByteBuf buffer) {
+            return MessageUtil.getVbucket(buffer);
+        }
+
+        int flags(ByteBuf buffer);
+
+        /**
+         * Check if {@link SnapshotMarkerFlags#MEMORY} flag set for snapshot marker.
+         */
+        default boolean memory(final ByteBuf buffer) {
+            return SnapshotMarkerFlags.MEMORY.isSet(flags(buffer));
+        }
+
+        /**
+         * Check if {@link SnapshotMarkerFlags#DISK} flag set for snapshot marker.
+         */
+        default boolean disk(final ByteBuf buffer) {
+            return SnapshotMarkerFlags.DISK.isSet(flags(buffer));
+        }
+
+        /**
+         * Check if {@link SnapshotMarkerFlags#CHECKPOINT} flag set for snapshot marker.
+         */
+        default boolean checkpoint(final ByteBuf buffer) {
+            return SnapshotMarkerFlags.CHECKPOINT.isSet(flags(buffer));
+        }
+
+        /**
+         * Check if {@link SnapshotMarkerFlags#ACK} flag set for snapshot marker.
+         */
+        default boolean ack(final ByteBuf buffer) {
+            return SnapshotMarkerFlags.ACK.isSet(flags(buffer));
+        }
+
+        long startSeqno(ByteBuf buffer);
+
+        long endSeqno(ByteBuf buffer);
+
+        OptionalLong purgeSeqno(ByteBuf buffer);
+
+        String toString(final ByteBuf buffer);
     }
 
-    /**
-     * Check if {@link SnapshotMarkerFlags#DISK} flag set for snapshot marker.
-     */
-    public static boolean disk(final ByteBuf buffer) {
-        return SnapshotMarkerFlags.DISK.isSet(flags(buffer));
+    private static class V1 implements VersionSpecificHandler {
+
+        static final VersionSpecificHandler INSTANCE = new V1();
+
+        public int flags(final ByteBuf buffer) {
+            return MessageUtil.getExtras(buffer).getInt(16);
+        }
+
+        @Override
+        public long startSeqno(final ByteBuf buffer) {
+            return MessageUtil.getExtras(buffer).getLong(0);
+
+        }
+
+        @Override
+        public long endSeqno(final ByteBuf buffer) {
+            return MessageUtil.getExtras(buffer).getLong(8);
+        }
+
+        @Override
+        public OptionalLong purgeSeqno(ByteBuf buffer) {
+            return OptionalLong.empty();
+        }
+
+        @Override
+        public String toString(final ByteBuf buffer) {
+            return "SnapshotMarker [vbid: " + partition(buffer) + ", flags: " + String.format("0x%02x", flags(buffer))
+                    + ", start: " + startSeqno(buffer) + ", end: " + endSeqno(buffer) + "]";
+        }
     }
 
-    /**
-     * Check if {@link SnapshotMarkerFlags#CHECKPOINT} flag set for snapshot marker.
-     */
-    public static boolean checkpoint(final ByteBuf buffer) {
-        return SnapshotMarkerFlags.CHECKPOINT.isSet(flags(buffer));
-    }
+    private static class V2_2 implements VersionSpecificHandler {
 
-    /**
-     * Check if {@link SnapshotMarkerFlags#ACK} flag set for snapshot marker.
-     */
-    public static boolean ack(final ByteBuf buffer) {
-        return SnapshotMarkerFlags.ACK.isSet(flags(buffer));
-    }
+        static final VersionSpecificHandler INSTANCE = new V2_2();
 
-    public static long startSeqno(final ByteBuf buffer) {
-        return MessageUtil.getExtras(buffer).getLong(0);
+        /*
+         * 0:  8b Start Seqno
+         * 8:  8b End Seqno
+         * 16: 4b Snapshot Type
+         * 20: 8b Max Visible Seqno
+         * 28: 8b High Completed Seqno
+         * 36: 8b Purge Seqno
+         */
+        @Override
+        public int flags(final ByteBuf buffer) {
+            return MessageUtil.getContent(buffer).getInt(16);
+        }
 
-    }
+        @Override
+        public long startSeqno(final ByteBuf buffer) {
+            return MessageUtil.getContent(buffer).getLong(0);
 
-    public static long endSeqno(final ByteBuf buffer) {
-        return MessageUtil.getExtras(buffer).getLong(8);
-    }
+        }
 
-    public static String toString(final ByteBuf buffer) {
-        return "SnapshotMarker [vbid: " + partition(buffer) + ", flags: " + String.format("0x%02x", flags(buffer))
-                + ", start: " + startSeqno(buffer) + ", end: " + endSeqno(buffer) + "]";
-    }
+        @Override
+        public long endSeqno(final ByteBuf buffer) {
+            return MessageUtil.getContent(buffer).getLong(8);
+        }
 
-    public static short partition(final ByteBuf buffer) {
-        return MessageUtil.getVbucket(buffer);
+        @Override
+        public OptionalLong purgeSeqno(final ByteBuf buffer) {
+            return OptionalLong.of(MessageUtil.getContent(buffer).getLong(36));
+        }
+
+        public String toString(final ByteBuf buffer) {
+            return "SnapshotMarker(v2.2) [vbid: " + partition(buffer) + ", flags: "
+                    + String.format("0x%02x", flags(buffer)) + ", start: " + startSeqno(buffer) + ", end: "
+                    + endSeqno(buffer) + ", purge: " + purgeSeqno(buffer) + "]";
+        }
     }
 }

@@ -33,7 +33,20 @@ public enum SnapshotMarkerFlags {
      *
      * To acknowledge {@link DcpSnapshotMarkerResponse} have to be sent back with the same opaque value.
      */
-    ACK(0x08);
+    ACK(0x08),
+
+    /**
+     * The snapshot represents a view of history, for collections which have history=true, this
+     * snapshot will not deduplicate the mutations of those collections.
+     */
+    HISTORY(0x10),
+
+    /**
+     * The snapshot may contain duplicate keys, breaking a snapshots "unique key" definition which
+     * has existed since DCPs inception. Without this flag the snapshot contains a set of unique
+     * keys.
+     */
+    MAY_DUPLICATE_KEYS(0x20);
 
     private final int value;
 
