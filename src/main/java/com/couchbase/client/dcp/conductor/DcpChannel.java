@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import org.apache.hyracks.util.NetworkUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -89,7 +90,7 @@ public class DcpChannel {
     public DcpChannel(InetSocketAddress inetAddress, String hostname, final ClientEnvironment env,
             final SessionState sessionState, int numOfPartitions, boolean collectionCapable) {
         setState(State.DISCONNECTED);
-        this.inetAddress = inetAddress;
+        this.inetAddress = NetworkUtil.ensureResolved(inetAddress);
         this.hostname = hostname;
         this.env = env;
         this.sessionState = sessionState;
@@ -430,6 +431,9 @@ public class DcpChannel {
         this.channel = channel;
     }
 
+    /**
+     * @return the <code>resolved</code> address of this channel
+     */
     public InetSocketAddress getAddress() {
         return inetAddress;
     }
