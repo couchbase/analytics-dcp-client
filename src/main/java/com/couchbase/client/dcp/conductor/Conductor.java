@@ -278,10 +278,10 @@ public class Conductor {
                 throw new CouchbaseException("partition " + partition + " master node " + node
                         + " does not provide the KV service on its external alternate address " + aa.hostname() + "!");
             }
-            InetSocketAddress altAddress = new InetSocketAddress(aa.hostname(), altPort);
+            InetSocketAddress altAddress = InetSocketAddress.createUnresolved(aa.hostname(), altPort);
             return ensureDcpChannelForPartition(altAddress, partition);
         } else {
-            InetSocketAddress address = new InetSocketAddress(node.hostname(),
+            InetSocketAddress address = InetSocketAddress.createUnresolved(node.hostname(),
                     (env.sslEnabled() ? node.sslServices() : node.services()).get(ServiceType.KV));
             return ensureDcpChannelForPartition(address, partition);
         }
@@ -326,13 +326,13 @@ public class Conductor {
                     return;
                 }
                 int altPort = services.get(ServiceType.KV);
-                address = new InetSocketAddress(aa.hostname(), altPort);
+                address = InetSocketAddress.createUnresolved(aa.hostname(), altPort);
             } else {
                 final Map<ServiceType, Integer> services = env.sslEnabled() ? node.sslServices() : node.services();
                 if (!services.containsKey(ServiceType.KV)) {
                     return;
                 }
-                address = new InetSocketAddress(node.hostname(), services.get(ServiceType.KV));
+                address = InetSocketAddress.createUnresolved(node.hostname(), services.get(ServiceType.KV));
             }
             if (channels.containsKey(address)) {
                 return;
@@ -389,7 +389,7 @@ public class Conductor {
 
     public void removeChannel(DcpChannel channel) {
         synchronized (channels) {
-            channels.remove(channel.getAddress());
+            channels.remove(NetworkUtil.ensureUnresolved(channel.getAddress()));
         }
     }
 
