@@ -27,4 +27,9 @@ public class RetryUtil {
                 || MemcachedStatus.messageContains(root, MemcachedStatus.UNKNOWN_COLLECTION)
                 || MemcachedStatus.messageContains(root, MemcachedStatus.NO_ACCESS));
     }
+
+    public static boolean shouldRetryWithoutConfigRefresh(Throwable th) {
+        Throwable root = ExceptionUtils.getRootCause(th);
+        return shouldRetry(root) && !MemcachedStatus.messageContains(root, MemcachedStatus.CONFIG_ONLY);
+    }
 }

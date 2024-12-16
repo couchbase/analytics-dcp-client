@@ -19,6 +19,7 @@ public class MemcachedStatus {
     public static final short INC_DEC_NON_NUMERIC = 0x06;
     public static final short NOT_MY_VBUCKET = 0x07;
     public static final short NOT_CONNECTED_TO_BUCKET = 0x08;
+    public static final short CONFIG_ONLY = 0x0d;
     public static final short STALE_AUTHENTICATION = 0x1f;
     public static final short AUTHENTICATION_ERROR = 0x20;
     public static final short AUTHENTICATION_CONTINUE = 0x21;
@@ -77,6 +78,8 @@ public class MemcachedStatus {
                 return "The vbucket belongs to another server";
             case NOT_CONNECTED_TO_BUCKET:
                 return "The connection is not connected to a bucket";
+            case CONFIG_ONLY:
+                return "Command can't be executed in a config-only bucket";
             case STALE_AUTHENTICATION:
                 return "The authentication context is stale, please re-authenticate";
             case AUTHENTICATION_ERROR:

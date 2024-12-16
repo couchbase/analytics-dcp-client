@@ -10,7 +10,7 @@
 package com.couchbase.client.dcp.conductor;
 
 import static com.couchbase.client.dcp.message.MessageUtil.GET_SEQNOS_GLOBAL_COLLECTION_ID;
-import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetry;
+import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetryWithoutConfigRefresh;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -160,7 +160,7 @@ public class DcpChannel {
                 if (failure == null) {
                     failure = e;
                 }
-                if (!shouldRetry(e) || System.currentTimeMillis() - startTime > totalTimeout) {
+                if (!shouldRetryWithoutConfigRefresh(e) || System.currentTimeMillis() - startTime > totalTimeout) {
                     LOGGER.warn("Connection to {} FAILED after {} attempts; giving up", inetAddress, attempt);
                     channel = null;
                     setState(State.DISCONNECTED);
