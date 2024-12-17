@@ -27,6 +27,7 @@ import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpContent;
 import com.couchbase.client.core.deps.io.netty.handler.codec.http.HttpObject;
 import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.core.error.CouchbaseException;
+import com.couchbase.client.core.node.StandardMemcachedHashingStrategy;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 
 public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpObject> {
@@ -94,7 +95,8 @@ public class NonStreamingConfigHandler extends SimpleChannelInboundHandler<HttpO
                 }
                 if (rawConfig != null && !rawConfig.isEmpty()) {
                     try {
-                        config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig, null, hostAddress));
+                        config.setValue((CouchbaseBucketConfig) BucketConfigParser.parse(rawConfig,
+                                StandardMemcachedHashingStrategy.INSTANCE, hostAddress));
                     } catch (Exception e) {
                         LOGGER.error("failed to parse raw config: {}", rawConfig);
                         failure.setValue(e);
