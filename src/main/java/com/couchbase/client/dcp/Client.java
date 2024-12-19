@@ -111,7 +111,8 @@ public class Client {
                 .setBootstrapHttpSslPort(builder.sslConfigPort()).setVbuckets(builder.vbuckets())
                 .setClusterAt(builder.clusterAt()).setFlowControlCallback(builder.flowControlCallback())
                 .setUuid(builder.uuid()).setDynamicConfigurationNodes(builder.dynamicConfigurationNodes())
-                .setNetworkResolution(builder.networkResolution()).build();
+                .setNetworkResolution(builder.networkResolution())
+                .setSnappyCompressionEnabled(builder.snappyCompressionSupported()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
         if (ackEnabled && env.ackWaterMark() == 0) {
@@ -518,6 +519,7 @@ public class Client {
         private long dcpChannelTotalTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT;
         private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
         private IntList cids = IntLists.EMPTY_LIST;
+        private boolean snappyCompressionSupported = ClientEnvironment.DEFAULT_SNAPPY_COMPRESSION_ENABLED;
 
         /**
          * The buffer acknowledge watermark in percent.
@@ -837,6 +839,11 @@ public class Client {
             return this;
         }
 
+        public Builder snappyCompressionSupported(boolean snappyCompressionSupported) {
+            this.snappyCompressionSupported = snappyCompressionSupported;
+            return this;
+        }
+
         /**
          * Create the client instance ready to use.
          *
@@ -962,6 +969,10 @@ public class Client {
 
         public NetworkResolution networkResolution() {
             return networkResolution;
+        }
+
+        public boolean snappyCompressionSupported() {
+            return snappyCompressionSupported;
         }
     }
 

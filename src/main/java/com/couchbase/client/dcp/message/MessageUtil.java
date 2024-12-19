@@ -33,6 +33,7 @@ public class MessageUtil {
 
     public static final short KEY_LENGTH_OFFSET = 2;
     public static final short EXTRAS_LENGTH_OFFSET = 4;
+    public static final short DATA_TYPE_OFFSET = 5;
     public static final short VBUCKET_OFFSET = 6;
     public static final short BODY_LENGTH_OFFSET = 8;
     public static final short OPAQUE_OFFSET = 12;
@@ -40,6 +41,10 @@ public class MessageUtil {
 
     public static final short FLEX_FRAMING_EXTRAS_LENGTH_OFFSET = 2;
     public static final short FLEX_KEY_LENGTH_OFFSET = 3;
+
+    public static final byte DATA_TYPE_JSON = 0x01;
+    public static final byte DATA_TYPE_SNAPPY_COMPRESSED = 0x02;
+    public static final byte DATA_TYPE_XATTR = 0x04;
 
     public static final byte VERSION_OPCODE = 0x0b;
     public static final byte HELO_OPCODE = 0x1f;
