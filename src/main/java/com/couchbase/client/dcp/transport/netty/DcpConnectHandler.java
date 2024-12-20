@@ -9,6 +9,12 @@
  */
 package com.couchbase.client.dcp.transport.netty;
 
+import static com.couchbase.client.dcp.transport.netty.Hello.HELO_COLLECTIONS;
+import static com.couchbase.client.dcp.transport.netty.Hello.HELO_DATATYPE;
+import static com.couchbase.client.dcp.transport.netty.Hello.HELO_SELECT;
+import static com.couchbase.client.dcp.transport.netty.Hello.HELO_SNAPPY;
+import static com.couchbase.client.dcp.transport.netty.Hello.HELO_XERROR;
+
 import java.nio.charset.StandardCharsets;
 
 import org.apache.logging.log4j.LogManager;
@@ -24,6 +30,9 @@ import com.couchbase.client.dcp.error.BucketNotFoundException;
 import com.couchbase.client.dcp.message.DcpOpenConnectionRequest;
 import com.couchbase.client.dcp.message.MessageUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
+import com.couchbase.client.dcp.util.ShortSortedBitSet;
+
+import it.unimi.dsi.fastutil.shorts.ShortSet;
 
 /**
  * Opens the DCP connection on the channel and once established removes itself.
@@ -54,6 +63,7 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
      */
     private final ByteBuf connectionName;
     private final String bucket;
+    private final boolean snappyCompressionEnabled;
     private byte step = VERSION;
 
     /**
@@ -68,6 +78,7 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
         final String connectionNameString = environment.connectionNameGenerator().name();
         connectionName = Unpooled.copiedBuffer(connectionNameString, CharsetUtil.UTF_8);
         dcpChannel.setConnectionName(connectionNameString);
+        snappyCompressionEnabled = environment.snappyCompressionEnabled();
     }
 
     /**
@@ -153,7 +164,15 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
 
     private void helo(ChannelHandlerContext ctx) {
         ByteBuf request = ctx.alloc().buffer();
-        Hello.init(request, connectionName);
+        ShortSet flags = new ShortSortedBitSet();
+        flags.add(HELO_XERROR);
+        flags.add(HELO_SELECT);
+        flags.add(HELO_COLLECTIONS);
+        if (snappyCompressionEnabled) {
+            flags.add(HELO_DATATYPE);
+            flags.add(HELO_SNAPPY);
+        }
+        Hello.init(request, connectionName, flags.toShortArray());
         ctx.writeAndFlush(request);
     }
 
