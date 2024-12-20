@@ -14,22 +14,23 @@ import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
 import com.couchbase.client.dcp.message.MessageUtil;
 
 public class Hello {
-    public static final short DATATYPE = 0x01;
-    public static final short TLS = 0x02;
-    public static final short TCPNODELAY = 0x03;
-    public static final short MUTATIONSEQ = 0x04;
-    public static final short TCPDELAY = 0x05;
-    public static final short XATTR = 0x06;
-    public static final short XERROR = 0x07;
-    public static final short SELECT = 0x08;
-    public static final short COLLECTIONS = 0x12;
+    public static final short HELO_DATATYPE = 0x01;
+    public static final short HELO_TLS = 0x02;
+    public static final short HELO_TCPNODELAY = 0x03;
+    public static final short HELO_MUTATIONSEQ = 0x04;
+    public static final short HELO_TCPDELAY = 0x05;
+    public static final short HELO_XATTR = 0x06;
+    public static final short HELO_XERROR = 0x07;
+    public static final short HELO_SELECT = 0x08;
+    public static final short HELO_SNAPPY = 0x0a;
+    public static final short HELO_COLLECTIONS = 0x12;
 
     private Hello() {
     }
 
-    public static void init(ByteBuf buffer, ByteBuf connectionName) {
+    public static void init(ByteBuf buffer, ByteBuf connectionName, short... flags) {
         MessageUtil.initRequest(MessageUtil.HELO_OPCODE, buffer);
         MessageUtil.setKey(connectionName, buffer);
-        MessageUtil.setContent(Unpooled.copyShort(XERROR, SELECT, COLLECTIONS), buffer);
+        MessageUtil.setContent(Unpooled.copyShort(flags), buffer);
     }
 }

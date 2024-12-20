@@ -30,10 +30,12 @@ public class DcpMutationMessage extends DcpDataMessage {
         return MessageUtil.getContent(buffer);
     }
 
-    public static byte[] contentBytes(final ByteBuf buffer) {
-        byte[] bytes = new byte[buffer.readableBytes()];
-        content(buffer).getBytes(0, bytes);
-        return bytes;
+    public static boolean snappyCompressed(final ByteBuf buffer) {
+        return (dataType(buffer) & MessageUtil.DATA_TYPE_SNAPPY_COMPRESSED) != 0;
+    }
+
+    private static byte dataType(ByteBuf buffer) {
+        return buffer.getByte(MessageUtil.DATA_TYPE_OFFSET);
     }
 
     public static int flags(final ByteBuf buffer) {
@@ -53,6 +55,7 @@ public class DcpMutationMessage extends DcpDataMessage {
                 + (collections ? "cid: " + CollectionsUtil.displayCid(cid(buffer)) + ", " : "") + "vbid: "
                 + partition(buffer) + ", cas: " + cas(buffer) + ", bySeqno: " + bySeqno(buffer) + ", revSeqno: "
                 + revisionSeqno(buffer) + ", flags: " + flags(buffer) + ", expiry: " + expiry(buffer) + ", lockTime: "
-                + lockTime(buffer) + ", clength: " + content(buffer).readableBytes() + "]";
+                + lockTime(buffer) + ", clength: " + content(buffer).readableBytes() + ", dataType: " + dataType(buffer)
+                + "]";
     }
 }

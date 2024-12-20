@@ -58,6 +58,7 @@ public class ClientEnvironment implements SecureEnvironment {
     public static final int BOOTSTRAP_HTTP_DIRECT_PORT = 8091;
     public static final int BOOTSTRAP_HTTP_SSL_PORT = 18091;
     public static final long DEFAULT_PARTITION_REQUESTS_TIMEOUT = TimeUnit.SECONDS.toMillis(15);
+    public static final boolean DEFAULT_SNAPPY_COMPRESSION_ENABLED = true;
 
     /**
      * Stores the list of bootstrap nodes (where the cluster is).
@@ -167,6 +168,7 @@ public class ClientEnvironment implements SecureEnvironment {
     private final String uuid;
     private final boolean dynamicConfigurationNodes;
     private final NetworkResolution networkResolution;
+    private final boolean snappyCompressionEnabled;
 
     /**
      * Creates a new environment based on the builder.
@@ -216,6 +218,7 @@ public class ClientEnvironment implements SecureEnvironment {
         } else {
             noopIntervalSeconds = 0;
         }
+        snappyCompressionEnabled = builder.snappyCompressionEnabled;
     }
 
     /**
@@ -412,6 +415,10 @@ public class ClientEnvironment implements SecureEnvironment {
         return networkResolution;
     }
 
+    public boolean snappyCompressionEnabled() {
+        return snappyCompressionEnabled;
+    }
+
     public static class Builder {
         private List<InetSocketAddress> clusterAt;
         private ConnectionNameGenerator connectionNameGenerator = DefaultConnectionNameGenerator.INSTANCE;
@@ -449,6 +456,7 @@ public class ClientEnvironment implements SecureEnvironment {
         private Delay dcpChannelsReconnectDelay = DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
         private long partitionRequestsTimeout = DEFAULT_PARTITION_REQUESTS_TIMEOUT;
         private NetworkResolution networkResolution;
+        private boolean snappyCompressionEnabled = DEFAULT_SNAPPY_COMPRESSION_ENABLED;
 
         public Builder setClusterAt(List<InetSocketAddress> clusterAt) {
             this.clusterAt = clusterAt;
@@ -638,6 +646,11 @@ public class ClientEnvironment implements SecureEnvironment {
             this.networkResolution = networkResolution;
             return this;
         }
+
+        public Builder setSnappyCompressionEnabled(boolean snappyCompressionEnabled) {
+            this.snappyCompressionEnabled = snappyCompressionEnabled;
+            return this;
+        }
     }
 
     /**
@@ -671,7 +684,7 @@ public class ClientEnvironment implements SecureEnvironment {
                 + ", sslEnabled=" + sslEnabled + ", sslIncludeKeyMaterial=" + sslIncludeKeyMaterial
                 + ", sslKeystoreFile='" + sslKeystoreFile + '\'' + ", sslKeystorePassword="
                 + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty()) + ", sslKeystore=" + sslKeystore
-                + '}';
+                + ", snappyCompressionEnabled=" + snappyCompressionEnabled + '}';
     }
 
     public Delay dcpChannelsReconnectDelay() {
