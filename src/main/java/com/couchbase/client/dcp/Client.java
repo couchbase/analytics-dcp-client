@@ -112,6 +112,7 @@ public class Client {
                 .setClusterAt(builder.clusterAt()).setFlowControlCallback(builder.flowControlCallback())
                 .setUuid(builder.uuid()).setDynamicConfigurationNodes(builder.dynamicConfigurationNodes())
                 .setNetworkResolution(builder.networkResolution())
+                .setSnappyCompressionEnabled(builder.snappyCompressionSupported())
                 .setDcpSteamRequestIncludePurgeSeqnos(builder.isDcpSteamRequestIncludePurgeSeqnos()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
@@ -519,6 +520,7 @@ public class Client {
         private long dcpChannelTotalTimeout = ClientEnvironment.DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT;
         private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
         private IntList cids = IntLists.EMPTY_LIST;
+        private boolean snappyCompressionSupported = ClientEnvironment.DEFAULT_SNAPPY_COMPRESSION_ENABLED;
         private boolean dcpSteamRequestIncludePurgeSeqnos =
                 ClientEnvironment.DEFAULT_DCP_STREAM_REQUEST_INCLUDE_PURGE_SEQNOS;
 
@@ -840,6 +842,11 @@ public class Client {
             return this;
         }
 
+        public Builder snappyCompressionSupported(boolean snappyCompressionSupported) {
+            this.snappyCompressionSupported = snappyCompressionSupported;
+            return this;
+        }
+
         public Builder includePurgeSeqnosInStreamRequests(boolean dcpSteamRequestIncludePurgeSeqnos) {
             this.dcpSteamRequestIncludePurgeSeqnos = dcpSteamRequestIncludePurgeSeqnos;
             return this;
@@ -970,6 +977,10 @@ public class Client {
 
         public NetworkResolution networkResolution() {
             return networkResolution;
+        }
+
+        public boolean snappyCompressionSupported() {
+            return snappyCompressionSupported;
         }
 
         public boolean isDcpSteamRequestIncludePurgeSeqnos() {
