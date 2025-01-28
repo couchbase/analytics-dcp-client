@@ -67,6 +67,8 @@ public class StreamPartitionState {
 
     private volatile long deletionsProcessed = 0;
 
+    private volatile long extraneousSeqs = 0;
+
     private StreamRequest streamRequest;
 
     private long manifestUid;
@@ -166,11 +168,13 @@ public class StreamPartitionState {
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
         manifestUid = streamRequest.getManifestUid();
         if (shouldLog && LOGGER.isDebugEnabled()) {
-            LOGGER.debug("setStreamRequest: sid {} manifestUid {} cids {} vbid {} {}-{} snap {}-{}",
+            LOGGER.debug("setStreamRequest: sid {} manifestUid {} cids {} vbid {} {}-{} snap {}-{}{}",
                     streamRequest.getStreamId(), displayManifestUid(manifestUid), displayCids(streamRequest.getCids()),
                     vbid, Long.toUnsignedString(seqno), Long.toUnsignedString(streamEndSeq),
-                    Long.toUnsignedString(snapshotStartSeqno), Long.toUnsignedString(snapshotEndSeqno));
+                    Long.toUnsignedString(snapshotStartSeqno), Long.toUnsignedString(snapshotEndSeqno),
+                    extraneousSeqs > 0 ? " extra " + extraneousSeqs : "");
         }
+        extraneousSeqs = 0;
     }
 
     public void prepareNextStreamRequest(SessionState sessionState, StreamState streamState) {
@@ -201,7 +205,7 @@ public class StreamPartitionState {
             return OBJECT_MAPPER.writeValueAsString(toMap());
         } catch (IOException e) {
             LOGGER.log(Level.WARN, e);
-            return "{\"" + this.getClass().getSimpleName() + "\":\"" + e.toString() + "\"}";
+            return "{\"" + this.getClass().getSimpleName() + "\":\"" + e + "\"}";
         }
     }
 
@@ -299,5 +303,9 @@ public class StreamPartitionState {
                 LOGGER.error("unrecognized data event {}", MessageUtil.humanize(event));
                 throw new IllegalArgumentException("unrecognized data event: " + MessageUtil.humanize(event));
         }
+    }
+
+    public void incPastEndSequence() {
+        extraneousSeqs++;
     }
 }
