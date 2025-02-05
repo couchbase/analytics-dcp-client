@@ -10,6 +10,7 @@
 package com.couchbase.client.dcp.transport.netty;
 
 import static com.couchbase.client.dcp.transport.netty.Stat.Kind.COLLECTIONS_BYID;
+import static com.couchbase.client.dcp.transport.netty.Stat.Kind.DCP;
 
 import java.util.Collections;
 import java.util.Map;
@@ -24,7 +25,9 @@ public class Stat {
 
     public enum Kind {
         UNKNOWN,
-        COLLECTIONS_BYID;
+        COLLECTIONS_BYID,
+        COLLECTIONS_DETAILS,
+        DCP;
 
         public static Kind valueOf(int ordinal, Kind defaultValue) {
             return ordinal < values().length ? values()[ordinal] : defaultValue;
@@ -61,5 +64,11 @@ public class Stat {
         ByteBuf key = Unpooled.copiedBuffer(COLLECTIONS_BYID + " " + CollectionsUtil.encodeCid(cid), CharsetUtil.UTF_8);
         MessageUtil.setKey(key, buffer);
         MessageUtil.setOpaque(COLLECTIONS_BYID.ordinal(), buffer);
+    }
+
+    public static void dcp(ByteBuf buffer) {
+        ByteBuf key = Unpooled.copiedBuffer(DCP.toString(), CharsetUtil.UTF_8);
+        MessageUtil.setKey(key, buffer);
+        MessageUtil.setOpaque(DCP.ordinal(), buffer);
     }
 }
