@@ -11,7 +11,6 @@ package com.couchbase.client.dcp.state;
 
 import static com.couchbase.client.dcp.util.CollectionsUtil.displayCids;
 import static com.couchbase.client.dcp.util.CollectionsUtil.displayManifestUid;
-import static com.couchbase.client.dcp.util.MathUtil.maxUnsigned;
 import static org.apache.hyracks.util.Span.ELAPSED;
 
 import java.io.IOException;
@@ -27,7 +26,9 @@ import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.ObjectMapper;
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.dcp.message.DcpDataMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
+import com.couchbase.client.dcp.util.MathUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 
 /**
@@ -67,6 +68,8 @@ public class StreamPartitionState {
 
     private volatile long deletionsProcessed = 0;
 
+    private volatile long extraneousSeqs = 0;
+
     private StreamRequest streamRequest;
 
     private long manifestUid;
@@ -99,6 +102,10 @@ public class StreamPartitionState {
     public void setSnapshotEndSeqno(long snapshotEndSeqno) {
         this.snapshotEndSeqno = snapshotEndSeqno;
         streamState.getSessionState().ensureMaxCurrentVBucketSeqnoInMaster(vbid, snapshotEndSeqno);
+        // TODO: this needs to be considered once we have >1 cid per stream
+        for (int cid : streamState.cids()) {
+            streamState.getSessionState().getCollectionState(cid).ensureMaxSeqno(vbid, snapshotEndSeqno);
+        }
     }
 
     /**
@@ -114,12 +121,14 @@ public class StreamPartitionState {
     @GuardedBy("operations on a vbucket do not interleave")
     @SuppressWarnings({ "NonAtomicOperationOnVolatileField", "java:S3078" })
     public void setSeqno(long seqno) {
+        // disregard seqnos > streamEndSeq
+        seqno = minSeqNo(streamEndSeq, seqno);
         if (state == CONNECTED_OSO) {
-            osoMaxSeqno = maxUnsigned(seqno, osoMaxSeqno);
+            osoMaxSeqno = maxSeqNo(seqno, osoMaxSeqno);
         } else {
-            if (Long.compareUnsigned(seqno, this.seqno) <= 0 && this.seqno != INVALID_SEQNO) {
+            if (Long.compareUnsigned(seqno, this.seqno) < 0 && this.seqno != INVALID_SEQNO) {
                 LOGGER.log(seqno == this.seqno ? Level.DEBUG : Level.WARN,
-                        "new seqno received ({}) <= the previous seqno({}) for vbid: {}", Long.toUnsignedString(seqno),
+                        "new seqno received ({}) < the previous seqno({}) for vbid: {}", Long.toUnsignedString(seqno),
                         Long.toUnsignedString(this.seqno), vbid);
             }
             if (LOGGER.isTraceEnabled()) {
@@ -158,6 +167,8 @@ public class StreamPartitionState {
         return streamRequest;
     }
 
+    @GuardedBy("operations on a vbucket do not interleave")
+    @SuppressWarnings("NonAtomicOperationOnVolatileField")
     public void setStreamRequest(StreamRequest streamRequest, boolean shouldLog) {
         this.streamRequest = streamRequest;
         seqno = streamRequest.getStartSeqno();
@@ -166,11 +177,13 @@ public class StreamPartitionState {
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
         manifestUid = streamRequest.getManifestUid();
         if (shouldLog && LOGGER.isDebugEnabled()) {
-            LOGGER.debug("setStreamRequest: sid {} manifestUid {} cids {} vbid {} {}-{} snap {}-{}",
+            LOGGER.debug("setStreamRequest: sid {} manifestUid {} cids {} vbid {} {}-{} snap {}-{}{}",
                     streamRequest.getStreamId(), displayManifestUid(manifestUid), displayCids(streamRequest.getCids()),
                     vbid, Long.toUnsignedString(seqno), Long.toUnsignedString(streamEndSeq),
-                    Long.toUnsignedString(snapshotStartSeqno), Long.toUnsignedString(snapshotEndSeqno));
+                    Long.toUnsignedString(snapshotStartSeqno), Long.toUnsignedString(snapshotEndSeqno),
+                    extraneousSeqs > 0 ? " extra " + extraneousSeqs : "");
         }
+        extraneousSeqs = 0;
     }
 
     public void prepareNextStreamRequest(SessionState sessionState, StreamState streamState) {
@@ -201,7 +214,7 @@ public class StreamPartitionState {
             return OBJECT_MAPPER.writeValueAsString(toMap());
         } catch (IOException e) {
             LOGGER.log(Level.WARN, e);
-            return "{\"" + this.getClass().getSimpleName() + "\":\"" + e.toString() + "\"}";
+            return "{\"" + this.getClass().getSimpleName() + "\":\"" + e + "\"}";
         }
     }
 
@@ -287,6 +300,13 @@ public class StreamPartitionState {
     @GuardedBy("operations on a vbucket do not interleave")
     @SuppressWarnings("NonAtomicOperationOnVolatileField")
     public void processDataEvent(ByteBuf event) {
+        long eventSeqno = DcpDataMessage.bySeqno(event);
+        if (Long.compareUnsigned(eventSeqno, streamEndSeq) > 0) {
+            // don't count mutations that occur after requested end seqno, as these will mess up our ingestion status
+            LOGGER.trace("not counting mutation at seqno {} as it is extraneous since our stream end is {}", eventSeqno,
+                    streamEndSeq);
+            return;
+        }
         switch (event.getByte(1)) {
             case MessageUtil.DCP_DELETION_OPCODE:
             case MessageUtil.DCP_EXPIRATION_OPCODE:
@@ -299,5 +319,20 @@ public class StreamPartitionState {
                 LOGGER.error("unrecognized data event {}", MessageUtil.humanize(event));
                 throw new IllegalArgumentException("unrecognized data event: " + MessageUtil.humanize(event));
         }
+    }
+
+    public void incPastEndSequence() {
+        extraneousSeqs++;
+    }
+
+    /**
+     * Returns the max seqno, where any valid seqno is considered higher than INVALID_SEQNO
+     */
+    public static long maxSeqNo(long a, long b) {
+        return MathUtil.maxUnsigned(a + 1, b + 1) - 1;
+    }
+
+    public static long minSeqNo(long a, long b) {
+        return MathUtil.minUnsigned(a, b);
     }
 }

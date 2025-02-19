@@ -134,8 +134,12 @@ public class MessageUtil {
         return readable >= (HEADER_SIZE + buffer.getInt(BODY_LENGTH_OFFSET));
     }
 
+    public static byte getOpcode(ByteBuf buffer) {
+        return buffer.getByte(1);
+    }
+
     public static String humanizeOpcode(final ByteBuf buffer) {
-        return humanizeOpcode(buffer.getByte(1));
+        return humanizeOpcode(getOpcode(buffer));
     }
 
     public static String humanizeOpcode(final byte opcode) {
@@ -225,8 +229,8 @@ public class MessageUtil {
 
         sb.append("Field          (offset) (value)\n-----------------------------------\n");
         sb.append(String.format("Magic          (0)      0x%02x%n", buffer.getByte(0)));
-        sb.append(String.format("Opcode         (1)      0x%02x\t%s%n", buffer.getByte(1),
-                humanizeOpcode(buffer.getByte(1))));
+        sb.append(String.format("Opcode         (1)      0x%02x\t%s%n", getOpcode(buffer),
+                humanizeOpcode(getOpcode(buffer))));
         if ((buffer.getByte(0) & 0xf0) != 0) {
             keyLength = buffer.getShort(KEY_LENGTH_OFFSET);
             sb.append(String.format("Key Length     (2,3)    0x%04x%n", keyLength));
