@@ -112,7 +112,8 @@ public class Client {
                 .setClusterAt(builder.clusterAt()).setFlowControlCallback(builder.flowControlCallback())
                 .setUuid(builder.uuid()).setDynamicConfigurationNodes(builder.dynamicConfigurationNodes())
                 .setNetworkResolution(builder.networkResolution())
-                .setSnappyCompressionEnabled(builder.snappyCompressionSupported()).build();
+                .setSnappyCompressionEnabled(builder.snappyCompressionSupported())
+                .setDcpSteamRequestIncludePurgeSeqnos(builder.isDcpSteamRequestIncludePurgeSeqnos()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
         if (ackEnabled && env.ackWaterMark() == 0) {
@@ -520,6 +521,8 @@ public class Client {
         private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
         private IntList cids = IntLists.EMPTY_LIST;
         private boolean snappyCompressionSupported = ClientEnvironment.DEFAULT_SNAPPY_COMPRESSION_ENABLED;
+        private boolean dcpSteamRequestIncludePurgeSeqnos =
+                ClientEnvironment.DEFAULT_DCP_STREAM_REQUEST_INCLUDE_PURGE_SEQNOS;
 
         /**
          * The buffer acknowledge watermark in percent.
@@ -844,6 +847,11 @@ public class Client {
             return this;
         }
 
+        public Builder includePurgeSeqnosInStreamRequests(boolean dcpSteamRequestIncludePurgeSeqnos) {
+            this.dcpSteamRequestIncludePurgeSeqnos = dcpSteamRequestIncludePurgeSeqnos;
+            return this;
+        }
+
         /**
          * Create the client instance ready to use.
          *
@@ -973,6 +981,10 @@ public class Client {
 
         public boolean snappyCompressionSupported() {
             return snappyCompressionSupported;
+        }
+
+        public boolean isDcpSteamRequestIncludePurgeSeqnos() {
+            return dcpSteamRequestIncludePurgeSeqnos;
         }
     }
 

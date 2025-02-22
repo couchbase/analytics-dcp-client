@@ -50,6 +50,7 @@ public class ClientEnvironment implements SecureEnvironment {
     public static final long DEFAULT_DCP_CHANNEL_ATTEMPT_TIMEOUT = TimeUnit.SECONDS.toMillis(5);
     public static final long DEFAULT_DCP_CHANNEL_TOTAL_TIMEOUT = Long.MAX_VALUE;
     public static final Delay DEFAULT_DCP_CHANNELS_RECONNECT_DELAY = Delay.fixed(200, TimeUnit.MILLISECONDS);
+    public static final boolean DEFAULT_DCP_STREAM_REQUEST_INCLUDE_PURGE_SEQNOS = true;
     /*
      * Other defaults
      */
@@ -169,6 +170,7 @@ public class ClientEnvironment implements SecureEnvironment {
     private final boolean dynamicConfigurationNodes;
     private final NetworkResolution networkResolution;
     private final boolean snappyCompressionEnabled;
+    private final boolean dcpSteamRequestIncludePurgeSeqnos;
 
     /**
      * Creates a new environment based on the builder.
@@ -219,6 +221,7 @@ public class ClientEnvironment implements SecureEnvironment {
             noopIntervalSeconds = 0;
         }
         snappyCompressionEnabled = builder.snappyCompressionEnabled;
+        dcpSteamRequestIncludePurgeSeqnos = builder.dcpSteamRequestIncludePurgeSeqnos;
     }
 
     /**
@@ -419,6 +422,10 @@ public class ClientEnvironment implements SecureEnvironment {
         return snappyCompressionEnabled;
     }
 
+    public boolean isDcpSteamRequestIncludePurgeSeqnos() {
+        return dcpSteamRequestIncludePurgeSeqnos;
+    }
+
     public static class Builder {
         private List<InetSocketAddress> clusterAt;
         private ConnectionNameGenerator connectionNameGenerator = DefaultConnectionNameGenerator.INSTANCE;
@@ -457,6 +464,7 @@ public class ClientEnvironment implements SecureEnvironment {
         private long partitionRequestsTimeout = DEFAULT_PARTITION_REQUESTS_TIMEOUT;
         private NetworkResolution networkResolution;
         private boolean snappyCompressionEnabled = DEFAULT_SNAPPY_COMPRESSION_ENABLED;
+        private boolean dcpSteamRequestIncludePurgeSeqnos = DEFAULT_DCP_STREAM_REQUEST_INCLUDE_PURGE_SEQNOS;
 
         public Builder setClusterAt(List<InetSocketAddress> clusterAt) {
             this.clusterAt = clusterAt;
@@ -626,6 +634,11 @@ public class ClientEnvironment implements SecureEnvironment {
 
         public Builder setDynamicConfigurationNodes(final boolean dynamicConfigurationNodes) {
             this.dynamicConfigurationNodes = dynamicConfigurationNodes;
+            return this;
+        }
+
+        public Builder setDcpSteamRequestIncludePurgeSeqnos(boolean dcpSteamRequestIncludePurgeSeqnos) {
+            this.dcpSteamRequestIncludePurgeSeqnos = dcpSteamRequestIncludePurgeSeqnos;
             return this;
         }
 

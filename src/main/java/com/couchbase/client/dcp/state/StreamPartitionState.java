@@ -9,8 +9,6 @@
  */
 package com.couchbase.client.dcp.state;
 
-import static com.couchbase.client.dcp.util.CollectionsUtil.displayCids;
-import static com.couchbase.client.dcp.util.CollectionsUtil.displayManifestUid;
 import static org.apache.hyracks.util.Span.ELAPSED;
 
 import java.io.IOException;
@@ -57,6 +55,8 @@ public class StreamPartitionState {
     private volatile long snapshotStartSeqno = 0;
 
     private volatile long snapshotEndSeqno = 0;
+
+    private volatile long purgeSeqno;
 
     private volatile byte state;
 
@@ -108,11 +108,19 @@ public class StreamPartitionState {
         }
     }
 
+    public void setPurgeSeqno(long purgeSeqno) {
+        this.purgeSeqno = purgeSeqno;
+    }
+
     /**
      * Returns the current sequence number.
      */
     public long getSeqno() {
         return seqno;
+    }
+
+    public long getPurgeSeqno() {
+        return purgeSeqno;
     }
 
     /**
@@ -175,13 +183,10 @@ public class StreamPartitionState {
         streamEndSeq = streamRequest.getEndSeqno();
         snapshotStartSeqno = streamRequest.getSnapshotStartSeqno();
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
+        purgeSeqno = streamRequest.getPurgeSeqno();
         manifestUid = streamRequest.getManifestUid();
         if (shouldLog && LOGGER.isDebugEnabled()) {
-            LOGGER.debug("setStreamRequest: sid {} manifestUid {} cids {} vbid {} {}-{} snap {}-{}{}",
-                    streamRequest.getStreamId(), displayManifestUid(manifestUid), displayCids(streamRequest.getCids()),
-                    vbid, Long.toUnsignedString(seqno), Long.toUnsignedString(streamEndSeq),
-                    Long.toUnsignedString(snapshotStartSeqno), Long.toUnsignedString(snapshotEndSeqno),
-                    extraneousSeqs > 0 ? " extra " + extraneousSeqs : "");
+            LOGGER.debug("setStreamRequest: {}", streamRequest);
         }
         extraneousSeqs = 0;
     }
@@ -194,8 +199,9 @@ public class StreamPartitionState {
             if (SessionState.NO_END_SEQNO != streamEndSeq && Long.compareUnsigned(streamEndSeq, seqno) < 0) {
                 streamEndSeq = snapshotEndSeqno;
             }
-            setStreamRequest(new StreamRequest(vbid, seqno, streamEndSeq, sessionState.get(vbid).uuid(),
-                    snapshotStartSeqno, snapshotEndSeqno, manifestUid, streamState.streamId(), streamState.cids()),
+            setStreamRequest(
+                    new StreamRequest(vbid, seqno, streamEndSeq, sessionState.get(vbid).uuid(), snapshotStartSeqno,
+                            snapshotEndSeqno, purgeSeqno, manifestUid, streamState.streamId(), streamState.cids()),
                     true);
         }
     }

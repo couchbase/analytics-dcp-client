@@ -242,7 +242,7 @@ public class Conductor {
             DcpChannel channel = masterChannelByPartition(request.getPartition());
             channel.openStream(request.getPartition(), request.getVbucketUuid(), request.getStartSeqno(),
                     request.getEndSeqno(), request.getSnapshotStartSeqno(), request.getSnapshotEndSeqno(),
-                    request.getManifestUid(), request.getStreamId(), request.getCids());
+                    request.getPurgeSeqno(), request.getManifestUid(), request.getStreamId(), request.getCids());
         }
     }
 
