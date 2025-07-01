@@ -45,7 +45,7 @@ import com.couchbase.client.deps.io.netty.channel.ChannelOption;
 public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable {
 
     private static final Logger LOGGER = LogManager.getLogger();
-    private static final long MIN_MILLIS_PER_REFRESH = 1000;
+    public static final long MIN_MILLIS_PER_REFRESH = 1000;
     private final Set<InetSocketAddress> sockets = new LinkedHashSet<>();
 
     private final ClientEnvironment env;
