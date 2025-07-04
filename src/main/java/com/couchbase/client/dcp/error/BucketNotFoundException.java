@@ -18,4 +18,8 @@ public class BucketNotFoundException extends CouchbaseException {
     public BucketNotFoundException(String message) {
         super(message);
     }
+
+    public BucketNotFoundException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }
