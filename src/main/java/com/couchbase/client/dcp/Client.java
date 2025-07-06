@@ -16,8 +16,11 @@ import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import org.apache.hyracks.util.Span;
 import org.apache.logging.log4j.LogManager;
@@ -521,6 +524,7 @@ public class Client {
         private Delay dcpChannelsReconnectDelay = ClientEnvironment.DEFAULT_DCP_CHANNELS_RECONNECT_DELAY;
         private IntList cids = IntLists.EMPTY_LIST;
         private boolean snappyCompressionSupported = ClientEnvironment.DEFAULT_SNAPPY_COMPRESSION_ENABLED;
+        private Set<Consumer<ClientEnvironment>> callbacks = new HashSet<>();
         private boolean dcpSteamRequestIncludePurgeSeqnos =
                 ClientEnvironment.DEFAULT_DCP_STREAM_REQUEST_INCLUDE_PURGE_SEQNOS;
 
@@ -858,7 +862,9 @@ public class Client {
          * @return the built client instance.
          */
         public Client build() {
-            return new Client(this);
+            Client client = new Client(this);
+            callbacks.forEach(cb -> cb.accept(client.env));
+            return client;
         }
 
         public List<InetSocketAddress> clusterAt() {
@@ -981,6 +987,10 @@ public class Client {
 
         public boolean snappyCompressionSupported() {
             return snappyCompressionSupported;
+        }
+
+        public void addEnvironmentCallback(Consumer<ClientEnvironment> callback) {
+            callbacks.add(callback);
         }
 
         public boolean isDcpSteamRequestIncludePurgeSeqnos() {
