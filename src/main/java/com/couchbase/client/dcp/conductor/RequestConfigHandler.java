@@ -9,9 +9,11 @@
  */
 package com.couchbase.client.dcp.conductor;
 
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 
 import org.apache.commons.lang3.mutable.MutableObject;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
@@ -35,6 +37,7 @@ import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.core.deps.io.netty.util.concurrent.Future;
 import com.couchbase.client.core.deps.io.netty.util.concurrent.GenericFutureListener;
 import com.couchbase.client.core.error.CouchbaseException;
+import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.error.AuthorizationException;
 import com.couchbase.client.dcp.error.BucketNotFoundException;
 
@@ -42,8 +45,8 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
     private static final Logger LOGGER = LogManager.getLogger();
     private final String bucket;
     private final String uuid;
-    private final String username;
-    private final String password;
+    private final InetSocketAddress address;
+    private final ClientEnvironment environment;
     private final MutableObject<CouchbaseBucketConfig> config;
     private final MutableObject<Throwable> failure;
     /**
@@ -52,12 +55,12 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
      */
     private ChannelPromise originalPromise;
 
-    RequestConfigHandler(final String bucket, final String username, final String password, final String uuid,
-            MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
+    RequestConfigHandler(final String bucket, final InetSocketAddress address, final ClientEnvironment environment,
+            final String uuid, MutableObject<CouchbaseBucketConfig> config, MutableObject<Throwable> failure) {
         this.bucket = bucket;
         this.uuid = uuid;
-        this.username = username;
-        this.password = password;
+        this.address = address;
+        this.environment = environment;
         this.config = config;
         this.failure = failure;
     }
@@ -122,11 +125,13 @@ public class RequestConfigHandler extends SimpleChannelInboundHandler<HttpRespon
     /**
      * Helper method to add authentication credentials to the config stream request.
      */
-    private void addHttpBasicAuth(final ChannelHandlerContext ctx, final HttpRequest request) {
-        if (username == null || username.isEmpty()) {
+    private void addHttpBasicAuth(final ChannelHandlerContext ctx, final HttpRequest request) throws Exception {
+        Pair<String, String> creds = environment.credentialsProvider().get(address);
+        if (creds.getLeft() == null) {
             return;
         }
-        final String pw = password == null ? "" : password;
+        final String username = creds.getLeft();
+        final String pw = creds.getRight() == null ? "" : creds.getRight();
         ByteBuf raw = ctx.alloc().buffer(username.length() + pw.length() + 1);
         raw.writeBytes((username + ":" + pw).getBytes(CharsetUtil.UTF_8));
         ByteBuf encoded = Base64.encode(raw, false);

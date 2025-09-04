@@ -12,7 +12,6 @@ package com.couchbase.client.dcp.conductor;
 import java.net.InetSocketAddress;
 
 import org.apache.commons.lang3.mutable.MutableObject;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -55,16 +54,6 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
     private final String uuid;
 
     /**
-     * The username (used for http auth).
-     */
-    private final String username;
-
-    /**
-     * THe password of the bucket (used for http auth).
-     */
-    private final String password;
-
-    /**
      * The config stream where the configs are emitted into.
      */
     private final SSLEngineFactory sslEngineFactory;
@@ -89,9 +78,6 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
         this.address = address;
         this.bucket = environment.bucket();
         this.uuid = uuid;
-        Pair<String, String> creds = environment.credentialsProvider().get(address);
-        this.username = creds.getLeft();
-        this.password = creds.getRight();
         this.failure = failure;
         this.config = config;
         this.environment = environment;
@@ -121,7 +107,7 @@ public class NonStreamingConfigPipeline extends ChannelInitializer<Channel> {
         }
 
         pipeline.addLast(new HttpClientCodec())
-                .addLast(new RequestConfigHandler(bucket, username, password, uuid, config, failure))
+                .addLast(new RequestConfigHandler(bucket, address, environment, uuid, config, failure))
                 .addLast(new NonStreamingConfigHandler(address, environment, config, failure));
     }
 
