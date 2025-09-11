@@ -177,13 +177,7 @@ public class Fixer implements Runnable, SystemEventHandler {
                     if (response.getStatus() == MemcachedStatus.MANIFEST_IS_AHEAD) {
                         if (response.delay().elapsed()) {
                             LOGGER.info("Handling {}", event);
-                            try {
-                                restartStream(response);
-                            } catch (Throwable th) {
-                                LOGGER.warn("Failure during attempt to handle {} event",
-                                        MemcachedStatus.toString(response.getStatus()), th);
-                                addToBacklog(response);
-                            }
+                            restartStream(response);
                         } else {
                             addToBacklog(response);
                         }
@@ -197,22 +191,13 @@ public class Fixer implements Runnable, SystemEventHandler {
                         } else if (response.delay().elapsed()) {
                             LOGGER.info("Handling {}", event);
                             refreshConfig();
-                            try {
-                                synchronized (conductor.getChannels()) {
-                                    CouchbaseBucketConfig config = conductor.config();
-                                    int index = config.nodeIndexForMaster(response.getPartitionState().vbid(), false);
-                                    NodeInfo node = config.nodeAtIndex(index);
-                                    conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
-                                    restartStream(response);
-                                }
-                            } catch (InterruptedException e) {
-                                LOGGER.warn("Interrupted while handling not my vbucket event", e);
-                                giveUp(e, false);
-                                throw e;
-                            } catch (Throwable th) {
-                                LOGGER.warn("Failure during attempt to handle not my vbucket event", th);
-                                addToBacklog(response);
+                            synchronized (conductor.getChannels()) {
+                                CouchbaseBucketConfig config = conductor.config();
+                                int index = config.nodeIndexForMaster(response.getPartitionState().vbid(), false);
+                                NodeInfo node = config.nodeAtIndex(index);
+                                conductor.add(node, config, DCP_CHANNEL_ATTEMPT_TIMEOUT, TOTAL_TIMEOUT, DELAY);
                             }
+                            restartStream(response);
                         } else {
                             addToBacklog(response);
                         }
@@ -240,8 +225,7 @@ public class Fixer implements Runnable, SystemEventHandler {
         synchronized (conductor.getChannels()) {
             StreamPartitionState partitionState = response.getPartitionState();
             final SessionState sessionState = conductor.getSessionState();
-            final int streamId = partitionState.getStreamRequest().getStreamId();
-            StreamState streamState = sessionState.streamState(streamId);
+            StreamState streamState = partitionState.getStreamState();
             partitionState.prepareNextStreamRequest(sessionState, streamState);
             conductor.startStreamForPartition(partitionState.getStreamRequest());
         }
