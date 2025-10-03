@@ -141,8 +141,10 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
             ackHandle = this;
             ackListener = future -> {
                 if (!future.isSuccess()) {
-                    LOGGER.warn("Failed to send the ack to the dcp producer", future.cause());
-                    ch.close();
+                    if (ch.isOpen()) {
+                        LOGGER.warn("Failed to send the ack to the dcp producer", future.cause());
+                        ch.close();
+                    }
                 } else {
                     env.flowControlCallback().ackFlushedThroughNetwork(ackHandle, this.dcpChannel);
                 }
