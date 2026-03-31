@@ -237,6 +237,23 @@ public class Conductor {
         }
     }
 
+    public void requestDcpStats() {
+        LOGGER.debug("Getting dcp stats");
+        synchronized (channels) {
+            sessionState.initDcpStatsRefresh();
+            boolean registered = false;
+            for (DcpChannel channel : channels.values()) {
+                if (channel.getState() == State.CONNECTED) {
+                    if (!registered) {
+                        sessionState.registerPendingDcpStats();
+                        registered = true;
+                    }
+                    channel.requestDcpStats();
+                }
+            }
+        }
+    }
+
     public void startStreamForPartition(StreamRequest request) {
         synchronized (channels) {
             DcpChannel channel = masterChannelByPartition(request.getPartition());

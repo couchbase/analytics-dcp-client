@@ -125,6 +125,6 @@ public class CollectionState {
                 pendingItemCount = 0;
             }
         }
-
     }
+
 }
