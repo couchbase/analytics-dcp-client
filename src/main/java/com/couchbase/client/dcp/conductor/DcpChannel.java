@@ -366,13 +366,6 @@ public class DcpChannel {
         }
     }
 
-    public void requestDcpStats() {
-        ByteBuf buffer = Unpooled.buffer();
-        Stat.init(buffer);
-        Stat.dcp(buffer);
-        channel.writeAndFlush(buffer);
-    }
-
     public synchronized void getFailoverLog(final short vbid) {
         LOGGER.trace("requesting failover logs for vbucket " + vbid);
         failoverLogRequests[vbid] = true;
@@ -501,9 +494,6 @@ public class DcpChannel {
     }
 
     public void setConnectionName(String connectionName) {
-        if (this.connectionName != null) {
-            throw new IllegalStateException("connectionName already set");
-        }
         this.connectionName = connectionName;
     }
 

@@ -12,11 +12,7 @@ package com.couchbase.client.dcp.state;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.Semaphore;
 import java.util.stream.Stream;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import it.unimi.dsi.fastutil.ints.IntAVLTreeSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
@@ -25,8 +21,6 @@ import it.unimi.dsi.fastutil.ints.IntSet;
  * Holds the state information for the current session (all partitions involved).
  */
 public class StreamState {
-    private static final Logger LOGGER = LogManager.getLogger();
-    public static final long READY_Q_UNINITIALIZED = -1L;
     private final SessionState sessionState;
 
     private final int streamId;
@@ -37,10 +31,6 @@ public class StreamState {
      * Contains states for each individual partition.
      */
     private final StreamPartitionState[] partitionStates;
-
-    private long pendingReadyQItems = 0;
-    private long readyQItems = READY_Q_UNINITIALIZED;
-    private final Semaphore readyQSemaphore = new Semaphore(0);
 
     /**
      * Initializes a StreamState
@@ -127,39 +117,5 @@ public class StreamState {
 
     public IntSet cidsSet() {
         return new IntAVLTreeSet(cids);
-    }
-
-    public boolean isFromZero() {
-        return partitionStream().allMatch(ps -> ps.getSnapshotStartSeqno() == 0);
-    }
-
-    public long getReadyQItems() {
-        return readyQItems;
-    }
-
-    public synchronized void recordReadyQItemsResponse(short vbid, long readyQItems) {
-        if (!readyQSemaphore.tryAcquire()) {
-            LOGGER.warn("received unexpected readyQ items!");
-        } else {
-            partitionStates[vbid].setReadyQItems(readyQItems);
-            pendingReadyQItems += readyQItems;
-            if (readyQSemaphore.availablePermits() == 0) {
-                LOGGER.debug("[{}] setting sid {} readyQ items to {} (was {})", sessionState.getConfig().name(),
-                        streamId, pendingReadyQItems, this.readyQItems);
-                this.readyQItems = pendingReadyQItems;
-                pendingReadyQItems = 0;
-            }
-        }
-    }
-
-    public synchronized void resetDcpStatsRequest() {
-        if (readyQSemaphore.drainPermits() != 0) {
-            LOGGER.debug("making new (sid {}) readyQ request before previous finished", streamId);
-            pendingReadyQItems = 0;
-        }
-    }
-
-    public synchronized void registerDcpStatsResponse() {
-        readyQSemaphore.release(partitionStates.length);
     }
 }

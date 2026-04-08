@@ -13,8 +13,6 @@ import static com.couchbase.client.dcp.util.CollectionsUtil.displayCid;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.io.IOException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
@@ -53,7 +51,6 @@ import it.unimi.dsi.fastutil.ints.IntSet;
 public class DcpChannelControlMessageHandler implements ControlEventHandler {
     private static final Logger LOGGER = LogManager.getLogger();
     private final DcpChannel channel;
-    private Pattern dcpStatPattern;
 
     public DcpChannelControlMessageHandler(DcpChannel channel) {
         this.channel = channel;
@@ -298,10 +295,10 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
             LOGGER.trace("handleStatResponse: {} <end>", statKind);
             return;
         }
-        String value = MessageUtil.getContentAsString(buf);
-        LOGGER.trace("handleStatResponse: {} {}={}", statKind, key, value);
         switch (statKind) {
             case COLLECTIONS_BYID:
+                String value = MessageUtil.getContentAsString(buf);
+                LOGGER.trace("handleStatResponse: {} {}={}", statKind, key, value);
                 String[] parts = StringUtils.split(key, ':');
                 switch (Stat.CollectionsByid.parseStatParts(parts)) {
                     case ITEMS:
@@ -312,26 +309,6 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                         break;
                     default:
                         // ignoring unknown stat
-                }
-                break;
-            case DCP:
-                // eq_dcpq:cbas:Local:travel-sample:12b7e07b4b57fa025d1baeee0b8854f3:0sid:5:stream_2_filter_sid
-                if (dcpStatPattern == null) {
-                    dcpStatPattern = Pattern.compile("^eq_dcpq:" + Pattern.quote(channel.getConnectionName())
-                            + "sid:([0-9]+):stream_([0-9]+)_(.*)$");
-                }
-                Matcher matcher = dcpStatPattern.matcher(key);
-                if (matcher.matches()) {
-                    int streamId = Integer.parseInt(matcher.group(1));
-                    short vbid = Short.parseShort(matcher.group(2));
-                    String statName = matcher.group(3);
-                    LOGGER.trace("sid {} vbid {} stat {} value {}", streamId, vbid, statName, value);
-                    switch (statName) {
-                        case "readyQ_items":
-                            long items = Long.parseLong(value);
-                            channel.getSessionState().recordReadyQItemsResponse(streamId, vbid, items);
-                            break;
-                    }
                 }
                 break;
             default:

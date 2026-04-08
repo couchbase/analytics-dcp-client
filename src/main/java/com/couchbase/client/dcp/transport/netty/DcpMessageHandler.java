@@ -358,7 +358,8 @@ public class DcpMessageHandler extends ChannelDuplexHandler implements DcpAckHan
                 if (ackCounter >= ackWatermark) {
                     env.flowControlCallback().bufferAckWaterMarkReached(ackHandle, dcpChannel, ackCounter,
                             ackWatermark);
-                    LOGGER.debug("{} {} acking {} bytes", connectionId, channel.remoteAddress(), ackCounter);
+                    LOGGER.debug("{} BufferAckWatermark ({}) reached on {}, acking {} bytes now with the server",
+                            connectionId, ackWatermark, channel.remoteAddress(), ackCounter);
                     ByteBuf buffer = channel.alloc().buffer();
                     DcpBufferAckRequest.init(buffer);
                     DcpBufferAckRequest.ackBytes(buffer, ackCounter);

@@ -208,13 +208,6 @@ public class Client {
     }
 
     /**
-     * Requests the current dcp stats
-     **/
-    public void requestDcpStats() {
-        conductor.requestDcpStats();
-    }
-
-    /**
      * Returns the current {@link SessionState}, useful for persistence and inspection.
      *
      * @return the current session state.

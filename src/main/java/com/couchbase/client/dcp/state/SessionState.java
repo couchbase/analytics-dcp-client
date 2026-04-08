@@ -275,16 +275,4 @@ public class SessionState {
     public void registerPendingCollectionItemCount(int... cids) {
         IntStream.of(cids).forEach(cid -> ensureCollectionState(cid).registerItemResponse());
     }
-
-    public void initDcpStatsRefresh() {
-        Stream.of(streams).forEach(StreamState::resetDcpStatsRequest);
-    }
-
-    public void registerPendingDcpStats() {
-        Stream.of(streams).forEach(StreamState::registerDcpStatsResponse);
-    }
-
-    public void recordReadyQItemsResponse(int streamId, short vbid, long readyQItems) {
-        streamState(streamId).recordReadyQItemsResponse(vbid, readyQItems);
-    }
 }
