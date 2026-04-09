@@ -9,8 +9,6 @@
  */
 package com.couchbase.client.dcp.state;
 
-import static com.couchbase.client.dcp.util.DcpUtil.maxSeqNo;
-import static com.couchbase.client.dcp.util.DcpUtil.minSeqNo;
 import static org.apache.hyracks.util.Span.ELAPSED;
 
 import java.io.IOException;
@@ -28,6 +26,7 @@ import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.ObjectMappe
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.dcp.message.DcpDataMessage;
 import com.couchbase.client.dcp.message.MessageUtil;
+import com.couchbase.client.dcp.util.MathUtil;
 import com.couchbase.client.dcp.util.MemcachedStatus;
 
 /**
@@ -71,8 +70,6 @@ public class StreamPartitionState {
 
     private volatile long extraneousSeqs = 0;
 
-    private volatile long readyQItems = 0;
-
     private StreamRequest streamRequest;
 
     private long manifestUid;
@@ -105,6 +102,10 @@ public class StreamPartitionState {
     public void setSnapshotEndSeqno(long snapshotEndSeqno) {
         this.snapshotEndSeqno = snapshotEndSeqno;
         streamState.getSessionState().ensureMaxCurrentVBucketSeqnoInMaster(vbid, snapshotEndSeqno);
+        // TODO: this needs to be considered once we have >1 cid per stream
+        for (int cid : streamState.cids()) {
+            streamState.getSessionState().getCollectionState(cid).ensureMaxSeqno(vbid, snapshotEndSeqno);
+        }
     }
 
     public void setPurgeSeqno(long purgeSeqno) {
@@ -330,11 +331,14 @@ public class StreamPartitionState {
         extraneousSeqs++;
     }
 
-    public void setReadyQItems(long readyQItems) {
-        this.readyQItems = readyQItems;
+    /**
+     * Returns the max seqno, where any valid seqno is considered higher than INVALID_SEQNO
+     */
+    public static long maxSeqNo(long a, long b) {
+        return MathUtil.maxUnsigned(a + 1, b + 1) - 1;
     }
 
-    public long getReadyQItems() {
-        return readyQItems;
+    public static long minSeqNo(long a, long b) {
+        return MathUtil.minUnsigned(a, b);
     }
 }
