@@ -18,6 +18,11 @@ public enum DcpOpenConnectionRequest {
     ;
 
     /**
+     * DCP open-connection flag: request that DCP_MUTATION/DELETION/EXPIRATION messages include any XATTRs.
+     */
+    public static final int FLAG_INCLUDE_XATTRS = 0x04;
+
+    /**
      * If the given buffer is a {@link DcpOpenConnectionRequest} message.
      */
     public static boolean is(final ByteBuf buffer) {
@@ -26,14 +31,16 @@ public enum DcpOpenConnectionRequest {
 
     /**
      * Initialize the buffer with all the values needed.
-     *
-     * Note that this will implicitly set the flags to "consumer".
      */
-    public static void init(final ByteBuf buffer) {
+    public static void init(final ByteBuf buffer, int extraFlags) {
         MessageUtil.initRequest(OPEN_CONNECTION_OPCODE, buffer);
         ByteBuf extras = Unpooled.buffer(8);
-        MessageUtil.setExtras(extras.writeInt(0).writeInt(Type.PRODUCER.value), buffer);
+        MessageUtil.setExtras(extras.writeInt(0).writeInt(Type.PRODUCER.value | extraFlags), buffer);
         extras.release();
+    }
+
+    public static void init(final ByteBuf buffer) {
+        init(buffer, 0);
     }
 
     /**

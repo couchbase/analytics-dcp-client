@@ -36,6 +36,10 @@ public class DcpMutationMessage extends DcpDataMessage {
         return MessageUtil.getContent(buffer);
     }
 
+    public static boolean hasXAttrs(final ByteBuf buffer) {
+        return (dataType(buffer) & MessageUtil.DATA_TYPE_XATTR) != 0;
+    }
+
     public static boolean snappyCompressed(final ByteBuf buffer) {
         return (dataType(buffer) & MessageUtil.DATA_TYPE_SNAPPY_COMPRESSED) != 0;
     }

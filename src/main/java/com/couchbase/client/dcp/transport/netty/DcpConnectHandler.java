@@ -13,6 +13,7 @@ import static com.couchbase.client.dcp.transport.netty.Hello.HELO_COLLECTIONS;
 import static com.couchbase.client.dcp.transport.netty.Hello.HELO_DATATYPE;
 import static com.couchbase.client.dcp.transport.netty.Hello.HELO_SELECT;
 import static com.couchbase.client.dcp.transport.netty.Hello.HELO_SNAPPY;
+import static com.couchbase.client.dcp.transport.netty.Hello.HELO_XATTR;
 import static com.couchbase.client.dcp.transport.netty.Hello.HELO_XERROR;
 
 import java.nio.charset.StandardCharsets;
@@ -168,8 +169,9 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
         flags.add(HELO_XERROR);
         flags.add(HELO_SELECT);
         flags.add(HELO_COLLECTIONS);
+        flags.add(HELO_DATATYPE);
+        flags.add(HELO_XATTR);
         if (snappyCompressionEnabled) {
-            flags.add(HELO_DATATYPE);
             flags.add(HELO_SNAPPY);
         }
         Hello.init(request, connectionName, flags.toShortArray());
@@ -178,7 +180,7 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
 
     private void openConnection(ChannelHandlerContext ctx) {
         ByteBuf request = ctx.alloc().buffer();
-        DcpOpenConnectionRequest.init(request);
+        DcpOpenConnectionRequest.init(request, DcpOpenConnectionRequest.FLAG_INCLUDE_XATTRS);
         connectionName.resetReaderIndex();
         DcpOpenConnectionRequest.connectionName(request, connectionName);
         ctx.writeAndFlush(request);
