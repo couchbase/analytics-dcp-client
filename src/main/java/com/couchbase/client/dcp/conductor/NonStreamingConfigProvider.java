@@ -10,6 +10,9 @@
 package com.couchbase.client.dcp.conductor;
 
 import static com.couchbase.client.core.env.NetworkResolution.EXTERNAL;
+import static org.apache.hyracks.util.annotations.AiProvenance.Agent.CLAUDE_SONNET_4_6;
+import static org.apache.hyracks.util.annotations.AiProvenance.ContributionKind.REFACTORED;
+import static org.apache.hyracks.util.annotations.AiProvenance.Tool.GITHUB_COPILOT;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -23,6 +26,7 @@ import java.util.concurrent.TimeoutException;
 
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -50,7 +54,8 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
 
     private final ClientEnvironment env;
     private volatile CouchbaseBucketConfig config;
-    private Span refreshPeriod;
+    @AiProvenance(agent = CLAUDE_SONNET_4_6, tool = GITHUB_COPILOT, contributionKind = REFACTORED, notes = "Changed from Span.start(0, ...) reassignment pattern to final startElapsed() + reset()")
+    private final Span refreshPeriod = Span.startElapsed(MIN_MILLIS_PER_REFRESH, TimeUnit.MILLISECONDS);
     private volatile String uuid;
     private volatile Throwable cause;
 
@@ -58,7 +63,6 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
         this.env = env;
         this.uuid = env.uuid();
         sockets.addAll(env.clusterAt());
-        refreshPeriod = Span.start(0, TimeUnit.NANOSECONDS);
         LOGGER.info("Adding config nodes: " + sockets);
     }
 
@@ -77,7 +81,7 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
     public void refresh(long attemptTimeout, long totalTimeout, Delay delay) throws Throwable {
         if (refreshPeriod.elapsed()) {
             tryConnectHosts(attemptTimeout, totalTimeout, delay);
-            refreshPeriod = Span.start(MIN_MILLIS_PER_REFRESH, TimeUnit.MILLISECONDS);
+            refreshPeriod.reset();
         }
     }
 
