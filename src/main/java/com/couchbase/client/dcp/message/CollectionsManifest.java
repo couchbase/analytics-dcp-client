@@ -10,69 +10,165 @@
 
 package com.couchbase.client.dcp.message;
 
-import static java.util.Objects.requireNonNull;
+import static org.apache.hyracks.util.annotations.AiProvenance.Agent.CLAUDE_OPUS_4_6;
+import static org.apache.hyracks.util.annotations.AiProvenance.ContributionKind.GENERATED;
+import static org.apache.hyracks.util.annotations.AiProvenance.ContributionKind.REFACTORED;
+import static org.apache.hyracks.util.annotations.AiProvenance.Tool.GITHUB_COPILOT;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Stream;
 
-import org.apache.hyracks.util.fastutil.Collectors;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import com.couchbase.client.dcp.util.CollectionsUtil;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import it.unimi.dsi.fastutil.ints.Int2ObjectAVLTreeMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
 /**
- * A collections manifest optimized for lookups by collection ID,
- * and for evolution via DCP system events.
+ * A collections manifest backed directly by the Jackson JSON object model.
+ * Scopes and collections are maintained in sorted order by uid (unsigned) to
+ * enable O(log N) binary search lookups. Mutations return new instances with
+ * shared structural references where possible.
  * <p>
  * Immutable.
  */
+@AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = REFACTORED, notes = "Refactored from fastutil map-based implementation to Jackson object model delegation")
 public class CollectionsManifest {
 
     private static final Logger LOGGER = LogManager.getLogger();
-    /**
-     * A manifest with just the default scope and default collection.
-     */
-    public static final CollectionsManifest DEFAULT = defaultManifest();
-
-    /**
-     * A manifest with no collections & no scopes
-     */
-    public static final CollectionsManifest EMPTY_MANIFEST =
-            new CollectionsManifest(0, Int2ObjectMaps.emptyMap(), Int2ObjectMaps.emptyMap());
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final Comparator<ScopeInfo> SCOPE_UID_ORDER = (a, b) -> Integer.compareUnsigned(a.uid, b.uid);
+    private static final Comparator<CollectionInfo> COLLECTION_UID_ORDER =
+            (a, b) -> Integer.compareUnsigned(a.uid, b.uid);
 
-    public static class ScopeInfo {
+    private static final int[] EMPTY_INT_ARRAY = new int[0];
+    private static final CollectionInfo[] EMPTY_COLLECTION_ARRAY = new CollectionInfo[0];
+
+    public static final CollectionsManifest DEFAULT = defaultManifest();
+    public static final CollectionsManifest EMPTY_MANIFEST = emptyManifest();
+
+    // -- Hex serializers/deserializers for Jackson --
+
+    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
+    static class HexLongSerializer extends JsonSerializer<Long> {
+        @Override
+        public void serialize(Long value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            gen.writeString(Long.toUnsignedString(value, 16));
+        }
+    }
+
+    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
+    static class HexLongDeserializer extends JsonDeserializer<Long> {
+        @Override
+        public Long deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            return Long.parseUnsignedLong(p.getText(), 16);
+        }
+    }
+
+    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
+    static class HexIntSerializer extends JsonSerializer<Integer> {
+        @Override
+        public void serialize(Integer value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            gen.writeString(Integer.toUnsignedString(value, 16));
+        }
+    }
+
+    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
+    static class HexIntDeserializer extends JsonDeserializer<Integer> {
+        @Override
+        public Integer deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            return Integer.parseUnsignedInt(p.getText(), 16);
+        }
+    }
+
+    // -- Binary search helpers (unsigned uid comparison) --
+
+    interface UidAccessor {
+        int uid();
+    }
+
+    /**
+     * Binary search for a uid in a sorted list using unsigned comparison.
+     * @return index if found, or -(insertion point) - 1 if not found
+     */
+    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
+    private static <T extends UidAccessor> int search(List<T> list, int uid) {
+        int lo = 0, hi = list.size() - 1;
+        while (lo <= hi) {
+            int mid = (lo + hi) >>> 1;
+            int cmp = Integer.compareUnsigned(list.get(mid).uid(), uid);
+            if (cmp < 0)
+                lo = mid + 1;
+            else if (cmp > 0)
+                hi = mid - 1;
+            else
+                return mid;
+        }
+        return -(lo + 1);
+    }
+
+    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
+    private int searchCollection(int uid) {
+        int lo = 0, hi = collectionUids.length - 1;
+        while (lo <= hi) {
+            int mid = (lo + hi) >>> 1;
+            int cmp = Integer.compareUnsigned(collectionUids[mid], uid);
+            if (cmp < 0)
+                lo = mid + 1;
+            else if (cmp > 0)
+                hi = mid - 1;
+            else
+                return mid;
+        }
+        return -(lo + 1);
+    }
+
+    // -- Public API types (also serve as the Jackson object model) --
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ScopeInfo implements UidAccessor {
         public static final String DEFAULT_NAME = "_default";
 
-        private final int id;
-        private final String name;
-        private final Map<String, CollectionInfo> collectionsByName;
+        @JsonSerialize(using = HexIntSerializer.class)
+        @JsonDeserialize(using = HexIntDeserializer.class)
+        public int uid;
+        public String name;
+        public List<CollectionInfo> collections;
 
-        public ScopeInfo(int id, String name, Map<String, CollectionInfo> collectionsByName) {
-            this.id = id;
-            this.name = requireNonNull(name);
-            this.collectionsByName = Collections.unmodifiableMap(collectionsByName);
+        ScopeInfo() {
         }
 
+        @Override
+        @JsonIgnore
+        public int uid() {
+            return uid;
+        }
+
+        @JsonIgnore
         public int id() {
-            return id;
+            return uid;
         }
 
+        @JsonIgnore
         public String name() {
             return name;
         }
@@ -83,266 +179,382 @@ public class CollectionsManifest {
                 return true;
             if (o == null || getClass() != o.getClass())
                 return false;
-            ScopeInfo scopeInfo = (ScopeInfo) o;
-            return id == scopeInfo.id;
+            return uid == ((ScopeInfo) o).uid;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(id);
+            return Objects.hash(uid);
         }
 
         @Override
         public String toString() {
-            return "0x" + Integer.toUnsignedString(id, 16) + ":" + name;
+            return "0x" + Integer.toUnsignedString(uid, 16) + ":" + name;
         }
     }
 
-    public static class CollectionInfo {
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class CollectionInfo implements UidAccessor {
         public static final String DEFAULT_NAME = "_default";
         public static final long MAX_TTL_UNDEFINED = -1L;
-        private final ScopeInfo scope;
-        private final int id;
-        private final String name;
-        private final long maxTtl;
 
-        public CollectionInfo(ScopeInfo scope, int id, String name, long maxTtl) {
-            this.id = id;
-            this.name = requireNonNull(name);
-            this.scope = requireNonNull(scope);
-            this.maxTtl = maxTtl;
+        @JsonSerialize(using = HexIntSerializer.class)
+        @JsonDeserialize(using = HexIntDeserializer.class)
+        public int uid;
+        public String name;
+        public long max_ttl;
+
+        @JsonIgnore
+        ScopeInfo parentScope;
+
+        CollectionInfo() {
         }
 
-        public CollectionInfo(ScopeInfo scope, int id, String name) {
-            this(scope, id, name, MAX_TTL_UNDEFINED);
-        }
-
+        @JsonIgnore
         public ScopeInfo scope() {
-            return scope;
+            return parentScope;
         }
 
+        @Override
+        @JsonIgnore
+        public int uid() {
+            return uid;
+        }
+
+        @JsonIgnore
         public int id() {
-            return id;
+            return uid;
         }
 
+        @JsonIgnore
         public String name() {
             return name;
         }
 
+        @JsonIgnore
         public long maxTtl() {
-            return maxTtl;
+            return max_ttl;
         }
 
         @Override
         public String toString() {
-            return "CollectionInfo{" + "id=" + CollectionsUtil.displayCid(id) + ", name='" + name + '\'' + ", scope="
-                    + scope + ", maxTtl=" + (maxTtl == MAX_TTL_UNDEFINED ? "<UNDEFINED>" : maxTtl) + '}';
+            return "CollectionInfo{" + "id=" + CollectionsUtil.displayCid(uid) + ", name='" + name + '\'' + ", scope="
+                    + parentScope + ", maxTtl=" + (max_ttl == MAX_TTL_UNDEFINED ? "<UNDEFINED>" : max_ttl) + '}';
         }
     }
 
-    private final long uid;
-    private final Int2ObjectMap<ScopeInfo> scopesById;
-    private final Int2ObjectMap<CollectionInfo> collectionsById;
+    // -- Internal model and index --
 
-    private static <T> Int2ObjectMap<T> copyToUnmodifiableMap(Int2ObjectMap<T> map) {
-        return Int2ObjectMaps.unmodifiable(new Int2ObjectOpenHashMap<>(map));
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class ManifestJson {
+        @JsonSerialize(using = HexLongSerializer.class)
+        @JsonDeserialize(using = HexLongDeserializer.class)
+        public long uid;
+        public List<ScopeInfo> scopes;
     }
 
-    private CollectionsManifest(long manifestUid, Int2ObjectMap<ScopeInfo> scopesById,
-            Int2ObjectMap<CollectionInfo> collectionsById) {
-        this.uid = manifestUid;
-        this.scopesById = copyToUnmodifiableMap(scopesById);
-        this.collectionsById = copyToUnmodifiableMap(collectionsById);
+    private final ManifestJson model;
+    private final int[] collectionUids;
+    private final CollectionInfo[] sortedCollections;
+
+    private CollectionsManifest(ManifestJson model) {
+        this.model = model;
+        int total = 0;
+        for (ScopeInfo s : model.scopes) {
+            total += s.collections.size();
+        }
+        if (total == 0) {
+            this.collectionUids = EMPTY_INT_ARRAY;
+            this.sortedCollections = EMPTY_COLLECTION_ARRAY;
+            return;
+        }
+        int[] uids = new int[total];
+        CollectionInfo[] cols = new CollectionInfo[total];
+        int idx = 0;
+        for (ScopeInfo s : model.scopes) {
+            for (CollectionInfo c : s.collections) {
+                uids[idx] = c.uid;
+                cols[idx] = c;
+                idx++;
+            }
+        }
+        Integer[] order = new Integer[total];
+        for (int i = 0; i < total; i++) {
+            order[i] = i;
+        }
+        Arrays.sort(order, (a, b) -> Integer.compareUnsigned(uids[a], uids[b]));
+        this.collectionUids = new int[total];
+        this.sortedCollections = new CollectionInfo[total];
+        for (int i = 0; i < total; i++) {
+            int src = order[i];
+            this.collectionUids[i] = uids[src];
+            this.sortedCollections[i] = cols[src];
+        }
+    }
+
+    private CollectionsManifest(ManifestJson model, CollectionsManifest source) {
+        this.model = model;
+        this.collectionUids = source.collectionUids;
+        this.sortedCollections = source.sortedCollections;
+    }
+
+    /** Link each CollectionInfo back to its parent ScopeInfo. */
+    private static void linkScopes(ManifestJson m) {
+        for (ScopeInfo s : m.scopes) {
+            for (CollectionInfo c : s.collections) {
+                c.parentScope = s;
+            }
+        }
+    }
+
+    private static void sortManifest(ManifestJson m) {
+        m.scopes.sort(SCOPE_UID_ORDER);
+        for (ScopeInfo s : m.scopes) {
+            s.collections.sort(COLLECTION_UID_ORDER);
+        }
+    }
+
+    private static CollectionsManifest emptyManifest() {
+        ManifestJson m = new ManifestJson();
+        m.uid = 0;
+        m.scopes = Collections.emptyList();
+        return new CollectionsManifest(m);
     }
 
     private static CollectionsManifest defaultManifest() {
-        CollectionsManifest defaultManifest =
-                new CollectionsManifest(0, Int2ObjectMaps.emptyMap(), Int2ObjectMaps.emptyMap());
-        defaultManifest = defaultManifest.withScope(0, 0, ScopeInfo.DEFAULT_NAME);
-        return defaultManifest.withCollection(0, 0, 0, CollectionInfo.DEFAULT_NAME, CollectionInfo.MAX_TTL_UNDEFINED);
+        ManifestJson m = new ManifestJson();
+        m.uid = 0;
+        ScopeInfo scope = new ScopeInfo();
+        scope.uid = 0;
+        scope.name = ScopeInfo.DEFAULT_NAME;
+        CollectionInfo col = new CollectionInfo();
+        col.uid = 0;
+        col.name = CollectionInfo.DEFAULT_NAME;
+        col.max_ttl = CollectionInfo.MAX_TTL_UNDEFINED;
+        col.parentScope = scope;
+        scope.collections = new ArrayList<>(1);
+        scope.collections.add(col);
+        m.scopes = new ArrayList<>(1);
+        m.scopes.add(scope);
+        return new CollectionsManifest(m);
     }
 
+    // -- Public mutation methods --
+
     public CollectionsManifest withManifestId(long newManifestUid) {
-        return new CollectionsManifest(newManifestUid, scopesById, collectionsById);
+        ManifestJson newModel = new ManifestJson();
+        newModel.uid = newManifestUid;
+        newModel.scopes = model.scopes;
+        return new CollectionsManifest(newModel, this);
     }
 
     public CollectionsManifest withScope(long newManifestUid, int newScopeId, String newScopeName) {
-        Int2ObjectMap<ScopeInfo> newScopeMap = new Int2ObjectAVLTreeMap<>(scopesById);
-        newScopeMap.put(newScopeId, new ScopeInfo(newScopeId, newScopeName, new HashMap<>()));
-        return new CollectionsManifest(newManifestUid, newScopeMap, collectionsById);
+        ManifestJson newModel = new ManifestJson();
+        newModel.uid = newManifestUid;
+        newModel.scopes = new ArrayList<>(model.scopes.size() + 1);
+        newModel.scopes.addAll(model.scopes);
+        ScopeInfo newScope = new ScopeInfo();
+        newScope.uid = newScopeId;
+        newScope.name = newScopeName;
+        newScope.collections = new ArrayList<>();
+        int pos = search(newModel.scopes, newScopeId);
+        if (pos < 0) {
+            pos = -(pos + 1);
+        }
+        newModel.scopes.add(pos, newScope);
+        return new CollectionsManifest(newModel);
     }
 
     public CollectionsManifest withoutScope(long newManifestUid, int doomedScopeId) {
-        Int2ObjectMap<ScopeInfo> newScopeMap = new Int2ObjectAVLTreeMap<>(scopesById);
-
-        Int2ObjectMap<CollectionInfo> newCollectionMap = collectionsById.int2ObjectEntrySet().stream()
-                .filter(e -> e.getValue().scope().id() != doomedScopeId).collect(Collectors.toInt2ObjectMap());
-
-        return new CollectionsManifest(newManifestUid, newScopeMap, newCollectionMap);
+        int scopeIdx = search(model.scopes, doomedScopeId);
+        if (scopeIdx < 0) {
+            if (getUid() == newManifestUid) {
+                return this;
+            }
+            ManifestJson newModel = new ManifestJson();
+            newModel.uid = newManifestUid;
+            newModel.scopes = model.scopes;
+            return new CollectionsManifest(newModel, this);
+        }
+        ManifestJson newModel = new ManifestJson();
+        newModel.uid = newManifestUid;
+        newModel.scopes = new ArrayList<>(model.scopes.size());
+        for (int i = 0; i < model.scopes.size(); i++) {
+            if (i != scopeIdx) {
+                newModel.scopes.add(model.scopes.get(i));
+            }
+        }
+        return new CollectionsManifest(newModel);
     }
 
     public CollectionsManifest withCollection(long newManifestUid, int scopeId, int collectionId, String collectionName,
             long maxTtl) {
-        final ScopeInfo scopeInfo = scopesById.get(scopeId);
-        if (scopeInfo == null) {
+        int scopeIdx = search(model.scopes, scopeId);
+        if (scopeIdx < 0) {
             throw new IllegalStateException("Unrecognized scope id: " + scopeId);
         }
-        final CollectionInfo collectionInfo = new CollectionInfo(scopeInfo, collectionId, collectionName, maxTtl);
+        ScopeInfo targetScope = model.scopes.get(scopeIdx);
 
-        Map<String, CollectionInfo> newCollectionsByName = new HashMap<>(scopeInfo.collectionsByName);
-        newCollectionsByName.put(collectionName, collectionInfo);
-
-        final ScopeInfo newScopeInfo = new ScopeInfo(scopeInfo.id, scopeInfo.name, newCollectionsByName);
-
-        Int2ObjectMap<ScopeInfo> newScopeMap = new Int2ObjectAVLTreeMap<>(scopesById);
-        newScopeMap.put(scopeId, newScopeInfo);
-
-        Int2ObjectMap<CollectionInfo> newCollectionMap = new Int2ObjectAVLTreeMap<>(collectionsById);
-        newCollectionMap.put(collectionId, collectionInfo);
-
-        return new CollectionsManifest(newManifestUid, newScopeMap, newCollectionMap);
+        ManifestJson newModel = new ManifestJson();
+        newModel.uid = newManifestUid;
+        newModel.scopes = new ArrayList<>(model.scopes.size());
+        for (ScopeInfo s : model.scopes) {
+            if (s == targetScope) {
+                ScopeInfo newScope = new ScopeInfo();
+                newScope.uid = s.uid;
+                newScope.name = s.name;
+                newScope.collections = new ArrayList<>(s.collections.size() + 1);
+                newScope.collections.addAll(s.collections);
+                CollectionInfo newCol = new CollectionInfo();
+                newCol.uid = collectionId;
+                newCol.name = collectionName;
+                newCol.max_ttl = maxTtl;
+                newCol.parentScope = newScope;
+                int colPos = search(newScope.collections, collectionId);
+                if (colPos < 0) {
+                    colPos = -(colPos + 1);
+                }
+                newScope.collections.add(colPos, newCol);
+                newModel.scopes.add(newScope);
+            } else {
+                newModel.scopes.add(s);
+            }
+        }
+        return new CollectionsManifest(newModel);
     }
 
     public CollectionsManifest withoutCollection(long newManifestUid, int id) {
-        Int2ObjectMap<CollectionInfo> result;
-        CollectionInfo collectionInfo = collectionsById.get(id);
-        if (collectionInfo == null) {
+        // O(log N) lookup in the flat collection index to confirm existence
+        int colIdx = searchCollection(id);
+        if (colIdx < 0) {
             LOGGER.debug("can't remove collection id: " + id + " as it was not found");
-            if (uid == newManifestUid) {
+            if (getUid() == newManifestUid) {
                 return this;
             }
-            return new CollectionsManifest(newManifestUid, scopesById, collectionsById);
-        } else {
-            result = collectionsById.int2ObjectEntrySet().stream().filter(e -> e.getValue().id() != id)
-                    .collect(Collectors.toInt2ObjectMap());
+            ManifestJson newModel = new ManifestJson();
+            newModel.uid = newManifestUid;
+            newModel.scopes = model.scopes;
+            return new CollectionsManifest(newModel, this);
         }
-        final ScopeInfo scopeInfo = collectionInfo.scope;
-        Map<String, CollectionInfo> newCollectionsByName = new HashMap<>(scopeInfo.collectionsByName);
-        newCollectionsByName.remove(collectionInfo.name);
-        final ScopeInfo newScopeInfo = new ScopeInfo(scopeInfo.id, scopeInfo.name, newCollectionsByName);
+        // Find the owning scope in this manifest's model
+        ScopeInfo owningScope = null;
+        for (ScopeInfo s : model.scopes) {
+            if (search(s.collections, id) >= 0) {
+                owningScope = s;
+                break;
+            }
+        }
 
-        Int2ObjectMap<ScopeInfo> newScopeMap = new Int2ObjectAVLTreeMap<>(scopesById);
-        newScopeMap.put(scopeInfo.id, newScopeInfo);
-
-        return new CollectionsManifest(newManifestUid, newScopeMap, result);
+        ManifestJson newModel = new ManifestJson();
+        newModel.uid = newManifestUid;
+        newModel.scopes = new ArrayList<>(model.scopes.size());
+        for (ScopeInfo s : model.scopes) {
+            if (s == owningScope) {
+                ScopeInfo newScope = new ScopeInfo();
+                newScope.uid = s.uid;
+                newScope.name = s.name;
+                newScope.collections = new ArrayList<>(s.collections.size());
+                for (CollectionInfo c : s.collections) {
+                    if (c.uid != id) {
+                        newScope.collections.add(c);
+                    }
+                }
+                newModel.scopes.add(newScope);
+            } else {
+                newModel.scopes.add(s);
+            }
+        }
+        return new CollectionsManifest(newModel);
     }
 
+    // -- Public query methods --
+
     public CollectionInfo getCollection(int id) {
-        return collectionsById.get(id);
+        int idx = searchCollection(id);
+        return idx >= 0 ? sortedCollections[idx] : null;
     }
 
     public CollectionInfo getCollection(ScopeInfo scope, String collectionName) {
-        return scope.collectionsByName.get(collectionName);
+        // Look up the scope in this manifest by uid to ensure we use current data
+        int scopeIdx = search(model.scopes, scope.uid);
+        if (scopeIdx < 0) {
+            return null;
+        }
+        ScopeInfo manifestScope = model.scopes.get(scopeIdx);
+        for (CollectionInfo c : manifestScope.collections) {
+            if (c.name.equals(collectionName)) {
+                return c;
+            }
+        }
+        return null;
     }
 
     public ScopeInfo getScope(String name) {
-        return scopesById.values().stream().filter(s -> s.name().equals(name)).findFirst().orElse(null);
+        for (ScopeInfo s : model.scopes) {
+            if (s.name.equals(name)) {
+                return s;
+            }
+        }
+        return null;
     }
 
     public CollectionInfo getCollection(String scopeName, String collectionName) {
-        ScopeInfo scope = getScope(scopeName);
-        return scope == null ? null : getCollection(scope, collectionName);
+        for (ScopeInfo s : model.scopes) {
+            if (s.name.equals(scopeName)) {
+                for (CollectionInfo c : s.collections) {
+                    if (c.name.equals(collectionName)) {
+                        return c;
+                    }
+                }
+                return null;
+            }
+        }
+        return null;
     }
 
     public Stream<ScopeInfo> stream() {
-        return scopesById.values().stream();
+        return model.scopes.stream();
     }
 
     public long getUid() {
-        return uid;
+        return model.uid;
     }
 
     @Override
     public String toString() {
-        return "CollectionsManifest{" + "uid=0x" + Long.toUnsignedString(uid, 16) + '}';
+        return "CollectionsManifest{" + "uid=0x" + Long.toUnsignedString(model.uid, 16) + '}';
     }
 
     public String toDetailedString() {
-        return "CollectionsManifest{" + "uid=0x" + Long.toUnsignedString(uid, 16) + ", scopes=" + scopesById.values()
-                + ", collections=" + collectionsById.values() + '}';
+        StringBuilder sb = new StringBuilder();
+        sb.append("CollectionsManifest{uid=0x").append(Long.toUnsignedString(model.uid, 16));
+        sb.append(", scopes=").append(model.scopes);
+        sb.append(", collections=[");
+        boolean first = true;
+        for (ScopeInfo s : model.scopes) {
+            for (CollectionInfo c : s.collections) {
+                if (!first)
+                    sb.append(", ");
+                sb.append(c);
+                first = false;
+            }
+        }
+        sb.append("]}");
+        return sb.toString();
     }
 
     public static CollectionsManifest fromJson(byte[] jsonBytes) throws IOException {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("fromJson: {}", new String(jsonBytes, StandardCharsets.UTF_8));
         }
-        ManifestJson manifestBinder = OBJECT_MAPPER.readValue(jsonBytes, ManifestJson.class);
-        return manifestBinder.build(); // crazy inefficient, with all the map copying.
+        ManifestJson manifest = OBJECT_MAPPER.readValue(jsonBytes, ManifestJson.class);
+        sortManifest(manifest);
+        linkScopes(manifest);
+        return new CollectionsManifest(manifest);
     }
 
     public byte[] toJson() throws IOException {
-        ManifestJson result = new ManifestJson();
-        result.uid = Long.toUnsignedString(uid, 16);
-        result.scopes = this.stream().map(ScopeJson::from).collect(java.util.stream.Collectors.toList());
-        return OBJECT_MAPPER.writeValueAsBytes(result);
-    }
-
-    private static long parseId64(String id) {
-        return Long.parseUnsignedLong(id, 16);
-    }
-
-    private static int parseId32(String id) {
-        return Integer.parseUnsignedInt(id, 16);
-    }
-
-    @SuppressWarnings("WeakerAccess")
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class ManifestJson {
-        public String uid;
-        public List<ScopeJson> scopes;
-
-        private CollectionsManifest build() {
-            long manifestUid = parseId64(uid);
-            CollectionsManifest m =
-                    new CollectionsManifest(manifestUid, Int2ObjectMaps.emptyMap(), Int2ObjectMaps.emptyMap());
-            for (ScopeJson s : scopes) {
-                m = s.build(m, manifestUid);
-            }
-            return m;
-        }
-    }
-
-    @SuppressWarnings("WeakerAccess")
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class ScopeJson {
-        public String uid;
-        public String name;
-        public List<CollectionJson> collections;
-
-        private static ScopeJson from(ScopeInfo info) {
-            ScopeJson result = new ScopeJson();
-            result.uid = Integer.toUnsignedString(info.id, 16);
-            result.name = info.name;
-            result.collections = info.collectionsByName.values().stream().map(collectionInfo -> {
-                CollectionJson collectionResult = new CollectionJson();
-                collectionResult.uid = CollectionsUtil.encodeCid(collectionInfo.id);
-                collectionResult.max_ttl = collectionInfo.maxTtl;
-                collectionResult.name = collectionInfo.name;
-                return collectionResult;
-            }).collect(java.util.stream.Collectors.toList());
-            return result;
-        }
-
-        private CollectionsManifest build(CollectionsManifest m, long manifestId) {
-            int scopeId = parseId32(uid);
-            m = m.withScope(manifestId, scopeId, name);
-            for (CollectionJson c : collections) {
-                m = c.build(m, manifestId, scopeId);
-            }
-            return m;
-        }
-    }
-
-    @SuppressWarnings("WeakerAccess")
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class CollectionJson {
-        public String uid;
-        public String name;
-        public long max_ttl;
-
-        private CollectionsManifest build(CollectionsManifest m, long manifestId, int scopeId) {
-            return m.withCollection(manifestId, scopeId, parseId32(uid), name, max_ttl);
-        }
+        return OBJECT_MAPPER.writeValueAsBytes(model);
     }
 
 }
