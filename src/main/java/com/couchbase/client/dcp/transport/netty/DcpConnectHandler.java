@@ -65,6 +65,7 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
     private final ByteBuf connectionName;
     private final String bucket;
     private final boolean snappyCompressionEnabled;
+    private final boolean includeXattrs;
     private byte step = VERSION;
 
     /**
@@ -80,6 +81,7 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
         connectionName = Unpooled.copiedBuffer(connectionNameString, CharsetUtil.UTF_8);
         dcpChannel.setConnectionName(connectionNameString);
         snappyCompressionEnabled = environment.snappyCompressionEnabled();
+        includeXattrs = environment.includeXattrs();
     }
 
     /**
@@ -170,7 +172,9 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
         flags.add(HELO_SELECT);
         flags.add(HELO_COLLECTIONS);
         flags.add(HELO_DATATYPE);
-        flags.add(HELO_XATTR);
+        if (includeXattrs) {
+            flags.add(HELO_XATTR);
+        }
         if (snappyCompressionEnabled) {
             flags.add(HELO_SNAPPY);
         }
@@ -180,7 +184,7 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
 
     private void openConnection(ChannelHandlerContext ctx) {
         ByteBuf request = ctx.alloc().buffer();
-        DcpOpenConnectionRequest.init(request, DcpOpenConnectionRequest.FLAG_INCLUDE_XATTRS);
+        DcpOpenConnectionRequest.init(request, includeXattrs ? DcpOpenConnectionRequest.FLAG_INCLUDE_XATTRS : 0);
         connectionName.resetReaderIndex();
         DcpOpenConnectionRequest.connectionName(request, connectionName);
         ctx.writeAndFlush(request);
