@@ -60,6 +60,7 @@ public class ClientEnvironment implements SecureEnvironment {
     public static final int BOOTSTRAP_HTTP_SSL_PORT = 18091;
     public static final long DEFAULT_PARTITION_REQUESTS_TIMEOUT = TimeUnit.SECONDS.toMillis(15);
     public static final boolean DEFAULT_SNAPPY_COMPRESSION_ENABLED = true;
+    public static final boolean DEFAULT_INCLUDE_XATTRS = false;
 
     /**
      * Stores the list of bootstrap nodes (where the cluster is).
@@ -170,6 +171,7 @@ public class ClientEnvironment implements SecureEnvironment {
     private final boolean dynamicConfigurationNodes;
     private final NetworkResolution networkResolution;
     private final boolean snappyCompressionEnabled;
+    private final boolean includeXattrs;
     private final boolean dcpSteamRequestIncludePurgeSeqnos;
 
     /**
@@ -221,6 +223,7 @@ public class ClientEnvironment implements SecureEnvironment {
             noopIntervalSeconds = 0;
         }
         snappyCompressionEnabled = builder.snappyCompressionEnabled;
+        includeXattrs = builder.includeXattrs;
         dcpSteamRequestIncludePurgeSeqnos = builder.dcpSteamRequestIncludePurgeSeqnos;
     }
 
@@ -422,6 +425,10 @@ public class ClientEnvironment implements SecureEnvironment {
         return snappyCompressionEnabled;
     }
 
+    public boolean includeXattrs() {
+        return includeXattrs;
+    }
+
     public boolean isDcpSteamRequestIncludePurgeSeqnos() {
         return dcpSteamRequestIncludePurgeSeqnos;
     }
@@ -464,6 +471,7 @@ public class ClientEnvironment implements SecureEnvironment {
         private long partitionRequestsTimeout = DEFAULT_PARTITION_REQUESTS_TIMEOUT;
         private NetworkResolution networkResolution;
         private boolean snappyCompressionEnabled = DEFAULT_SNAPPY_COMPRESSION_ENABLED;
+        private boolean includeXattrs = DEFAULT_INCLUDE_XATTRS;
         private boolean dcpSteamRequestIncludePurgeSeqnos = DEFAULT_DCP_STREAM_REQUEST_INCLUDE_PURGE_SEQNOS;
 
         public Builder setClusterAt(List<InetSocketAddress> clusterAt) {
@@ -662,6 +670,11 @@ public class ClientEnvironment implements SecureEnvironment {
 
         public Builder setSnappyCompressionEnabled(boolean snappyCompressionEnabled) {
             this.snappyCompressionEnabled = snappyCompressionEnabled;
+            return this;
+        }
+
+        public Builder setIncludeXattrs(boolean includeXattrs) {
+            this.includeXattrs = includeXattrs;
             return this;
         }
     }
