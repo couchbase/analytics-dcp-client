@@ -14,12 +14,20 @@ import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetryWithoutCo
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import org.apache.hyracks.api.util.InvokeUtil;
 import org.apache.hyracks.util.NetworkUtil;
+import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -71,6 +79,8 @@ import it.unimi.dsi.fastutil.ints.IntSets;
  */
 public class DcpChannel {
     private static final Logger LOGGER = LogManager.getLogger();
+
+    private static final long CLOSE_STREAMS_POLL_INTERVAL_MILLIS = 10;
     private volatile State state;
     private final ClientEnvironment env;
     private final String hostname;
@@ -88,6 +98,7 @@ public class DcpChannel {
     private final boolean collectionCapable;
     private String connectionName;
     private boolean includePurgeSeqnos;
+    private boolean streamIdEnabled;
 
     public DcpChannel(InetSocketAddress inetAddress, String hostname, final ClientEnvironment env,
             final SessionState sessionState, int numOfPartitions, boolean collectionCapable) {
@@ -143,6 +154,10 @@ public class DcpChannel {
                 includePurgeSeqnos = env.isDcpSteamRequestIncludePurgeSeqnos() && dcpPipeline.getDcpNegotiationHandler()
                         .getNegotiatedSettings().getOrDefault(DcpControl.Names.MAX_MARKER_VERSION.value(), "")
                         .equals(DcpControl.MAX_MARKER_VERSION_2_2);
+                // what the producer accepted, not what we asked for: a stream id supplied to a producer which did
+                // not enable them (or omitted from one which did) is rejected with dcp_streamid_invalid
+                streamIdEnabled = Boolean.parseBoolean(dcpPipeline.getDcpNegotiationHandler().getNegotiatedSettings()
+                        .get(DcpControl.Names.ENABLE_STREAM_ID.value()));
 
                 LOGGER.debug("Connection to {} established", inetAddress);
                 channel = connectFuture.channel();
@@ -221,6 +236,18 @@ public class DcpChannel {
 
     public State getState() {
         return state;
+    }
+
+    /**
+     * Whether the connection to the producer is still usable, i.e. whether a request we write can still be answered.
+     * {@link #getState()} is not that signal: it remains {@link State#CONNECTED} when the producer drops the
+     * connection under us, as the drop is reported as an event and the state is only advanced by an explicit
+     * {@link #disconnect()}.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "MB-73124: channel liveness, as distinct from our state")
+    public boolean isChannelActive() {
+        Channel currentChannel = channel;
+        return currentChannel != null && currentChannel.isActive();
     }
 
     public synchronized void setState(State state) {
@@ -329,14 +356,122 @@ public class DcpChannel {
         if (getState() != State.CONNECTED) {
             throw new NotConnectedException();
         }
-        LOGGER.debug("Closing Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
-        sessionState.streamState(streamId).get(vbid).setState(StreamPartitionState.DISCONNECTING);
+        writeCloseStream(streamId, vbid);
+    }
+
+    /**
+     * Requests that the producer close every stream we believe to be open on this channel, so that it can end them
+     * as an expected close rather than as an abnormal disconnect. Best-effort: on a channel which is not connected,
+     * or whose connection the producer has already dropped, there is nobody to tell.
+     *
+     * @return the state of each stream we asked the producer to close, to be awaited via
+     *         {@link #awaitStreamsClosed(Map, Span)} before the channel is disconnected
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "Close streams on shutdown instead of dropping the connection with streams open")
+    public synchronized Collection<StreamPartitionState> closeStreams() {
+        if (getState() != State.CONNECTED || !isChannelActive()) {
+            return Collections.emptyList();
+        }
+        List<StreamPartitionState> closing = new ArrayList<>();
+        int skipped = 0;
+        for (short vbid = 0; vbid < openStreams.length; vbid++) {
+            if (openStreams[vbid] == null) {
+                continue;
+            }
+            for (int streamId : openStreams[vbid].toIntArray()) {
+                StreamPartitionState partitionState = sessionState.streamState(streamId).get(vbid);
+                if (!isEstablished(partitionState)) {
+                    // we requested this stream but never saw it open (e.g. ingestion was cleaned up mid-startup);
+                    // the producer has no such stream, and asking it to close one earns a rejection, not quiet
+                    skipped++;
+                    continue;
+                }
+                writeCloseStream(streamId, vbid);
+                closing.add(partitionState);
+            }
+        }
+        if (!closing.isEmpty() || skipped > 0) {
+            LOGGER.info("{} requested close of {} stream(s) ({} not established)", this, closing.size(), skipped);
+        }
+        return closing;
+    }
+
+    /**
+     * Waits for the producers to report the supplied streams closed, i.e. for the close stream responses (and, on a
+     * producer which supports it, the stream ends) to arrive. Dropping the connection before they do defeats the
+     * purpose of closing the streams: the producer abandons the close stream requests it has not yet executed, and
+     * ends those streams as an abnormal disconnect instead.
+     * <p>
+     * A channel whose connection the producer has already dropped is not waited on: nothing more will arrive on it,
+     * and its streams have ended as an abnormal disconnect no matter what we do. Waiting for it would only add the
+     * whole of the supplied span to a disconnect which is on the recovery path of an already-failing ingestion.
+     *
+     * @return whether every stream was reported closed within the supplied span
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "MB-73124: KV abandons the close stream requests it has not executed once we close the socket")
+    public static boolean awaitStreamsClosed(Map<DcpChannel, Collection<StreamPartitionState>> closing, Span span) {
+        int total = closing.values().stream().mapToInt(Collection::size).sum();
+        while (true) {
+            long stillClosing = 0;
+            long abandoned = 0;
+            for (Map.Entry<DcpChannel, Collection<StreamPartitionState>> entry : closing.entrySet()) {
+                long channelClosing = entry.getValue().stream()
+                        .filter(ps -> ps.getState() == StreamPartitionState.DISCONNECTING).count();
+                if (channelClosing > 0 && !entry.getKey().isChannelActive()) {
+                    abandoned += channelClosing;
+                } else {
+                    stillClosing += channelClosing;
+                }
+            }
+            if (stillClosing == 0) {
+                if (abandoned > 0) {
+                    LOGGER.info("giving up on {} of {} stream(s) whose connection was dropped by the producer",
+                            abandoned, total);
+                }
+                return abandoned == 0;
+            }
+            if (span.elapsed()) {
+                LOGGER.info("timed out after {} waiting for {} of {} stream(s) to be closed by the producer", span,
+                        stillClosing, total);
+                return false;
+            }
+            InvokeUtil.doUninterruptibly(() -> TimeUnit.MILLISECONDS.sleep(CLOSE_STREAMS_POLL_INTERVAL_MILLIS));
+        }
+    }
+
+    /**
+     * Whether the producer has told us the stream is open. {@link #openStreams} is populated when a stream is
+     * <i>requested</i>, so it also holds streams whose open stream response never arrived.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "MB-73124: only a stream the producer has can be closed")
+    private static boolean isEstablished(StreamPartitionState partitionState) {
+        byte state = partitionState.getState();
+        return state == StreamPartitionState.CONNECTED || state == StreamPartitionState.CONNECTED_OSO;
+    }
+
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Extracted from closeStream, and made stream id aware")
+    private void writeCloseStream(final int streamId, final short vbid) {
+        LOGGER.debug("Closing stream {} against {} with vbid: {}", streamId, channel.remoteAddress(), vbid);
+        StreamPartitionState partitionState = sessionState.streamState(streamId).get(vbid);
+        partitionState.setState(StreamPartitionState.DISCONNECTING);
         openStreams[vbid].remove(streamId);
         ByteBuf buffer = Unpooled.buffer();
-        DcpCloseStreamRequest.init(buffer);
+        if (streamIdEnabled) {
+            DcpCloseStreamRequest.init(buffer, streamId);
+        } else {
+            DcpCloseStreamRequest.init(buffer);
+        }
         DcpCloseStreamRequest.vbucket(buffer, vbid);
-        DcpCloseStreamRequest.opaque(buffer, vbid);
-        channel.writeAndFlush(buffer);
+        DcpCloseStreamRequest.vbucketStreamId(buffer, vbid, streamId);
+        channel.writeAndFlush(buffer).addListener(f -> {
+            if (!f.isSuccess()) {
+                // a request we could not send will never be answered; the stream is not usable either way, so it is
+                // settled as closed here- as the response handler does for a close which the producer rejects
+                LOGGER.debug("Closing stream {} against {} with vbid: {} failed", streamId, inetAddress, vbid,
+                        f.cause());
+                partitionState.setState(StreamPartitionState.DISCONNECTED);
+            }
+        });
     }
 
     /**

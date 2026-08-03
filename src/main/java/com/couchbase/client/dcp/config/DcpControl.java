@@ -13,6 +13,8 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
+import org.apache.hyracks.util.annotations.AiProvenance;
+
 import com.couchbase.client.core.annotation.SinceCouchbase;
 
 /**
@@ -173,7 +175,14 @@ public class DcpControl implements Iterable<Map.Entry<String, String>> {
          * current purge_seqno which can be used to mitigate rollbacks on disconnect see
          * [stream-request-value.md]. The only supported value is <code>2.2</code>.
          */
-        @SinceCouchbase("Morpheus") MAX_MARKER_VERSION;
+        @SinceCouchbase("Morpheus") MAX_MARKER_VERSION,
+        /**
+         * Tells the producer that the client expects a STREAM_END message for a stream which the client itself
+         * closes (via close stream); without it the producer simply stops sending on the stream, and messages
+         * already in flight may arrive after the close stream response. This parameter is available starting in
+         * Couchbase 5.5; older versions answer EINVAL, which is how a client detects the lack of support.
+         */
+        @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI) SEND_STREAM_END_ON_CLIENT_CLOSE_STREAM;
 
         private final String value;
 

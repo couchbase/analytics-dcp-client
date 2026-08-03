@@ -11,6 +11,8 @@ package com.couchbase.client.dcp.message;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import org.apache.hyracks.util.annotations.AiProvenance;
+
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBufUtil;
 import com.couchbase.client.dcp.conductor.DcpChannel;
@@ -111,6 +113,12 @@ public class MessageUtil {
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
     private static final byte FRAMING_EXTRA_ID_DCP_STREAM_ID = 2;
+
+    /**
+     * the length of the framing extras section of a message carrying (only) a stream id- the framing extra id &
+     * length byte, plus the stream id itself
+     */
+    private static final byte STREAM_ID_FRAMING_EXTRAS_LENGTH = 1 + Short.BYTES;
 
     /**
      * the stream id to use when the buffer does not contain a flex frame (i.e. pre-7.0 server)
@@ -291,6 +299,24 @@ public class MessageUtil {
         buffer.writeByte(MessageUtil.MAGIC_REQ);
         buffer.writeByte(opcode);
         buffer.writeZero(HEADER_SIZE - 2);
+    }
+
+    /**
+     * Helper method to initialize a request with an opcode and the supplied stream id, the latter carried in the
+     * {@link #FRAMING_EXTRA_ID_DCP_STREAM_ID} flexible framing extra. Note that a stream id may only be supplied on
+     * connections which have negotiated {@link com.couchbase.client.dcp.config.DcpControl.Names#ENABLE_STREAM_ID}; on
+     * other connections use {@link #initRequest(byte, ByteBuf)}.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "Needed to close streams on stream-id enabled connections")
+    public static void initFlexRequestWithStreamId(byte opcode, int streamId, ByteBuf buffer) {
+        buffer.writeByte(MAGIC_REQ_FLEX);
+        buffer.writeByte(opcode);
+        buffer.writeByte(STREAM_ID_FRAMING_EXTRAS_LENGTH);
+        buffer.writeZero(HEADER_SIZE - 3);
+        buffer.setInt(BODY_LENGTH_OFFSET, STREAM_ID_FRAMING_EXTRAS_LENGTH);
+        // the framing extra is the id (high nibble) & length (low nibble), followed by the stream id itself
+        buffer.writeByte(FRAMING_EXTRA_ID_DCP_STREAM_ID << 4 | Short.BYTES);
+        buffer.writeShort(streamId);
     }
 
     /**

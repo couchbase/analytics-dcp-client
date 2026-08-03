@@ -14,6 +14,8 @@ import static com.couchbase.client.dcp.message.MessageUtil.GET_SEQNOS_GLOBAL_COL
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +27,7 @@ import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.hyracks.api.util.InvokeUtil;
 import org.apache.hyracks.util.NetworkUtil;
 import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -39,12 +42,18 @@ import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.message.CollectionsManifest;
 import com.couchbase.client.dcp.state.SessionState;
+import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamRequest;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 
 public class Conductor {
 
     private static final Logger LOGGER = LogManager.getLogger();
+
+    /**
+     * how long, in total, to wait for the producers to report the streams we close on shutdown as closed
+     */
+    private static final int CLOSE_STREAMS_TIMEOUT_SECONDS = 10;
     public static final String KEY_BUCKET_UUID = "bucket_uuid=";
     private static final long WAIT_FOR_SEQNOS_TIMEOUT_SECS = 120;
     private static final long WAIT_FOR_SEQNOS_ATTEMPT_TIMEOUT_SECS = 5;
@@ -116,6 +125,9 @@ public class Conductor {
                 return;
             }
             connected = false;
+            // ask the producers to close our streams before we drop the connections under them; deliberately not
+            // under the channels lock, as we await the netty writes
+            closeStreams();
             LOGGER.info("Instructed to shutdown dcp channels.");
             synchronized (channels) {
                 channels.values().forEach(DcpChannel::disconnect);
@@ -127,6 +139,33 @@ public class Conductor {
                 }
             }
             established = false;
+        }
+    }
+
+    /**
+     * Asks the producers to close the streams we still hold open, so that they end them as an expected close rather
+     * than as an abnormal disconnect once we drop the connections, and waits (bounded) for them to report having
+     * done so. The wait is the point of the exercise: a producer abandons the close stream requests it has not yet
+     * executed as soon as we close the socket, ending those streams as an abnormal disconnect after all.
+     * <p>
+     * The streams are tracked per channel, as a channel whose connection the producer has already dropped must not
+     * be waited on- see {@link DcpChannel#awaitStreamsClosed(Map, Span)}.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "MB-73124: close streams rather than dropping the connection under them")
+    private void closeStreams() {
+        Map<DcpChannel, Collection<StreamPartitionState>> closing = new HashMap<>();
+        for (DcpChannel channel : channels.values()) {
+            try {
+                Collection<StreamPartitionState> channelStreams = channel.closeStreams();
+                if (!channelStreams.isEmpty()) {
+                    closing.put(channel, channelStreams);
+                }
+            } catch (Exception e) {
+                LOGGER.info("ignoring failure to close streams on {}", channel, e);
+            }
+        }
+        if (!closing.isEmpty()) {
+            DcpChannel.awaitStreamsClosed(closing, Span.start(CLOSE_STREAMS_TIMEOUT_SECONDS, TimeUnit.SECONDS));
         }
     }
 

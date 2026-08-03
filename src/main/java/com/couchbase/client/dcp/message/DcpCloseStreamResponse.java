@@ -11,6 +11,8 @@ package com.couchbase.client.dcp.message;
 
 import static com.couchbase.client.dcp.message.MessageUtil.DCP_STREAM_CLOSE_OPCODE;
 
+import org.apache.hyracks.util.annotations.AiProvenance;
+
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 
 public enum DcpCloseStreamResponse {
@@ -18,6 +20,16 @@ public enum DcpCloseStreamResponse {
 
     public static boolean is(final ByteBuf buffer) {
         return buffer.getByte(0) == MessageUtil.MAGIC_RES && buffer.getByte(1) == DCP_STREAM_CLOSE_OPCODE;
+    }
+
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "The vbucket & stream id are round-tripped via the opaque, as with open stream")
+    public static short vbucket(final ByteBuf buffer) {
+        return (short) (MessageUtil.getOpaque(buffer) & 0xffff);
+    }
+
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "The vbucket & stream id are round-tripped via the opaque, as with open stream")
+    public static int streamId(final ByteBuf buffer) {
+        return MessageUtil.getOpaque(buffer) >> 16;
     }
 
 }

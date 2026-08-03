@@ -17,6 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -29,6 +30,7 @@ import com.couchbase.client.dcp.events.OpenStreamResponse;
 import com.couchbase.client.dcp.events.OpenStreamRollbackResponse;
 import com.couchbase.client.dcp.events.StreamEndEvent;
 import com.couchbase.client.dcp.message.CollectionsManifest;
+import com.couchbase.client.dcp.message.DcpCloseStreamResponse;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpGetPartitionSeqnosResponse;
 import com.couchbase.client.dcp.message.DcpOpenStreamResponse;
@@ -237,13 +239,26 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         }
     }
 
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Identify the stream via the round-tripped opaque, as the response carries no stream id")
     private void handleDcpCloseStreamResponse(ByteBuf buf) {
-        short vbid = (short) MessageUtil.getOpaque(buf);
-        clearOpen(MessageUtil.streamState(buf, channel), vbid);
-        MessageUtil.streamState(buf, channel).get(vbid).setState(StreamPartitionState.DISCONNECTED);
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Closed Stream against {} with vbid: {}", channel.getAddress(), vbid);
+        short vbid = DcpCloseStreamResponse.vbucket(buf);
+        int streamId = DcpCloseStreamResponse.streamId(buf);
+        short status = MessageUtil.getStatus(buf);
+        StreamState ss = channel.getSessionState().streamState(streamId);
+        if (status == MemcachedStatus.NOT_FOUND) {
+            // the stream ended on its own between our deciding to close it and the producer seeing the request
+            LOGGER.debug("CloseStream {} for vbucket {} on stream {} against {}", MemcachedStatus.toString(status),
+                    vbid, streamId, channel.getAddress());
+        } else if (status != MemcachedStatus.SUCCESS) {
+            // the stream is not usable either way, so it is still treated as closed below- but a failure to close a
+            // stream we believe to be open is worth knowing about
+            LOGGER.warn("CloseStream {} for vbucket {} on stream {} against {}", MemcachedStatus.toString(status), vbid,
+                    streamId, channel.getAddress());
+        } else if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Closed stream {} against {} with vbid: {}", streamId, channel.getAddress(), vbid);
         }
+        clearOpen(ss, vbid);
+        ss.get(vbid).setState(StreamPartitionState.DISCONNECTED);
     }
 
     private void handleSeqnoAdvanced(ByteBuf buf) {

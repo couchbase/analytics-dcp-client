@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -95,9 +96,12 @@ public class Client {
      * @param builder
      *            the client config builder.
      */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "MB-73124: always negotiate send_stream_end_on_client_close_stream")
     public Client(Builder builder) {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
+        // we close our streams before disconnecting, and want the producer to tell us when it has done so
+        builder.controlParam(DcpControl.Names.SEND_STREAM_END_ON_CLIENT_CLOSE_STREAM, true);
         env = ClientEnvironment.builder().setConnectionNameGenerator(builder.connectionNameGenerator())
                 .setBucket(builder.bucket()).setCredentialsProvider(builder.credentialsProvider())
                 .setDcpControl(builder.dcpControl()).setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
