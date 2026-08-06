@@ -17,6 +17,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeoutException;
 
 import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -123,8 +124,19 @@ public class CollectionState {
                         this.itemCount);
                 this.itemCount = pendingItemCount;
                 pendingItemCount = 0;
+                notifyAll();
             }
         }
+    }
 
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "the span-expiry guard and its TimeoutException")
+    public synchronized void waitForItemCounts(Span span) throws TimeoutException, InterruptedException {
+        while (itemCountSemaphore.availablePermits() > 0 && !span.elapsed()) {
+            span.wait(this);
+        }
+        if (itemCountSemaphore.availablePermits() > 0) {
+            throw new TimeoutException(span + " elapsed before obtaining item counts for cid " + displayCid(cid) + " ("
+                    + itemCountSemaphore.availablePermits() + " remaining)");
+        }
     }
 }

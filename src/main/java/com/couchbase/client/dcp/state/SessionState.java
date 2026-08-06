@@ -13,6 +13,7 @@ import static com.couchbase.client.dcp.message.MessageUtil.GET_SEQNOS_GLOBAL_COL
 import static it.unimi.dsi.fastutil.objects.ObjectArrays.ensureCapacity;
 
 import java.util.Objects;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReferenceArray;
@@ -21,6 +22,7 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -62,6 +64,10 @@ public class SessionState {
 
     private final Int2ObjectMap<CollectionState> collectionStates =
             Int2ObjectMaps.synchronize(new Int2ObjectOpenHashMap<>());
+
+    private long pendingItemCount = 0;
+    private long itemCount = -1;
+    private final Semaphore itemCountSemaphore = new Semaphore(0);
 
     public SessionState(CouchbaseBucketConfig config) {
         this.config = config;
@@ -274,5 +280,48 @@ public class SessionState {
 
     public void registerPendingCollectionItemCount(int... cids) {
         IntStream.of(cids).forEach(cid -> ensureCollectionState(cid).registerItemResponse());
+    }
+
+    public void initBucketItemCountRequest() {
+        if (itemCountSemaphore.drainPermits() != 0) {
+            LOGGER.debug("making new bucket item count request before previous finished");
+            pendingItemCount = 0;
+        }
+    }
+
+    public void registerPendingBucketItemCount() {
+        itemCountSemaphore.release();
+    }
+
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "the span-expiry guard and its TimeoutException")
+    public synchronized void waitForBucketItemCount(Span span) throws TimeoutException, InterruptedException {
+        while (itemCountSemaphore.availablePermits() > 0 && !span.elapsed()) {
+            span.wait(this);
+        }
+        if (itemCountSemaphore.availablePermits() > 0) {
+            throw new TimeoutException(span + " elapsed before obtaining bucket item count" + " ("
+                    + itemCountSemaphore.availablePermits() + " remaining)");
+        }
+    }
+
+    public synchronized void recordBucketItemCountResponse(long itemCount) {
+        if (!itemCountSemaphore.tryAcquire()) {
+            LOGGER.warn("received unexpected bucket {} item count!", config.name());
+        } else {
+            pendingItemCount += itemCount;
+            LOGGER.debug("pending bucket {} item count now {} (was {})", config.name(), pendingItemCount,
+                    pendingItemCount - itemCount);
+            if (itemCountSemaphore.availablePermits() == 0) {
+                LOGGER.debug("setting bucket {} item count to {} (was {})", config.name(), pendingItemCount,
+                        this.itemCount);
+                this.itemCount = pendingItemCount;
+                pendingItemCount = 0;
+                notifyAll();
+            }
+        }
+    }
+
+    public long getItemCount() {
+        return itemCount;
     }
 }

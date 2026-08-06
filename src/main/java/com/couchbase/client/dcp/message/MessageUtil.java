@@ -17,6 +17,8 @@ import com.couchbase.client.dcp.conductor.DcpChannel;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamState;
 
+import it.unimi.dsi.fastutil.ints.IntObjectPair;
+
 public class MessageUtil {
 
     /**
@@ -26,7 +28,6 @@ public class MessageUtil {
     private static final int HEADER_SIZE = 24;
 
     public static final byte MAGIC_CONSUMER = (byte) 0x44;
-    public static final byte MAGIC_INT = (byte) 0x79;
     public static final byte MAGIC_REQ = (byte) 0x80;
     public static final byte MAGIC_RES = (byte) 0x81;
     public static final byte MAGIC_REQ_FLEX = (byte) 0x08;
@@ -75,7 +76,6 @@ public class MessageUtil {
     public static final byte OBSERVE_SEQNO_OPCODE = (byte) 0x91;
     public static final byte GET_CLUSTER_CONFIG_OPCODE = (byte) 0xb5;
     public static final byte DCP_COLLECTIONS_MANIFEST_OPCODE = (byte) 0xba;
-    public static final byte INTERNAL_ROLLBACK_OPCODE = 0x01;
 
     public static final short REQ_DCP_MUTATION = MAGIC_REQ << 8 | DCP_MUTATION_OPCODE & 0xff;
     public static final short REQ_DCP_DELETION = MAGIC_REQ << 8 | DCP_DELETION_OPCODE & 0xff;
@@ -134,6 +134,29 @@ public class MessageUtil {
 
     public static byte getOpcode(ByteBuf buffer) {
         return buffer.getByte(1);
+    }
+
+    public static String humanizeMagic(ByteBuf message) {
+        return humanizeMagic(message.getByte(0));
+    }
+
+    public static String humanizeMagic(byte magic) {
+        return String.format("%s (0x%02x)", magicName(magic), magic);
+    }
+
+    public static String magicName(final byte opcode) {
+        switch (opcode) {
+            case MAGIC_RES:
+                return "RES";
+            case MAGIC_REQ:
+                return "REQ";
+            case MAGIC_REQ_FLEX:
+                return "REQ_FLEX";
+            case MAGIC_CONSUMER:
+                return "CONSUMER";
+            default:
+                return "<<UNKNOWN MAGIC>>";
+        }
     }
 
     public static String humanizeOpcode(final ByteBuf buffer) {
@@ -226,7 +249,8 @@ public class MessageUtil {
         int bodyLength = buffer.getInt(BODY_LENGTH_OFFSET);
 
         sb.append("Field          (offset) (value)\n-----------------------------------\n");
-        sb.append(String.format("Magic          (0)      0x%02x%n", buffer.getByte(0)));
+        sb.append(String.format("Magic          (0)      0x%02x\t%s%n", buffer.getByte(0),
+                humanizeMagic(buffer.getByte(0))));
         sb.append(String.format("Opcode         (1)      0x%02x\t%s%n", getOpcode(buffer),
                 humanizeOpcode(getOpcode(buffer))));
         if ((buffer.getByte(0) & 0xf0) != 0) {
@@ -373,7 +397,32 @@ public class MessageUtil {
     }
 
     public static String getKeyAsString(ByteBuf buffer, boolean isCollectionEnabled) {
-        return getKey(buffer, isCollectionEnabled).toString(UTF_8);
+        byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
+        short framingExtrasLength = getFramingExtrasSize(buffer);
+        short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
+        if (!isCollectionEnabled) {
+            //if collection is not enabled, then key does not contain cid prefix
+            return buffer.toString(HEADER_SIZE + framingExtrasLength + extrasLength, keyLength, UTF_8);
+        } else {
+            ByteBuf keyWithPrefix = buffer.slice(HEADER_SIZE + framingExtrasLength + extrasLength, keyLength);
+            int cidPrefixLength = lengthLEB128(keyWithPrefix);
+            return keyWithPrefix.toString(cidPrefixLength, keyLength - cidPrefixLength, UTF_8);
+        }
+    }
+
+    public static IntObjectPair<String> getKeyWithCid(ByteBuf buffer, boolean isCollectionEnabled) {
+        byte extrasLength = buffer.getByte(EXTRAS_LENGTH_OFFSET);
+        short framingExtrasLength = getFramingExtrasSize(buffer);
+        short keyLength = buffer.getUnsignedByte(FLEX_KEY_LENGTH_OFFSET);
+        if (!isCollectionEnabled) {
+            // if collection is not enabled, then key does not contain cid prefix
+            return IntObjectPair.of(CollectionsManifest.CollectionInfo.DEFAULT_ID,
+                    buffer.toString(HEADER_SIZE + framingExtrasLength + extrasLength, keyLength, UTF_8));
+        } else {
+            ByteBuf keyWithPrefix = buffer.slice(HEADER_SIZE + framingExtrasLength + extrasLength, keyLength);
+            int cid = readLEB128(keyWithPrefix);
+            return IntObjectPair.of(cid, keyWithPrefix.toString(UTF_8));
+        }
     }
 
     public static int getCid(ByteBuf buffer) {

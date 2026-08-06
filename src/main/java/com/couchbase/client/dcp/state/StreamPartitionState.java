@@ -9,6 +9,9 @@
  */
 package com.couchbase.client.dcp.state;
 
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayCids;
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayManifestUid;
+import static com.couchbase.client.dcp.util.VbucketUtil.displaySeqnoRange;
 import static org.apache.hyracks.util.Span.ELAPSED;
 
 import java.io.IOException;
@@ -102,7 +105,19 @@ public class StreamPartitionState {
     public void setSnapshotEndSeqno(long snapshotEndSeqno) {
         this.snapshotEndSeqno = snapshotEndSeqno;
         streamState.getSessionState().ensureMaxCurrentVBucketSeqnoInMaster(vbid, snapshotEndSeqno);
-        // TODO: this needs to be considered once we have >1 cid per stream
+        // fanning the snapshot end out to every cid on this stream over-states each collection's high seqno, but it
+        // is the safe direction and is not specific to multi-cid streams: seqnos are a single per-vbucket space
+        // shared by all collections, so snapshotEndSeqno is vbucket-level even for a single-cid filtered stream
+        // (which is why DCP_SEQNO_ADVANCED exists at all). Only the streaming client's CollectionState is affected,
+        // and its sole reader is lag/progress reporting- everything needing true per-collection seqnos (rebalance
+        // validation, scan consistency, failover log bounds) reads a non-streaming client, which never gets here.
+        // Over-stating kvSeq over-states lag, which converges to 0 as the stream position catches up; dropping this
+        // fan-out would instead freeze kvSeq at its connect-time value, and since lag clamps at 0 the collection
+        // would report caught up forever despite a real backlog. Merging makes multi-cid streams the norm, so a
+        // quiet collection sharing a stream with a busy one will report the busy one's backlog as its own- a
+        // monitoring fidelity limitation, not a correctness one. True per-collection seqnos would have to be driven
+        // from mutations (which carry a cid, unlike the snapshot marker) plus a periodic seqno refresh, since
+        // handleSeqnoResponse overwrites rather than maxes.
         for (int cid : streamState.cids()) {
             streamState.getSessionState().getCollectionState(cid).ensureMaxSeqno(vbid, snapshotEndSeqno);
         }
@@ -186,7 +201,10 @@ public class StreamPartitionState {
         purgeSeqno = streamRequest.getPurgeSeqno();
         manifestUid = streamRequest.getManifestUid();
         if (shouldLog && LOGGER.isDebugEnabled()) {
-            LOGGER.debug("setStreamRequest: {}", streamRequest);
+            LOGGER.debug("setStreamRequest sid {} manifestUid {} cids {} vbid {} seqrange {} snaprange {}",
+                    streamRequest.getStreamId(), displayManifestUid(manifestUid), displayCids(streamRequest.getCids()),
+                    vbid, displaySeqnoRange(seqno, streamEndSeq),
+                    displaySeqnoRange(snapshotStartSeqno, snapshotEndSeqno));
         }
         extraneousSeqs = 0;
     }

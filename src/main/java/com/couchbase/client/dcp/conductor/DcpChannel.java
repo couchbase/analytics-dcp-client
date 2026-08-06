@@ -297,7 +297,7 @@ public class DcpChannel {
             ObjectNode json = streamRequestValue(om, cids, manifestUid, streamId, purgeSeqno, includePurgeSeqnos);
             try {
                 byte[] value = om.writeValueAsBytes(json);
-                DcpOpenStreamRequest.setValue(Unpooled.copiedBuffer(value), buffer);
+                DcpOpenStreamRequest.setValue(Unpooled.wrappedBuffer(value), buffer);
             } catch (Exception e) {
                 throw new IllegalStateException(e);
             }
@@ -357,12 +357,17 @@ public class DcpChannel {
         if (cids.length == 0) {
             throw new IllegalArgumentException("at least one cid must be supplied");
         }
-        ByteBuf buffer = Unpooled.buffer();
-        Stat.init(buffer);
         for (int cid : cids) {
-            Stat.collectionsById(buffer, cid);
+            ByteBuf buffer = Unpooled.buffer();
+            Stat.initCollectionsById(buffer, cid);
             channel.writeAndFlush(buffer);
         }
+    }
+
+    public void requestItemCount() {
+        ByteBuf buffer = Unpooled.buffer();
+        Stat.initCurrItems(buffer);
+        channel.writeAndFlush(buffer);
     }
 
     public synchronized void getFailoverLog(final short vbid) {

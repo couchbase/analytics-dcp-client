@@ -20,9 +20,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -36,6 +38,7 @@ import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.conductor.Conductor;
 import com.couchbase.client.dcp.conductor.ConfigProvider;
 import com.couchbase.client.dcp.conductor.DcpChannel;
+import com.couchbase.client.dcp.conductor.NotConnectedException;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.config.DcpControl;
 import com.couchbase.client.dcp.events.EventBus;
@@ -45,7 +48,6 @@ import com.couchbase.client.dcp.message.DcpExpirationMessage;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
-import com.couchbase.client.dcp.message.RollbackMessage;
 import com.couchbase.client.dcp.state.SessionPartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
@@ -208,6 +210,21 @@ public class Client {
         conductor.requestCollectionItemCounts(cids);
     }
 
+    public void requestItemCount() {
+        conductor.requestItemCount();
+    }
+
+    /**
+     * Waits for the requested bucket-wide item count to arrive from all partitions
+     *
+     * @param span the span within which the item count must arrive
+     * @throws TimeoutException if the span elapses before the item count arrives
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED)
+    public void waitForItemCount(Span span) throws InterruptedException, TimeoutException {
+        conductor.waitForItemCount(span);
+    }
+
     /**
      * Returns the current {@link SessionState}, useful for persistence and inspection.
      *
@@ -225,9 +242,6 @@ public class Client {
      *
      * The following messages can happen and should be handled depending on the needs of the
      * client:
-     *
-     * - {@link RollbackMessage}: If during a connect phase the server responds with rollback
-     * information, this event is forwarded to the callback. Does not need to be acknowledged.
      *
      * - {@link DcpSnapshotMarkerRequest}: Server transmits data in batches called snapshots
      * before sending anything, it send marker message, which contains start and end sequence
@@ -344,6 +358,23 @@ public class Client {
             StreamRequest request = streamState.get(vbid).getStreamRequest();
             conductor.startStreamForPartition(request);
         }
+    }
+
+    /**
+     * Closes the stream {@code streamId} is open against on a single vbucket, leaving the stream open on every other
+     * vbucket. Used to migrate a vbucket from one stream to another (see {@code CouchbaseConnector}); the producer
+     * responds with a stream end carrying {@link com.couchbase.client.dcp.message.StreamEndReason#CLOSED}.
+     *
+     * @param streamId the stream to close
+     * @param vbid     the vbucket to close it on
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED)
+    public void closeStream(int streamId, short vbid) {
+        DcpChannel channel = conductor.getChannel(vbid);
+        if (channel == null) {
+            throw new NotConnectedException();
+        }
+        channel.closeStream(streamId, vbid);
     }
 
     private void ensureInitialized(StreamState streamState, short[] vbids) throws Throwable {

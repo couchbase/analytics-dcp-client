@@ -10,6 +10,7 @@
 package com.couchbase.client.dcp.transport.netty;
 
 import static com.couchbase.client.dcp.transport.netty.Stat.Kind.COLLECTIONS_BYID;
+import static com.couchbase.client.dcp.transport.netty.Stat.Kind.CURR_ITEMS;
 
 import java.util.Collections;
 import java.util.Map;
@@ -24,7 +25,8 @@ public class Stat {
 
     public enum Kind {
         UNKNOWN,
-        COLLECTIONS_BYID;
+        COLLECTIONS_BYID,
+        CURR_ITEMS;
 
         public static Kind valueOf(int ordinal, Kind defaultValue) {
             return ordinal < values().length ? values()[ordinal] : defaultValue;
@@ -53,13 +55,19 @@ public class Stat {
     private Stat() {
     }
 
-    public static void init(ByteBuf buffer) {
+    private static void initCommon(ByteBuf buffer) {
         MessageUtil.initRequest(MessageUtil.STAT_OPCODE, buffer);
     }
 
-    public static void collectionsById(ByteBuf buffer, int cid) {
+    public static void initCollectionsById(ByteBuf buffer, int cid) {
+        initCommon(buffer);
         ByteBuf key = Unpooled.copiedBuffer(COLLECTIONS_BYID + " " + CollectionsUtil.encodeCid(cid), CharsetUtil.UTF_8);
         MessageUtil.setKey(key, buffer);
         MessageUtil.setOpaque(COLLECTIONS_BYID.ordinal(), buffer);
+    }
+
+    public static void initCurrItems(ByteBuf buffer) {
+        initCommon(buffer);
+        MessageUtil.setOpaque(CURR_ITEMS.ordinal(), buffer);
     }
 }

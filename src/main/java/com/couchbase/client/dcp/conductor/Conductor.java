@@ -137,10 +137,11 @@ public class Conductor {
         return configProvider.config().numberOfPartitions();
     }
 
-    public void waitForSeqnos(int... cids) throws Throwable {
-        if (cids.length == 0) {
+    public void waitForSeqnos(int... rawCids) throws Throwable {
+        if (rawCids.length == 0) {
             return;
         }
+        int[] cids = IntStream.of(rawCids).sorted().distinct().toArray();
         MutableInt attempt = new MutableInt(1);
         InvokeUtil.retryUntilSuccessOrExhausted(Span.start(WAIT_FOR_SEQNOS_TIMEOUT_SECS, TimeUnit.SECONDS), () -> {
             int[] attemptCids;
@@ -168,7 +169,7 @@ public class Conductor {
 
     public synchronized void failPendingSeqnos(Throwable failure, int... cids) {
         if (sessionState != null) {
-            IntStream.of(cids).forEach(cid -> sessionState.seqnoRequestFailIfPending(cid, failure));
+            IntStream.of(cids).sorted().distinct().forEach(cid -> sessionState.seqnoRequestFailIfPending(cid, failure));
         }
     }
 
@@ -176,7 +177,8 @@ public class Conductor {
         requestSeqnos(true, cids);
     }
 
-    private void requestSeqnos(boolean reset, int... cids) {
+    private void requestSeqnos(boolean reset, int... rawCids) {
+        int[] cids = IntStream.of(rawCids).sorted().distinct().toArray();
         if (LOGGER.isDebugEnabled()) {
             boolean bucketWide = ArrayUtils.contains(cids, GET_SEQNOS_GLOBAL_COLLECTION_ID);
             if (bucketWide) {
@@ -224,8 +226,9 @@ public class Conductor {
         sessionState.waitTillFailoverUpdated(vbid, partitionRequestsTimeout, timeUnit);
     }
 
-    public void requestCollectionItemCounts(int... cids) {
-        LOGGER.debug("Getting item count(s) for cids {}", Arrays.toString(cids));
+    public void requestCollectionItemCounts(int... rawCids) {
+        int[] cids = IntStream.of(rawCids).sorted().distinct().toArray();
+        LOGGER.debug("Getting item count(s) for cids {}", () -> Arrays.toString(cids));
         synchronized (channels) {
             sessionState.initItemCountRequest(cids);
             for (DcpChannel channel : channels.values()) {
@@ -235,6 +238,23 @@ public class Conductor {
                 }
             }
         }
+    }
+
+    public void requestItemCount() {
+        LOGGER.debug("Getting bucket item count");
+        synchronized (channels) {
+            sessionState.initBucketItemCountRequest();
+            for (DcpChannel channel : channels.values()) {
+                if (channel.getState() == State.CONNECTED) {
+                    sessionState.registerPendingBucketItemCount();
+                    channel.requestItemCount();
+                }
+            }
+        }
+    }
+
+    public void waitForItemCount(Span span) throws InterruptedException, TimeoutException {
+        sessionState.waitForBucketItemCount(span);
     }
 
     public void startStreamForPartition(StreamRequest request) {
