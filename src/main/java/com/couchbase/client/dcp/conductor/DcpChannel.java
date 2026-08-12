@@ -14,6 +14,7 @@ import static com.couchbase.client.dcp.util.retry.RetryUtil.shouldRetryWithoutCo
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
@@ -140,9 +141,8 @@ public class DcpChannel {
                 if (!connectFuture.isSuccess()) {
                     throw connectFuture.cause();
                 }
-                includePurgeSeqnos = env.isDcpSteamRequestIncludePurgeSeqnos() && dcpPipeline.getDcpNegotiationHandler()
-                        .getNegotiatedSettings().getOrDefault(DcpControl.Names.MAX_MARKER_VERSION.value(), "")
-                        .equals(DcpControl.MAX_MARKER_VERSION_2_2);
+                includePurgeSeqnos = shouldIncludePurgeSeqnos(env.isDcpSteamRequestIncludePurgeSeqnos(),
+                        dcpPipeline.getDcpNegotiationHandler().getNegotiatedSettings());
 
                 LOGGER.debug("Connection to {} established", inetAddress);
                 channel = connectFuture.channel();
@@ -294,18 +294,7 @@ public class DcpChannel {
 
         if (collectionCapable) {
             ObjectMapper om = new ObjectMapper();
-            ObjectNode json = om.createObjectNode();
-            ArrayNode an = json.putArray("collections");
-            IntStream.of(cids).mapToObj(CollectionsUtil::encodeCid).forEach(an::add);
-            if (manifestUid != 0) {
-                json.put("uid", Long.toUnsignedString(manifestUid, 16));
-            }
-            if (streamId > 0) {
-                json.put("sid", streamId);
-            }
-            if (purgeSeqno != 0L && includePurgeSeqnos) {
-                json.put("purge_seqno", Long.toUnsignedString(purgeSeqno));
-            }
+            ObjectNode json = streamRequestValue(om, cids, manifestUid, streamId, purgeSeqno, includePurgeSeqnos);
             try {
                 byte[] value = om.writeValueAsBytes(json);
                 DcpOpenStreamRequest.setValue(Unpooled.copiedBuffer(value), buffer);
@@ -510,4 +499,41 @@ public class DcpChannel {
     public String getConnectionName() {
         return connectionName;
     }
+
+    /**
+     * Whether a stream request may carry {@code purge_seqno}. Both halves are required: the environment must have the
+     * feature enabled, and the producer must have negotiated snapshot marker v2.2, since only from that version does it
+     * report a purge seqno on the markers we would be echoing back. Asking an older producer to honour one silently
+     * achieves nothing, which is why this is a negotiated capability rather than a local setting.
+     *
+     * @param enabledInEnvironment whether the environment enables purge seqnos in stream requests
+     * @param negotiatedSettings   the DCP control settings the producer accepted
+     */
+    static boolean shouldIncludePurgeSeqnos(boolean enabledInEnvironment, Map<String, String> negotiatedSettings) {
+        return enabledInEnvironment && negotiatedSettings.getOrDefault(DcpControl.Names.MAX_MARKER_VERSION.value(), "")
+                .equals(DcpControl.MAX_MARKER_VERSION_2_2);
+    }
+
+    /**
+     * Builds the value of a collection-aware stream request. A {@code purge_seqno} of 0 is omitted rather than sent:
+     * 0 means either nothing has been purged or we have no purge seqno recorded, and declaring 0 tells the producer we
+     * have processed no purge at all- which is precisely the input that asks it for a rollback.
+     */
+    static ObjectNode streamRequestValue(ObjectMapper om, int[] cids, long manifestUid, int streamId, long purgeSeqno,
+            boolean includePurgeSeqnos) {
+        ObjectNode json = om.createObjectNode();
+        ArrayNode an = json.putArray("collections");
+        IntStream.of(cids).mapToObj(CollectionsUtil::encodeCid).forEach(an::add);
+        if (manifestUid != 0) {
+            json.put("uid", Long.toUnsignedString(manifestUid, 16));
+        }
+        if (streamId > 0) {
+            json.put("sid", streamId);
+        }
+        if (purgeSeqno != 0L && includePurgeSeqnos) {
+            json.put("purge_seqno", Long.toUnsignedString(purgeSeqno));
+        }
+        return json;
+    }
+
 }
