@@ -60,12 +60,14 @@ public class SSLEngineFactory {
                 }
                 ks.load(new FileInputStream(ksFile), password);
             }
-            String defaultAlgorithm = KeyManagerFactory.getDefaultAlgorithm();
-            TrustManagerFactory tmf = TrustManagerFactory.getInstance(defaultAlgorithm);
+            // n.b. the trust manager must use its own default algorithm (PKIX); SunX509, the key manager
+            // default, resolves the trust anchor by issuer DN and honors only one anchor per DN, so a
+            // certificate signed by any other CA sharing that DN fails to validate
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
             tmf.init(ks);
             final KeyManager[] keyManagers;
             if (env.sslIncludeKeyMaterial()) {
-                KeyManagerFactory kmf = KeyManagerFactory.getInstance(defaultAlgorithm);
+                KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
                 kmf.init(ks, password);
                 keyManagers = kmf.getKeyManagers();
             } else {
