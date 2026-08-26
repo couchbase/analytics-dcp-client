@@ -188,7 +188,7 @@ public class StreamPartitionState {
 
     public void prepareNextStreamRequest(SessionState sessionState, StreamState streamState) {
         if (streamRequest == null) {
-            if (snapshotStartSeqno > seqno) {
+            if (Long.compareUnsigned(snapshotStartSeqno, seqno) > 0) {
                 snapshotStartSeqno = seqno;
             }
             if (SessionState.NO_END_SEQNO != streamEndSeq && Long.compareUnsigned(streamEndSeq, seqno) < 0) {
