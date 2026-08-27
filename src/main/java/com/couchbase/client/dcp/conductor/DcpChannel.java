@@ -183,10 +183,19 @@ public class DcpChannel {
                 continue;
             }
             for (int streamId : openStreams[vbid]) {
-                // TODO(mblow): consolidate logging
-                LOGGER.debug("Opening a stream {} that was dropped for vbucket {}", streamId, vbid);
                 final StreamState streamState = sessionState.streamState(streamId);
                 StreamPartitionState ps = streamState.get(vbid);
+                if (ps.isSealed()) {
+                    // a merge migration is handing this vbucket off this stream (see StreamPartitionState#seal), so
+                    // it is not ours to bring back: reopened, it would double-stream the vbucket against the merge
+                    // target- and, with the prepared request it still holds, sealed, dropping everything on it
+                    LOGGER.info(
+                            "Not reopening dropped stream {} for vbucket {}: sealed at seqno {} for a merge handoff",
+                            streamId, vbid, Long.toUnsignedString(ps.getSealSeqno()));
+                    continue;
+                }
+                // TODO(mblow): consolidate logging
+                LOGGER.debug("Opening a stream {} that was dropped for vbucket {}", streamId, vbid);
                 ps.prepareNextStreamRequest(sessionState, streamState);
                 StreamRequest req = ps.getStreamRequest();
                 openStream(vbid, req.getVbucketUuid(), req.getStartSeqno(), req.getEndSeqno(),

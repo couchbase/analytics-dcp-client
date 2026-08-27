@@ -73,6 +73,19 @@ public class StreamPartitionState {
 
     private volatile long extraneousSeqs = 0;
 
+    /**
+     * The seqno this stream is sealed at on this vbucket, or {@link #INVALID_SEQNO} if it is not sealed. A seal is the
+     * first step of migrating the vbucket onto a merge target: it fixes where this stream stopped, so that the target
+     * can be opened at exactly that seqno rather than at one this stream may since have run past.
+     * <p>
+     * Written by whichever thread processes this stream's messages, from {@link #seal}, and read by it again on every
+     * message; the merge driver only ever reads it.
+     */
+    private volatile long sealSeqno = INVALID_SEQNO;
+
+    /** how many messages the seal has caused to be dropped, for diagnostics only */
+    private volatile long sealDropped;
+
     private StreamRequest streamRequest;
 
     private long manifestUid;
@@ -162,6 +175,98 @@ public class StreamPartitionState {
         }
     }
 
+    /**
+     * Seals this stream on this vbucket at {@code atSeqno}, so that it delivers nothing further there and the merge
+     * target of its group can be opened at exactly {@code atSeqno}.
+     * <p>
+     * The seal is <em>conditional</em>, and that is the whole point of it. The merge driver decides that a group has
+     * converged by sampling every source's seqno, but it samples from its own thread whilst the message thread goes on
+     * advancing them, so by the time it acts the position it converged on may be in the past. Sealing at a seqno the
+     * stream has already run past would open the target behind what this stream has delivered, and the mutations in
+     * between would be applied a second time- correct in the end, but transiently reverting keys to a superseded value
+     * whilst the shadow state, which is monotonic, already says the newer one is visible. Rather than seal wherever the
+     * stream happens to be, we insist on the seqno the convergence was decided at: either every source of the group
+     * accepts it, or the migration is abandoned and retried against a fresh sample.
+     * <p>
+     * Must be called by the thread which processes this stream's messages, and only by it: what makes the seal exact is
+     * that no message can be recorded or routed in between the check and the seal, which is true of that thread alone.
+     *
+     * @param atSeqno the seqno the group converged at, which this stream must be standing at exactly
+     * @return whether the seal was taken; {@code false} if this stream is not live here, has advanced past
+     *         {@code atSeqno}, or is already sealed
+     */
+    @GuardedBy("the thread which processes this stream's messages")
+    public boolean seal(long atSeqno) {
+        if (!isSealableAt(atSeqno)) {
+            return false;
+        }
+        sealSeqno = atSeqno;
+        return true;
+    }
+
+    /**
+     * Whether {@link #seal} at this seqno would succeed, asked ahead of it so that a group of streams can be sealed
+     * all or none: every one of them is tested before any of them is sealed. Meaningful only on the thread which may
+     * seal, as it alone can be sure the answer still holds.
+     *
+     * @param atSeqno the seqno the group converged at
+     * @return whether this stream is live here, standing at exactly {@code atSeqno} and not already sealed
+     */
+    @GuardedBy("the thread which processes this stream's messages")
+    public boolean isSealableAt(long atSeqno) {
+        return atSeqno != INVALID_SEQNO && state == CONNECTED && seqno == atSeqno && !isSealed();
+    }
+
+    /**
+     * @return whether this stream is sealed on this vbucket, i.e. a merge migration is handing the vbucket off it (see
+     *         {@link #seal}). A sealed vbucket is not one to reopen on this stream: the migration has closed it here-
+     *         or is about to- in favour of its merge target, and should the migration fail its recovery is a
+     *         reconnect, which rebuilds every stream from the persisted state
+     */
+    public boolean isSealed() {
+        return sealSeqno != INVALID_SEQNO;
+    }
+
+    /**
+     * @return whether this stream is sealed on this vbucket, counting the message which asked as dropped if it is.
+     *         Dropping is what makes the seal worth taking: the merge target opens at the sealed seqno and re-reads
+     *         from there, so a message this stream would have delivered past it is not lost but superseded
+     */
+    @GuardedBy("the thread which processes this stream's messages")
+    @SuppressWarnings("NonAtomicOperationOnVolatileField")
+    public boolean dropIfSealed() {
+        if (!isSealed()) {
+            return false;
+        }
+        sealDropped++;
+        return true;
+    }
+
+    /**
+     * Releases any seal on this vbucket, called wherever the stream is (re)opened here: a seal describes the point a
+     * migration off this stream stopped at, so a stream which is being opened afresh cannot still be holding one.
+     * {@link #setStreamRequest} covers the usual route in; this covers a reopen which reuses a stream request already
+     * prepared, where nothing else would.
+     */
+    public void releaseSeal() {
+        sealSeqno = INVALID_SEQNO;
+        sealDropped = 0;
+    }
+
+    /**
+     * @return the seqno this stream is sealed at on this vbucket, or {@link #INVALID_SEQNO} if it is not sealed
+     */
+    public long getSealSeqno() {
+        return sealSeqno;
+    }
+
+    /**
+     * @return how many messages the seal has dropped
+     */
+    public long getSealDropped() {
+        return sealDropped;
+    }
+
     public byte getState() {
         return state;
     }
@@ -200,6 +305,9 @@ public class StreamPartitionState {
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
         purgeSeqno = streamRequest.getPurgeSeqno();
         manifestUid = streamRequest.getManifestUid();
+        // this vbucket is being (re)opened on this stream from a known position, so any seal taken against the
+        // previous one no longer describes anything: it was the point a migration off this stream stopped at
+        releaseSeal();
         if (shouldLog && LOGGER.isDebugEnabled()) {
             LOGGER.debug("setStreamRequest sid {} manifestUid {} cids {} vbid {} seqrange {} snaprange {}",
                     streamRequest.getStreamId(), displayManifestUid(manifestUid), displayCids(streamRequest.getCids()),
@@ -248,6 +356,10 @@ public class StreamPartitionState {
         tree.put("seqno", seqno);
         tree.put("state", state);
         tree.put("osoMaxSeq", osoMaxSeqno);
+        if (isSealed()) {
+            tree.put("sealSeqno", sealSeqno);
+            tree.put("sealDropped", sealDropped);
+        }
         return tree;
     }
 

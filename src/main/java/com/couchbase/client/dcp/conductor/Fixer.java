@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import org.apache.hyracks.util.Span;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.hyracks.util.annotations.GuardedBy;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -223,11 +224,36 @@ public class Fixer implements Runnable, SystemEventHandler {
     private void restartStream(OpenStreamResponse response) {
         synchronized (conductor.getChannels()) {
             StreamPartitionState partitionState = response.getPartitionState();
+            if (sealedForHandoff(partitionState)) {
+                return;
+            }
             final SessionState sessionState = conductor.getSessionState();
             StreamState streamState = partitionState.getStreamState();
             partitionState.prepareNextStreamRequest(sessionState, streamState);
             conductor.startStreamForPartition(partitionState.getStreamRequest());
         }
+    }
+
+    /**
+     * Whether a stream is sealed on a vbucket, in which case it is not ours to reopen there: the seal says a merge
+     * migration is handing the vbucket off this stream (see {@link StreamPartitionState#seal}), and reopening it
+     * would resurrect a stream the migration has closed- or is about to close- against the target now taking over,
+     * double-streaming the vbucket for the life of the connection with nothing to revisit it. Should the migration
+     * fail instead, its own recovery is a reconnect, which rebuilds every stream from the persisted state; nothing is
+     * lost by leaving the stream ended here.
+     * <p>
+     * The producer can end a stream at any moment, so this can only ever be checked, not guaranteed: a seal taken in
+     * between this check and the open it guards slips through. That window is the microseconds of one open, whereas
+     * the one it closes is the whole of the config refresh a reopen begins with.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED)
+    private boolean sealedForHandoff(StreamPartitionState state) {
+        if (!state.isSealed()) {
+            return false;
+        }
+        LOGGER.info("{} not reopening vbucket {} on stream {}: sealed at seqno {} for a merge handoff", this,
+                state.vbid(), state.getStreamState().streamId(), Long.toUnsignedString(state.getSealSeqno()));
+        return true;
     }
 
     private void fixStreamEnd(StreamEndEvent streamEndEvent) throws Throwable {
@@ -282,9 +308,12 @@ public class Fixer implements Runnable, SystemEventHandler {
         boolean success = false;
         while (!success) {
             Span attempt = Span.start(1, TimeUnit.SECONDS);
+            StreamPartitionState state = streamEndEvent.getState();
+            if (sealedForHandoff(state)) {
+                return;
+            }
             refreshConfig();
             CouchbaseBucketConfig config = conductor.config();
-            StreamPartitionState state = streamEndEvent.getState();
             short index = config.nodeIndexForActive(streamEndEvent.partition(), false);
             if (index < 0) {
                 LOGGER.info(this + " vbucket " + streamEndEvent.partition() + " has no active node at the moment");
@@ -318,6 +347,10 @@ public class Fixer implements Runnable, SystemEventHandler {
                 channel.requestSeqnos(seqRequested);
             }
             streamEndEvent.reset();
+            if (sealedForHandoff(state)) {
+                // sealed whilst we were refreshing the config: the check above is what keeps this rare
+                return;
+            }
             state.prepareNextStreamRequest(sessionState, streamEndEvent.getStreamState());
             conductor.startStreamForPartition(state.getStreamRequest());
             success = true;

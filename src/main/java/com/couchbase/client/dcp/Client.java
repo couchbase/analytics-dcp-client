@@ -51,7 +51,6 @@ import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
 import com.couchbase.client.dcp.state.SessionPartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
-import com.couchbase.client.dcp.state.StreamRequest;
 import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 import com.couchbase.client.dcp.util.FlowControlCallback;
@@ -355,8 +354,16 @@ public class Client {
                     ShortUtil.toCompactString(vbids), CollectionsUtil.displayCids(streamState.cids()));
         }
         for (short vbid : vbids) {
-            StreamRequest request = streamState.get(vbid).getStreamRequest();
-            conductor.startStreamForPartition(request);
+            StreamPartitionState ps = streamState.get(vbid);
+            // we are opening this vbucket on this stream, so it is not stopped here for a merge handoff- and a stream
+            // request prepared before the seal was taken would otherwise carry it through a reconnect, leaving the
+            // reopened stream silently dropping everything on the vbucket
+            if (ps.isSealed()) {
+                LOGGER.debug("Releasing the seal at seqno {} on vbid {} of stream {}: it is being opened here afresh",
+                        Long.toUnsignedString(ps.getSealSeqno()), vbid, streamId);
+            }
+            ps.releaseSeal();
+            conductor.startStreamForPartition(ps.getStreamRequest());
         }
     }
 
