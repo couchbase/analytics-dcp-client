@@ -21,6 +21,7 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.apache.hyracks.util.NetworkUtil;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -323,18 +324,34 @@ public class DcpChannel {
         }
     }
 
+    /**
+     * Requests that the producer close {@code streamId} on {@code vbid}. Either the close is written and the stream
+     * recorded as {@link StreamPartitionState#DISCONNECTING}, or neither: a caller which sees this throw may take it
+     * that nothing was sent, and that holds only if nothing was recorded either (MB-73569). The producer's response
+     * cannot be processed against a state not yet marked- the control handler takes this channel's monitor before it
+     * touches either the partition state or the open streams, and we hold it until we return.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.REFACTORED)
     public synchronized void closeStream(final int streamId, final short vbid) {
         if (getState() != State.CONNECTED) {
             throw new NotConnectedException();
         }
         LOGGER.debug("Closing Stream against {} with vbid: {}", channel.remoteAddress(), vbid);
-        sessionState.streamState(streamId).get(vbid).setState(StreamPartitionState.DISCONNECTING);
-        openStreams[vbid].remove(streamId);
+        // resolved and checked before the write, so a vbucket this stream has no state on fails before the close has
+        // gone out rather than after
+        final StreamState streamState = sessionState.streamState(streamId);
+        final StreamPartitionState partitionState = streamState == null ? null : streamState.get(vbid);
+        final IntSet open = openStreams[vbid];
+        if (partitionState == null || open == null) {
+            throw new IllegalStateException("stream " + streamId + " has no state on vbucket " + vbid);
+        }
         ByteBuf buffer = Unpooled.buffer();
         DcpCloseStreamRequest.init(buffer);
         DcpCloseStreamRequest.vbucket(buffer, vbid);
         DcpCloseStreamRequest.opaque(buffer, vbid);
         channel.writeAndFlush(buffer);
+        partitionState.setState(StreamPartitionState.DISCONNECTING);
+        open.remove(streamId);
     }
 
     /**
