@@ -352,6 +352,19 @@ public class DcpChannel {
         }
     }
 
+    /**
+     * Requests that the producer close {@code streamId} on {@code vbid}. Either the close is handed to the channel
+     * and the stream recorded as {@link StreamPartitionState#DISCONNECTING}, or neither: a caller which sees this
+     * throw may take it that nothing was sent, and that holds only if nothing was recorded either (MB-73569). Handed
+     * to the channel is not written: the write completes asynchronously, and one which fails after we return does so
+     * only on a connection which is going down- the drop is reported through the channel's close listener, and the
+     * reconnect it leads to ends every stream on this connection on the producer's side, this one included, whether
+     * or not the close reached it; the stream is settled as {@link StreamPartitionState#DISCONNECTED} then, for
+     * whoever is awaiting the close. The producer's response cannot be processed against a state not yet marked- the
+     * control handler takes this channel's monitor before it touches either the partition state or the open streams,
+     * and we hold it until we return.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.REFACTORED)
     public synchronized void closeStream(final int streamId, final short vbid) {
         if (getState() != State.CONNECTED) {
             throw new NotConnectedException();
@@ -500,9 +513,14 @@ public class DcpChannel {
     @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Extracted from closeStream, and made stream id aware")
     private void writeCloseStream(final int streamId, final short vbid) {
         LOGGER.debug("Closing stream {} against {} with vbid: {}", streamId, channel.remoteAddress(), vbid);
-        StreamPartitionState partitionState = sessionState.streamState(streamId).get(vbid);
-        partitionState.setState(StreamPartitionState.DISCONNECTING);
-        openStreams[vbid].remove(streamId);
+        // resolved and checked before the write, so a vbucket this stream has no state on fails before the close has
+        // gone out rather than after (MB-73569)
+        final StreamState streamState = sessionState.streamState(streamId);
+        final StreamPartitionState partitionState = streamState == null ? null : streamState.get(vbid);
+        final IntSet open = openStreams[vbid];
+        if (partitionState == null || open == null) {
+            throw new IllegalStateException("stream " + streamId + " has no state on vbucket " + vbid);
+        }
         ByteBuf buffer = Unpooled.buffer();
         if (streamIdEnabled) {
             DcpCloseStreamRequest.init(buffer, streamId);
@@ -511,7 +529,12 @@ public class DcpChannel {
         }
         DcpCloseStreamRequest.vbucket(buffer, vbid);
         DcpCloseStreamRequest.vbucketStreamId(buffer, vbid, streamId);
-        channel.writeAndFlush(buffer).addListener(f -> {
+        ChannelFuture future = channel.writeAndFlush(buffer);
+        // recorded only once the write has been handed over, and before the listener goes on: a write which has
+        // already failed notifies the listener as it is added, and that must not overtake the recording it undoes
+        partitionState.setState(StreamPartitionState.DISCONNECTING);
+        open.remove(streamId);
+        future.addListener(f -> {
             if (!f.isSuccess()) {
                 // a request we could not send will never be answered; the stream is not usable either way, so it is
                 // settled as closed here- as the response handler does for a close which the producer rejects
