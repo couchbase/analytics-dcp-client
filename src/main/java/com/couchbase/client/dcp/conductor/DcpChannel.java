@@ -325,11 +325,15 @@ public class DcpChannel {
     }
 
     /**
-     * Requests that the producer close {@code streamId} on {@code vbid}. Either the close is written and the stream
-     * recorded as {@link StreamPartitionState#DISCONNECTING}, or neither: a caller which sees this throw may take it
-     * that nothing was sent, and that holds only if nothing was recorded either (MB-73569). The producer's response
-     * cannot be processed against a state not yet marked- the control handler takes this channel's monitor before it
-     * touches either the partition state or the open streams, and we hold it until we return.
+     * Requests that the producer close {@code streamId} on {@code vbid}. Either the close is handed to the channel
+     * and the stream recorded as {@link StreamPartitionState#DISCONNECTING}, or neither: a caller which sees this
+     * throw may take it that nothing was sent, and that holds only if nothing was recorded either (MB-73569). Handed
+     * to the channel is not written: the write completes asynchronously, and one which fails after we return does so
+     * only on a connection which is going down- the drop is reported through the channel's close listener, and the
+     * reconnect it leads to ends every stream on this connection on the producer's side, this one included, whether
+     * or not the close reached it. The producer's response cannot be processed against a state not yet marked- the
+     * control handler takes this channel's monitor before it touches either the partition state or the open streams,
+     * and we hold it until we return.
      */
     @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.REFACTORED)
     public synchronized void closeStream(final int streamId, final short vbid) {
