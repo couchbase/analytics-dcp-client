@@ -15,11 +15,6 @@ import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
  * This interface acts as a callback on the {@link Client#controlEventHandler(ControlEventHandler)} API
  * that allows one to react to control events.
  *
- * Right now the only event emitted is a {@link com.couchbase.client.dcp.message.RollbackMessage} which
- * should be handled appropriately since it indicates that very likely the current consumer state is
- * ahead of the server. This happens during failover scenarios and/or if something weird happened
- * to the persisted session state.
- *
  * Keep in mind that the callback is called on the IO event loops, so you should never block or run
  * expensive computations in the callback! Use queues and other synchronization primities!
  *

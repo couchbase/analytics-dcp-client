@@ -10,6 +10,7 @@
 package com.couchbase.client.dcp.transport.netty;
 
 import static com.couchbase.client.dcp.transport.netty.Stat.Kind.COLLECTIONS_BYID;
+import static com.couchbase.client.dcp.transport.netty.Stat.Kind.CURR_ITEMS;
 import static com.couchbase.client.dcp.transport.netty.Stat.Kind.DCP;
 
 import java.util.Collections;
@@ -27,7 +28,8 @@ public class Stat {
         UNKNOWN,
         COLLECTIONS_BYID,
         COLLECTIONS_DETAILS,
-        DCP;
+        DCP,
+        CURR_ITEMS;
 
         public static Kind valueOf(int ordinal, Kind defaultValue) {
             return ordinal < values().length ? values()[ordinal] : defaultValue;
@@ -56,19 +58,26 @@ public class Stat {
     private Stat() {
     }
 
-    public static void init(ByteBuf buffer) {
+    private static void initCommon(ByteBuf buffer) {
         MessageUtil.initRequest(MessageUtil.STAT_OPCODE, buffer);
     }
 
-    public static void collectionsById(ByteBuf buffer, int cid) {
+    public static void initCollectionsById(ByteBuf buffer, int cid) {
+        initCommon(buffer);
         ByteBuf key = Unpooled.copiedBuffer(COLLECTIONS_BYID + " " + CollectionsUtil.encodeCid(cid), CharsetUtil.UTF_8);
         MessageUtil.setKey(key, buffer);
         MessageUtil.setOpaque(COLLECTIONS_BYID.ordinal(), buffer);
     }
 
-    public static void dcp(ByteBuf buffer) {
+    public static void initDcp(ByteBuf buffer) {
+        initCommon(buffer);
         ByteBuf key = Unpooled.copiedBuffer(DCP.toString(), CharsetUtil.UTF_8);
         MessageUtil.setKey(key, buffer);
         MessageUtil.setOpaque(DCP.ordinal(), buffer);
+    }
+
+    public static void initCurrItems(ByteBuf buffer) {
+        initCommon(buffer);
+        MessageUtil.setOpaque(CURR_ITEMS.ordinal(), buffer);
     }
 }

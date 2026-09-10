@@ -9,8 +9,11 @@
  */
 package com.couchbase.client.dcp.state;
 
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayCids;
+import static com.couchbase.client.dcp.util.CollectionsUtil.displayManifestUid;
 import static com.couchbase.client.dcp.util.DcpUtil.maxSeqNo;
 import static com.couchbase.client.dcp.util.DcpUtil.minSeqNo;
+import static com.couchbase.client.dcp.util.VbucketUtil.displaySeqnoRange;
 import static org.apache.hyracks.util.Span.ELAPSED;
 
 import java.io.IOException;
@@ -185,7 +188,10 @@ public class StreamPartitionState {
         purgeSeqno = streamRequest.getPurgeSeqno();
         manifestUid = streamRequest.getManifestUid();
         if (shouldLog && LOGGER.isDebugEnabled()) {
-            LOGGER.debug("setStreamRequest: {}", streamRequest);
+            LOGGER.debug("setStreamRequest sid {} manifestUid {} cids {} vbid {} seqrange {} snaprange {}",
+                    streamRequest.getStreamId(), displayManifestUid(manifestUid), displayCids(streamRequest.getCids()),
+                    vbid, displaySeqnoRange(seqno, streamEndSeq),
+                    displaySeqnoRange(snapshotStartSeqno, snapshotEndSeqno));
         }
         extraneousSeqs = 0;
     }

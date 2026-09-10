@@ -147,6 +147,7 @@ public class CollectionsManifest {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class ScopeInfo implements UidAccessor {
         public static final String DEFAULT_NAME = "_default";
+        public static final int DEFAULT_ID = 0;
 
         @JsonSerialize(using = HexIntSerializer.class)
         @JsonDeserialize(using = HexIntDeserializer.class)
@@ -196,6 +197,7 @@ public class CollectionsManifest {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class CollectionInfo implements UidAccessor {
         public static final String DEFAULT_NAME = "_default";
+        public static final int DEFAULT_ID = 0;
         public static final long MAX_TTL_UNDEFINED = -1L;
 
         @JsonSerialize(using = HexIntSerializer.class)
@@ -325,10 +327,10 @@ public class CollectionsManifest {
         ManifestJson m = new ManifestJson();
         m.uid = 0;
         ScopeInfo scope = new ScopeInfo();
-        scope.uid = 0;
+        scope.uid = ScopeInfo.DEFAULT_ID;
         scope.name = ScopeInfo.DEFAULT_NAME;
         CollectionInfo col = new CollectionInfo();
-        col.uid = 0;
+        col.uid = CollectionInfo.DEFAULT_ID;
         col.name = CollectionInfo.DEFAULT_NAME;
         col.max_ttl = CollectionInfo.MAX_TTL_UNDEFINED;
         col.parentScope = scope;

@@ -321,6 +321,7 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                 switch (Stat.CollectionsByid.parseStatParts(parts)) {
                     case ITEMS:
                         // 0x8:0x8:items=4999
+                        LOGGER.trace("handleStatResponse: {} {}={}", statKind, key, value);
                         int cid = CollectionsUtil.decodeCid(parts[1].substring(2));
                         long count = Long.parseLong(value);
                         channel.getSessionState().recordItemCountResponse(cid, count);
@@ -347,6 +348,12 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
                             channel.getSessionState().recordReadyQItemsResponse(streamId, vbid, items);
                             break;
                     }
+                }
+                break;
+            case CURR_ITEMS:
+                if ("curr_items".equals(key)) {
+                    long count = Long.parseLong(value);
+                    channel.getSessionState().recordBucketItemCountResponse(count);
                 }
                 break;
             default:

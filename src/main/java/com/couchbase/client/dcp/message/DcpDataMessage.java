@@ -9,10 +9,9 @@
  */
 package com.couchbase.client.dcp.message;
 
-import java.nio.charset.Charset;
+import org.apache.hyracks.util.annotations.AiProvenance;
 
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
-import com.couchbase.client.core.deps.io.netty.util.CharsetUtil;
 
 @SuppressWarnings("squid:S1610")
 public abstract class DcpDataMessage {
@@ -25,16 +24,23 @@ public abstract class DcpDataMessage {
         return MessageUtil.getCid(buffer);
     }
 
+    /**
+     * @deprecated superseded by {@link MessageUtil#getKeyWithCid}, which yields the collection id alongside the key
+     *             rather than making the caller parse the buffer a second time to get it.
+     *             <p>
+     *             Retained only so that a cbas-core predating the stream/collection decoupling still compiles against
+     *             this client. The manifest pins this repository by <em>branch</em>, so removing it here before the
+     *             cbas-core side has merged would break every cbas-core build on totoro for the window between the
+     *             two- not just for the change which needs it. Delete it once that has landed.
+     */
+    @Deprecated
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "reinstated verbatim; only the deprecation notice is new")
     public static ByteBuf key(final ByteBuf buffer, boolean isCollectionEnabled) {
         return MessageUtil.getKey(buffer, isCollectionEnabled);
     }
 
-    public static String keyString(final ByteBuf buffer, Charset charset, boolean isCollectionEnabled) {
-        return key(buffer, isCollectionEnabled).toString(charset);
-    }
-
     public static String keyString(final ByteBuf buffer, boolean isCollectionEnabled) {
-        return keyString(buffer, CharsetUtil.UTF_8, isCollectionEnabled);
+        return MessageUtil.getKeyAsString(buffer, isCollectionEnabled);
     }
 
     public static short partition(final ByteBuf buffer) {
