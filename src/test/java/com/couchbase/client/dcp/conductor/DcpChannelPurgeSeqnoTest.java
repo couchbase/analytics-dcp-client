@@ -12,7 +12,6 @@ package com.couchbase.client.dcp.conductor;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -29,7 +28,6 @@ import com.couchbase.client.dcp.config.DcpControl;
  * it enabled and still never send anything, and a request which sends 0 does not mean "no opinion"- it positively
  * asserts that no purge has been processed, which is the input most likely to earn a rollback.
  */
-@AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.TEST_GENERATED)
 public class DcpChannelPurgeSeqnoTest {
 
     private static final int[] CIDS = { 0x0, 0x8 };

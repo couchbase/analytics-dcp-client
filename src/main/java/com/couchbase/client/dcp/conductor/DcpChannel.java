@@ -27,7 +27,6 @@ import java.util.stream.Stream;
 import org.apache.hyracks.api.util.InvokeUtil;
 import org.apache.hyracks.util.NetworkUtil;
 import org.apache.hyracks.util.Span;
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -252,7 +251,6 @@ public class DcpChannel {
      * connection under us, as the drop is reported as an event and the state is only advanced by an explicit
      * {@link #disconnect()}.
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "MB-73124: channel liveness, as distinct from our state")
     public boolean isChannelActive() {
         Channel currentChannel = channel;
         return currentChannel != null && currentChannel.isActive();
@@ -361,7 +359,6 @@ public class DcpChannel {
      * control handler takes this channel's monitor before it touches either the partition state or the open streams,
      * and we hold it until we return.
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.REFACTORED)
     public synchronized void closeStream(final int streamId, final short vbid) {
         if (getState() != State.CONNECTED) {
             throw new NotConnectedException();
@@ -384,8 +381,6 @@ public class DcpChannel {
      * @return the state of each stream we asked, or will ask once its open completes, the producer to close, to be
      *         awaited via {@link #awaitStreamsClosed(Map, Span)} before the channel is disconnected
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "Close streams on shutdown instead of dropping the connection with streams open")
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "MB-73588 (Claude Fable 5.1): defer, rather than skip, the streams whose open stream response is in flight")
     public synchronized Collection<StreamPartitionState> closeStreams() {
         if (getState() != State.CONNECTED || !isChannelActive()) {
             return Collections.emptyList();
@@ -432,8 +427,6 @@ public class DcpChannel {
      *
      * @return whether every stream was reported closed within the supplied span
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "MB-73124: KV abandons the close stream requests it has not executed once we close the socket")
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "MB-73588 (Claude Fable 5.1): close the streams whose open completes while we wait")
     public static boolean awaitStreamsClosed(Map<DcpChannel, Collection<StreamPartitionState>> closing, Span span) {
         int total = closing.values().stream().mapToInt(Collection::size).sum();
         while (true) {
@@ -480,7 +473,6 @@ public class DcpChannel {
      * to close, and its state is the connector's to settle. One we can no longer reach is settled as closed, as
      * {@link #writeCloseStream(int, short)} does for a request it could not send: nobody will ever answer it.
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "MB-73588 (Claude Fable 5.1)")
     private synchronized void closeOpenedStream(StreamPartitionState partitionState) {
         if (!isEstablished(partitionState)) {
             // settled between the caller's check and ours
@@ -501,13 +493,11 @@ public class DcpChannel {
      * Whether the producer has told us the stream is open. {@link #openStreams} is populated when a stream is
      * <i>requested</i>, so it also holds streams whose open stream response has yet to arrive.
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "MB-73124: only a stream the producer has can be closed")
     private static boolean isEstablished(StreamPartitionState partitionState) {
         byte state = partitionState.getState();
         return state == StreamPartitionState.CONNECTED || state == StreamPartitionState.CONNECTED_OSO;
     }
 
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Extracted from closeStream, and made stream id aware")
     private void writeCloseStream(final int streamId, final short vbid) {
         LOGGER.debug("Closing stream {} against {} with vbid: {}", streamId, channel.remoteAddress(), vbid);
         // resolved and checked before the write, so a vbucket this stream has no state on fails before the close has

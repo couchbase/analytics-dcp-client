@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import org.apache.hyracks.util.Span;
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.hyracks.util.annotations.GuardedBy;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -246,7 +245,6 @@ public class Fixer implements Runnable, SystemEventHandler {
      * between this check and the open it guards slips through. That window is the microseconds of one open, whereas
      * the one it closes is the whole of the config refresh a reopen begins with.
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED)
     private boolean sealedForHandoff(StreamPartitionState state) {
         if (!state.isSealed()) {
             return false;

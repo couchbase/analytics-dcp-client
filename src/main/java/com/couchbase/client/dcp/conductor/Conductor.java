@@ -27,7 +27,6 @@ import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.hyracks.api.util.InvokeUtil;
 import org.apache.hyracks.util.NetworkUtil;
 import org.apache.hyracks.util.Span;
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -151,7 +150,6 @@ public class Conductor {
      * The streams are tracked per channel, as a channel whose connection the producer has already dropped must not
      * be waited on- see {@link DcpChannel#awaitStreamsClosed(Map, Span)}.
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "MB-73124: close streams rather than dropping the connection under them")
     private void closeStreams() {
         Map<DcpChannel, Collection<StreamPartitionState>> closing = new HashMap<>();
         for (DcpChannel channel : channels.values()) {

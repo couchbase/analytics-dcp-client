@@ -13,8 +13,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-import org.apache.hyracks.util.annotations.AiProvenance;
-
 import com.couchbase.client.core.annotation.SinceCouchbase;
 
 /**
@@ -182,7 +180,7 @@ public class DcpControl implements Iterable<Map.Entry<String, String>> {
          * already in flight may arrive after the close stream response. This parameter is available starting in
          * Couchbase 5.5; older versions answer EINVAL, which is how a client detects the lack of support.
          */
-        @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI) SEND_STREAM_END_ON_CLIENT_CLOSE_STREAM;
+        SEND_STREAM_END_ON_CLIENT_CLOSE_STREAM;
 
         private final String value;
 

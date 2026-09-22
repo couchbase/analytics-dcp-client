@@ -17,8 +17,6 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.function.Function;
 
-import org.apache.hyracks.util.annotations.AiProvenance;
-
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import it.unimi.dsi.fastutil.shorts.Short2ObjectFunction;
 import it.unimi.dsi.fastutil.shorts.Short2ObjectMap;
@@ -254,12 +252,10 @@ public class VbucketUtil {
         return vbuckets;
     }
 
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED)
     public static String displaySeqno(long seqno) {
         return seqno == -1 ? "<INF>" : Long.toUnsignedString(seqno);
     }
 
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED)
     public static String displaySeqnoRange(long seqnoLo, long seqnoHi) {
         return displaySeqno(seqnoLo) + "-" + displaySeqno(seqnoHi);
     }

@@ -11,8 +11,6 @@ package com.couchbase.client.dcp.message;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import org.apache.hyracks.util.annotations.AiProvenance;
-
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBufUtil;
 import com.couchbase.client.dcp.conductor.DcpChannel;
@@ -330,7 +328,6 @@ public class MessageUtil {
      * connections which have negotiated {@link com.couchbase.client.dcp.config.DcpControl.Names#ENABLE_STREAM_ID}; on
      * other connections use {@link #initRequest(byte, ByteBuf)}.
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, notes = "Needed to close streams on stream-id enabled connections")
     public static void initFlexRequestWithStreamId(byte opcode, int streamId, ByteBuf buffer) {
         buffer.writeByte(MAGIC_REQ_FLEX);
         buffer.writeByte(opcode);

@@ -22,7 +22,6 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.apache.hyracks.util.Span;
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -305,7 +304,6 @@ public class SessionState {
         itemCountSemaphore.release();
     }
 
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "the span-expiry guard and its TimeoutException")
     public synchronized void waitForBucketItemCount(Span span) throws TimeoutException, InterruptedException {
         while (itemCountSemaphore.availablePermits() > 0 && !span.elapsed()) {
             span.wait(this);

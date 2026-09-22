@@ -10,11 +10,6 @@
 
 package com.couchbase.client.dcp.message;
 
-import static org.apache.hyracks.util.annotations.AiProvenance.Agent.CLAUDE_OPUS_4_6;
-import static org.apache.hyracks.util.annotations.AiProvenance.ContributionKind.GENERATED;
-import static org.apache.hyracks.util.annotations.AiProvenance.ContributionKind.REFACTORED;
-import static org.apache.hyracks.util.annotations.AiProvenance.Tool.GITHUB_COPILOT;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -25,7 +20,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
 
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -50,7 +44,6 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
  * <p>
  * Immutable.
  */
-@AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = REFACTORED, notes = "Refactored from fastutil map-based implementation to Jackson object model delegation")
 public class CollectionsManifest {
 
     private static final Logger LOGGER = LogManager.getLogger();
@@ -68,7 +61,6 @@ public class CollectionsManifest {
 
     // -- Hex serializers/deserializers for Jackson --
 
-    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
     static class HexLongSerializer extends JsonSerializer<Long> {
         @Override
         public void serialize(Long value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
@@ -76,7 +68,6 @@ public class CollectionsManifest {
         }
     }
 
-    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
     static class HexLongDeserializer extends JsonDeserializer<Long> {
         @Override
         public Long deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
@@ -84,7 +75,6 @@ public class CollectionsManifest {
         }
     }
 
-    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
     static class HexIntSerializer extends JsonSerializer<Integer> {
         @Override
         public void serialize(Integer value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
@@ -92,7 +82,6 @@ public class CollectionsManifest {
         }
     }
 
-    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
     static class HexIntDeserializer extends JsonDeserializer<Integer> {
         @Override
         public Integer deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
@@ -110,7 +99,6 @@ public class CollectionsManifest {
      * Binary search for a uid in a sorted list using unsigned comparison.
      * @return index if found, or -(insertion point) - 1 if not found
      */
-    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
     private static <T extends UidAccessor> int search(List<T> list, int uid) {
         int lo = 0, hi = list.size() - 1;
         while (lo <= hi) {
@@ -126,7 +114,6 @@ public class CollectionsManifest {
         return -(lo + 1);
     }
 
-    @AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = GENERATED)
     private int searchCollection(int uid) {
         int lo = 0, hi = collectionUids.length - 1;
         while (lo <= hi) {

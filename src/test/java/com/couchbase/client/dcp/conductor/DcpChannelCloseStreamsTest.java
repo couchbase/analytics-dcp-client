@@ -9,9 +9,6 @@
  */
 package com.couchbase.client.dcp.conductor;
 
-import static org.apache.hyracks.util.annotations.AiProvenance.Agent.CLAUDE_FABLE_5;
-import static org.apache.hyracks.util.annotations.AiProvenance.ContributionKind.TEST_GENERATED;
-import static org.apache.hyracks.util.annotations.AiProvenance.Tool.CLAUDE_CODE_UI;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -26,7 +23,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hyracks.util.Span;
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -51,7 +47,6 @@ import com.couchbase.client.dcp.util.MemcachedStatus;
  * yet reached us has nonetheless already been created (or rejected) on its side; dropping the connection with it open
  * ends it as an abnormal disconnect, which is what {@link DcpChannel#closeStreams()} exists to prevent.
  */
-@AiProvenance(agent = CLAUDE_FABLE_5, tool = CLAUDE_CODE_UI, contributionKind = TEST_GENERATED, notes = "MB-73588 (Claude Fable 5.1)")
 public class DcpChannelCloseStreamsTest {
 
     private static final int STREAM_ID = 1;

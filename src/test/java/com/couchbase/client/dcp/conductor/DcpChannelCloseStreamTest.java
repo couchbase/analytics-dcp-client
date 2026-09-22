@@ -13,7 +13,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -39,7 +38,6 @@ import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
  * over. A write which the channel accepts and then fails is recorded all the same, and settled as
  * {@code DISCONNECTED} once the failure is known.
  */
-@AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.TEST_GENERATED)
 public class DcpChannelCloseStreamTest {
 
     private static final int SID = 1;

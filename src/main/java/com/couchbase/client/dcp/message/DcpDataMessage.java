@@ -9,8 +9,6 @@
  */
 package com.couchbase.client.dcp.message;
 
-import org.apache.hyracks.util.annotations.AiProvenance;
-
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 
 @SuppressWarnings("squid:S1610")
@@ -34,7 +32,6 @@ public abstract class DcpDataMessage {
      *             two- not just for the change which needs it. Delete it once that has landed.
      */
     @Deprecated
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "reinstated verbatim; only the deprecation notice is new")
     public static ByteBuf key(final ByteBuf buffer, boolean isCollectionEnabled) {
         return MessageUtil.getKey(buffer, isCollectionEnabled);
     }

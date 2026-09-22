@@ -17,7 +17,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -239,7 +238,6 @@ public class DcpChannelControlMessageHandler implements ControlEventHandler {
         }
     }
 
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Identify the stream via the round-tripped opaque, as the response carries no stream id")
     private void handleDcpCloseStreamResponse(ByteBuf buf) {
         short vbid = DcpCloseStreamResponse.vbucket(buf);
         int streamId = DcpCloseStreamResponse.streamId(buf);

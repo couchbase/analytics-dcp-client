@@ -10,9 +10,6 @@
 
 package com.couchbase.client.dcp.message;
 
-import static org.apache.hyracks.util.annotations.AiProvenance.Agent.CLAUDE_OPUS_4_6;
-import static org.apache.hyracks.util.annotations.AiProvenance.ContributionKind.TEST_GENERATED;
-import static org.apache.hyracks.util.annotations.AiProvenance.Tool.GITHUB_COPILOT;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -20,10 +17,8 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.junit.Test;
 
-@AiProvenance(agent = CLAUDE_OPUS_4_6, tool = GITHUB_COPILOT, contributionKind = TEST_GENERATED)
 public class CollectionsManifestTest {
 
     @Test

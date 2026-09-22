@@ -24,7 +24,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 import org.apache.hyracks.util.Span;
-import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -96,7 +95,6 @@ public class Client {
      * @param builder
      *            the client config builder.
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "MB-73124: always negotiate send_stream_end_on_client_close_stream")
     public Client(Builder builder) {
         EventLoopGroup eventLoopGroup =
                 builder.eventLoopGroup() == null ? new NioEventLoopGroup() : builder.eventLoopGroup();
@@ -223,7 +221,6 @@ public class Client {
      * @param span the span within which the item count must arrive
      * @throws TimeoutException if the span elapses before the item count arrives
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED)
     public void waitForItemCount(Span span) throws InterruptedException, TimeoutException {
         conductor.waitForItemCount(span);
     }
@@ -386,7 +383,6 @@ public class Client {
      * @param streamId the stream to close
      * @param vbid     the vbucket to close it on
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED)
     public void closeStream(int streamId, short vbid) {
         DcpChannel channel = conductor.getChannel(vbid);
         if (channel == null) {
