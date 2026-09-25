@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLongArray;
 
 import org.apache.hyracks.util.Span;
 import org.apache.hyracks.util.annotations.GuardedBy;
@@ -72,6 +73,15 @@ public class StreamPartitionState {
 
     private volatile long deletionsProcessed = 0;
 
+    /**
+     * The mutations and deletions processed for each collection, on a stream which carries more than one: its totals
+     * above are every collection's together, so they overstate any one dataset's by the others' (MB-74233). Indexed
+     * as {@link StreamState#cidIndex}; null on a stream which carries a single collection, whose totals are its own.
+     */
+    private final AtomicLongArray mutationsByCid;
+
+    private final AtomicLongArray deletionsByCid;
+
     private volatile long extraneousSeqs = 0;
 
     private volatile long readyQItems = 0;
@@ -102,6 +112,13 @@ public class StreamPartitionState {
         this.streamState = streamState;
         this.vbid = vbid;
         state = DISCONNECTED;
+        if (streamState.countsPerCollection()) {
+            mutationsByCid = new AtomicLongArray(streamState.cids().length);
+            deletionsByCid = new AtomicLongArray(streamState.cids().length);
+        } else {
+            mutationsByCid = null;
+            deletionsByCid = null;
+        }
     }
 
     public long getSnapshotStartSeqno() {
@@ -416,6 +433,27 @@ public class StreamPartitionState {
         return deletionsProcessed;
     }
 
+    /**
+     * @return the mutations processed for the collection {@code cid}, which on a stream carrying only that collection
+     *         are all of them
+     */
+    public long getMutationsProcessed(int cid) {
+        return mutationsByCid == null ? mutationsProcessed : countFor(mutationsByCid, cid);
+    }
+
+    /**
+     * @return the deletions processed for the collection {@code cid}, which on a stream carrying only that collection
+     *         are all of them
+     */
+    public long getDeletionsProcessed(int cid) {
+        return deletionsByCid == null ? deletionsProcessed : countFor(deletionsByCid, cid);
+    }
+
+    private long countFor(AtomicLongArray byCid, int cid) {
+        int index = streamState.cidIndex(cid);
+        return index < 0 ? 0L : byCid.get(index);
+    }
+
     public StreamState getStreamState() {
         return streamState;
     }
@@ -434,13 +472,26 @@ public class StreamPartitionState {
             case MessageUtil.DCP_DELETION_OPCODE:
             case MessageUtil.DCP_EXPIRATION_OPCODE:
                 deletionsProcessed++;
+                countForCid(deletionsByCid, event);
                 break;
             case MessageUtil.DCP_MUTATION_OPCODE:
                 mutationsProcessed++;
+                countForCid(mutationsByCid, event);
                 break;
             default:
                 LOGGER.error("unrecognized data event {}", MessageUtil.humanize(event));
                 throw new IllegalArgumentException("unrecognized data event: " + MessageUtil.humanize(event));
+        }
+    }
+
+    @GuardedBy("operations on a vbucket do not interleave")
+    private void countForCid(AtomicLongArray byCid, ByteBuf event) {
+        if (byCid != null) {
+            int index = streamState.cidIndex(MessageUtil.getCid(event));
+            if (index >= 0) {
+                // the only writer, as for the totals: publishing the increment is all the stats reader needs
+                byCid.lazySet(index, byCid.get(index) + 1);
+            }
         }
     }
 

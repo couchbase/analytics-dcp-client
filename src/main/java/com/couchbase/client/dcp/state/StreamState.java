@@ -18,6 +18,8 @@ import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import it.unimi.dsi.fastutil.ints.Int2IntMap;
+import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntAVLTreeSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 
@@ -34,6 +36,12 @@ public class StreamState {
     private final int[] cids;
 
     /**
+     * The index of each of {@link #cids} in the per-collection counters of this stream's partition states, or null on a
+     * stream which carries a single collection, whose totals are that collection's (MB-74233)
+     */
+    private final Int2IntMap cidIndexes;
+
+    /**
      * Contains states for each individual partition.
      */
     private final StreamPartitionState[] partitionStates;
@@ -48,6 +56,7 @@ public class StreamState {
     public StreamState(int streamId, int[] cids, SessionState sessionState, short[] vbuckets) {
         this.streamId = streamId;
         this.cids = cids;
+        this.cidIndexes = cids != null && cids.length > 1 ? indexesOf(cids) : null;
         this.sessionState = sessionState;
         this.partitionStates = new StreamPartitionState[sessionState.getNumOfPartitions()];
         if (vbuckets.length > 0) {
@@ -161,5 +170,29 @@ public class StreamState {
 
     public synchronized void registerDcpStatsResponse() {
         readyQSemaphore.release(partitionStates.length);
+    }
+
+    /**
+     * @return true if this stream carries more than one collection, and so counts the events of each apart
+     */
+    public boolean countsPerCollection() {
+        return cidIndexes != null;
+    }
+
+    /**
+     * @return the index of {@code cid} in the per-collection counters of this stream's partition states, or -1 if this
+     *         stream does not count per collection or does not carry {@code cid}
+     */
+    public int cidIndex(int cid) {
+        return cidIndexes == null ? -1 : cidIndexes.get(cid);
+    }
+
+    private static Int2IntMap indexesOf(int[] cids) {
+        Int2IntOpenHashMap indexes = new Int2IntOpenHashMap(cids.length);
+        indexes.defaultReturnValue(-1);
+        for (int i = 0; i < cids.length; i++) {
+            indexes.putIfAbsent(cids[i], i);
+        }
+        return indexes;
     }
 }
