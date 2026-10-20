@@ -12,6 +12,9 @@ package com.couchbase.client.dcp.transport.netty;
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
 import com.couchbase.client.dcp.message.MessageUtil;
+import com.couchbase.client.dcp.util.ShortSortedBitSet;
+
+import it.unimi.dsi.fastutil.shorts.ShortSet;
 
 public class Hello {
     public static final short HELO_DATATYPE = 0x01;
@@ -24,6 +27,11 @@ public class Hello {
     public static final short HELO_SELECT = 0x08;
     public static final short HELO_SNAPPY = 0x0a;
     public static final short HELO_COLLECTIONS = 0x12;
+    /**
+     * Informational: advertised by servers which accept
+     * {@link com.couchbase.client.dcp.message.DcpOpenConnectionRequest#FLAG_SKIP_DELETES_IN_INITIAL_BACKFILL}.
+     */
+    public static final short HELO_DCP_SKIP_DELETES_IN_INITIAL_BACKFILL = 0x26;
 
     private Hello() {
     }
@@ -32,5 +40,17 @@ public class Hello {
         MessageUtil.initRequest(MessageUtil.HELO_OPCODE, buffer);
         MessageUtil.setKey(connectionName, buffer);
         MessageUtil.setContent(Unpooled.copyShort(flags), buffer);
+    }
+
+    /**
+     * Returns the features the server agreed to in its response to a HELO request.
+     */
+    public static ShortSet features(ByteBuf response) {
+        ByteBuf content = MessageUtil.getContent(response);
+        ShortSet features = new ShortSortedBitSet();
+        for (int i = content.readerIndex(); i + Short.BYTES <= content.writerIndex(); i += Short.BYTES) {
+            features.add(content.getShort(i));
+        }
+        return features;
     }
 }

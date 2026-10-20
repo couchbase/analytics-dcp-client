@@ -67,6 +67,14 @@ public class StreamPartitionState {
 
     private volatile long osoMaxSeqno = 0;
 
+    /**
+     * Whether a stream request from seqno 0 on this vbucket must be sent every deletion, rather than letting the
+     * producer skip them in its initial backfill: the consumer already holds documents from this vbucket which the
+     * seqno does not account for, ingested from an out-of-order snapshot which never completed, so a skipped deletion
+     * would leave one of them behind for good (MB-74653). Only ever true whilst the seqno is 0.
+     */
+    private volatile boolean deletesRequired;
+
     private volatile long seqnoAdvances = 0;
 
     private volatile long mutationsProcessed = 0;
@@ -165,6 +173,11 @@ public class StreamPartitionState {
         seqno = minSeqNo(streamEndSeq, seqno);
         if (state == CONNECTED_OSO) {
             osoMaxSeqno = maxSeqNo(seqno, osoMaxSeqno);
+            if (this.seqno == 0) {
+                // anything delivered from here on reaches the consumer without moving the seqno off 0, so a reopen
+                // before the snapshot ends would be a second initial backfill over what it has already ingested
+                deletesRequired = true;
+            }
         } else {
             if (Long.compareUnsigned(seqno, this.seqno) < 0 && this.seqno != INVALID_SEQNO) {
                 LOGGER.log(seqno == this.seqno ? Level.DEBUG : Level.WARN,
@@ -176,6 +189,9 @@ public class StreamPartitionState {
             }
             seqnoAdvances += this.seqno != INVALID_SEQNO ? (seqno - this.seqno) : seqno;
             this.seqno = seqno;
+            if (seqno != 0) {
+                deletesRequired = false;
+            }
         }
     }
 
@@ -271,6 +287,26 @@ public class StreamPartitionState {
         return sealDropped;
     }
 
+    /**
+     * @return whether a stream request from seqno 0 on this vbucket must be sent every deletion, i.e. must not be made
+     *         over a connection which skips them in the initial backfill
+     * @see com.couchbase.client.dcp.Client.Builder#skipDeletesInInitialBackfill(boolean)
+     */
+    public boolean isDeletesRequired() {
+        return deletesRequired;
+    }
+
+    /**
+     * Records that the consumer already holds documents from this vbucket although it stands at seqno 0, e.g. because
+     * they were persisted from an out-of-order snapshot which never completed, so that its stream request from 0 is
+     * sent every deletion. Has no effect once the seqno has moved off 0.
+     */
+    public void requireDeletes() {
+        if (seqno == 0) {
+            deletesRequired = true;
+        }
+    }
+
     public byte getState() {
         return state;
     }
@@ -304,6 +340,9 @@ public class StreamPartitionState {
     public void setStreamRequest(StreamRequest streamRequest, boolean shouldLog) {
         this.streamRequest = streamRequest;
         seqno = streamRequest.getStartSeqno();
+        if (seqno != 0) {
+            deletesRequired = false;
+        }
         streamEndSeq = streamRequest.getEndSeqno();
         snapshotStartSeqno = streamRequest.getSnapshotStartSeqno();
         snapshotEndSeqno = streamRequest.getSnapshotEndSeqno();
@@ -360,6 +399,9 @@ public class StreamPartitionState {
         tree.put("seqno", seqno);
         tree.put("state", state);
         tree.put("osoMaxSeq", osoMaxSeqno);
+        if (deletesRequired) {
+            tree.put("deletesRequired", true);
+        }
         if (isSealed()) {
             tree.put("sealSeqno", sealSeqno);
             tree.put("sealDropped", sealDropped);

@@ -61,6 +61,7 @@ public class ClientEnvironment implements SecureEnvironment {
     public static final long DEFAULT_PARTITION_REQUESTS_TIMEOUT = TimeUnit.SECONDS.toMillis(15);
     public static final boolean DEFAULT_SNAPPY_COMPRESSION_ENABLED = true;
     public static final boolean DEFAULT_INCLUDE_XATTRS = false;
+    public static final boolean DEFAULT_SKIP_DELETES_IN_INITIAL_BACKFILL = false;
 
     /**
      * Stores the list of bootstrap nodes (where the cluster is).
@@ -172,6 +173,7 @@ public class ClientEnvironment implements SecureEnvironment {
     private final NetworkResolution networkResolution;
     private final boolean snappyCompressionEnabled;
     private final boolean includeXattrs;
+    private final boolean skipDeletesInInitialBackfill;
     private final boolean dcpSteamRequestIncludePurgeSeqnos;
 
     /**
@@ -224,6 +226,7 @@ public class ClientEnvironment implements SecureEnvironment {
         }
         snappyCompressionEnabled = builder.snappyCompressionEnabled;
         includeXattrs = builder.includeXattrs;
+        skipDeletesInInitialBackfill = builder.skipDeletesInInitialBackfill;
         dcpSteamRequestIncludePurgeSeqnos = builder.dcpSteamRequestIncludePurgeSeqnos;
     }
 
@@ -429,6 +432,14 @@ public class ClientEnvironment implements SecureEnvironment {
         return includeXattrs;
     }
 
+    /**
+     * Whether to ask the server to omit deletions from the initial backfill of streams starting at seqno 0. Only
+     * honoured against servers that advertise support for it; others stream deletions as before.
+     */
+    public boolean skipDeletesInInitialBackfill() {
+        return skipDeletesInInitialBackfill;
+    }
+
     public boolean isDcpSteamRequestIncludePurgeSeqnos() {
         return dcpSteamRequestIncludePurgeSeqnos;
     }
@@ -472,6 +483,7 @@ public class ClientEnvironment implements SecureEnvironment {
         private NetworkResolution networkResolution;
         private boolean snappyCompressionEnabled = DEFAULT_SNAPPY_COMPRESSION_ENABLED;
         private boolean includeXattrs = DEFAULT_INCLUDE_XATTRS;
+        private boolean skipDeletesInInitialBackfill = DEFAULT_SKIP_DELETES_IN_INITIAL_BACKFILL;
         private boolean dcpSteamRequestIncludePurgeSeqnos = DEFAULT_DCP_STREAM_REQUEST_INCLUDE_PURGE_SEQNOS;
 
         public Builder setClusterAt(List<InetSocketAddress> clusterAt) {
@@ -677,6 +689,11 @@ public class ClientEnvironment implements SecureEnvironment {
             this.includeXattrs = includeXattrs;
             return this;
         }
+
+        public Builder setSkipDeletesInInitialBackfill(boolean skipDeletesInInitialBackfill) {
+            this.skipDeletesInInitialBackfill = skipDeletesInInitialBackfill;
+            return this;
+        }
     }
 
     /**
@@ -710,7 +727,8 @@ public class ClientEnvironment implements SecureEnvironment {
                 + ", sslEnabled=" + sslEnabled + ", sslIncludeKeyMaterial=" + sslIncludeKeyMaterial
                 + ", sslKeystoreFile='" + sslKeystoreFile + '\'' + ", sslKeystorePassword="
                 + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty()) + ", sslKeystore=" + sslKeystore
-                + ", snappyCompressionEnabled=" + snappyCompressionEnabled + '}';
+                + ", snappyCompressionEnabled=" + snappyCompressionEnabled + ", includeXattrs=" + includeXattrs
+                + ", skipDeletesInInitialBackfill=" + skipDeletesInInitialBackfill + '}';
     }
 
     public Delay dcpChannelsReconnectDelay() {

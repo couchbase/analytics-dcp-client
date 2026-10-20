@@ -55,6 +55,7 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
     private final String host;
     private final int port;
     private DcpNegotiationHandler dcpNegotiationHandler;
+    private DcpConnectHandler dcpConnectHandler;
 
     /**
      * Creates the pipeline.
@@ -106,8 +107,13 @@ public class DcpPipeline extends ChannelInitializer<Channel> {
             pipeline.addLast(new AuthHandler(pair.getLeft(), pair.getRight()));
         }
         dcpNegotiationHandler = new DcpNegotiationHandler(environment.dcpControl());
-        pipeline.addLast(new DcpConnectHandler(environment, dcpChannel)).addLast(dcpNegotiationHandler).addLast(
+        dcpConnectHandler = new DcpConnectHandler(environment, dcpChannel);
+        pipeline.addLast(dcpConnectHandler).addLast(dcpNegotiationHandler).addLast(
                 new DcpMessageHandler(dcpChannel, ch, environment, environment.dataEventHandler(), controlHandler));
+    }
+
+    public DcpConnectHandler getDcpConnectHandler() {
+        return dcpConnectHandler;
     }
 
     public DcpNegotiationHandler getDcpNegotiationHandler() {

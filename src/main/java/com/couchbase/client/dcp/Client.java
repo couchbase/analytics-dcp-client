@@ -119,6 +119,7 @@ public class Client {
                 .setNetworkResolution(builder.networkResolution())
                 .setSnappyCompressionEnabled(builder.snappyCompressionSupported())
                 .setIncludeXattrs(builder.includeXattrs())
+                .setSkipDeletesInInitialBackfill(builder.skipDeletesInInitialBackfill())
                 .setDcpSteamRequestIncludePurgeSeqnos(builder.isDcpSteamRequestIncludePurgeSeqnos()).build();
 
         ackEnabled = env.dcpControl().ackEnabled();
@@ -570,6 +571,7 @@ public class Client {
         private IntList cids = IntLists.EMPTY_LIST;
         private boolean snappyCompressionSupported = ClientEnvironment.DEFAULT_SNAPPY_COMPRESSION_ENABLED;
         private boolean includeXattrs = ClientEnvironment.DEFAULT_INCLUDE_XATTRS;
+        private boolean skipDeletesInInitialBackfill = ClientEnvironment.DEFAULT_SKIP_DELETES_IN_INITIAL_BACKFILL;
         private Set<Consumer<ClientEnvironment>> callbacks = new HashSet<>();
         private boolean dcpSteamRequestIncludePurgeSeqnos =
                 ClientEnvironment.DEFAULT_DCP_STREAM_REQUEST_INCLUDE_PURGE_SEQNOS;
@@ -902,6 +904,15 @@ public class Client {
             return this;
         }
 
+        /**
+         * Asks the server to omit deletions from the initial backfill of streams starting at seqno 0, where they can
+         * only describe documents this client never saw. Ignored by servers that do not support it.
+         */
+        public Builder skipDeletesInInitialBackfill(boolean skipDeletesInInitialBackfill) {
+            this.skipDeletesInInitialBackfill = skipDeletesInInitialBackfill;
+            return this;
+        }
+
         public Builder includePurgeSeqnosInStreamRequests(boolean dcpSteamRequestIncludePurgeSeqnos) {
             this.dcpSteamRequestIncludePurgeSeqnos = dcpSteamRequestIncludePurgeSeqnos;
             return this;
@@ -1042,6 +1053,10 @@ public class Client {
 
         public boolean includeXattrs() {
             return includeXattrs;
+        }
+
+        public boolean skipDeletesInInitialBackfill() {
+            return skipDeletesInInitialBackfill;
         }
 
         public void addEnvironmentCallback(Consumer<ClientEnvironment> callback) {

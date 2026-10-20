@@ -23,6 +23,14 @@ public enum DcpOpenConnectionRequest {
     public static final int FLAG_INCLUDE_XATTRS = 0x04;
 
     /**
+     * DCP open-connection flag: request that the initial backfill of a stream starting at seqno 0 omit deletions,
+     * replacing them with seqno-advanced messages. Servers that do not support it reject the open with EINVAL, so
+     * only send it once the server has acknowledged
+     * {@link com.couchbase.client.dcp.transport.netty.Hello#HELO_DCP_SKIP_DELETES_IN_INITIAL_BACKFILL}.
+     */
+    public static final int FLAG_SKIP_DELETES_IN_INITIAL_BACKFILL = 0x200;
+
+    /**
      * If the given buffer is a {@link DcpOpenConnectionRequest} message.
      */
     public static boolean is(final ByteBuf buffer) {

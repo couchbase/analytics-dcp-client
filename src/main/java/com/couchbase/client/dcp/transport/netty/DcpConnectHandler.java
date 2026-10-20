@@ -11,6 +11,7 @@ package com.couchbase.client.dcp.transport.netty;
 
 import static com.couchbase.client.dcp.transport.netty.Hello.HELO_COLLECTIONS;
 import static com.couchbase.client.dcp.transport.netty.Hello.HELO_DATATYPE;
+import static com.couchbase.client.dcp.transport.netty.Hello.HELO_DCP_SKIP_DELETES_IN_INITIAL_BACKFILL;
 import static com.couchbase.client.dcp.transport.netty.Hello.HELO_SELECT;
 import static com.couchbase.client.dcp.transport.netty.Hello.HELO_SNAPPY;
 import static com.couchbase.client.dcp.transport.netty.Hello.HELO_XATTR;
@@ -66,6 +67,11 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
     private final String bucket;
     private final boolean snappyCompressionEnabled;
     private final boolean includeXattrs;
+    private final boolean skipDeletesInInitialBackfill;
+    /**
+     * Whether the server acknowledged everything {@link #skipDeletesInInitialBackfill} needs during HELO.
+     */
+    private volatile boolean skipDeletesInInitialBackfillSupported;
     private byte step = VERSION;
 
     /**
@@ -82,6 +88,7 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
         dcpChannel.setConnectionName(connectionNameString);
         snappyCompressionEnabled = environment.snappyCompressionEnabled();
         includeXattrs = environment.includeXattrs();
+        skipDeletesInInitialBackfill = dcpChannel.offersSkipDeletesInInitialBackfill();
     }
 
     /**
@@ -108,6 +115,7 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
                     helo(ctx, msg);
                     break;
                 case SELECT:
+                    heloResponse(ctx, msg);
                     // Select bucket
                     ByteBuf request = ctx.alloc().buffer();
                     BucketSelectionRequest.init(request, bucket);
@@ -178,16 +186,55 @@ public class DcpConnectHandler extends ConnectInterceptingHandler<ByteBuf> {
         if (snappyCompressionEnabled) {
             flags.add(HELO_SNAPPY);
         }
+        if (skipDeletesInInitialBackfill) {
+            flags.add(HELO_DCP_SKIP_DELETES_IN_INITIAL_BACKFILL);
+        }
         Hello.init(request, connectionName, flags.toShortArray());
         ctx.writeAndFlush(request);
     }
 
+    private void heloResponse(ChannelHandlerContext ctx, ByteBuf msg) {
+        if (!skipDeletesInInitialBackfill) {
+            return;
+        }
+        skipDeletesInInitialBackfillSupported = supportsSkipDeletesInInitialBackfill(Hello.features(msg));
+        if (!skipDeletesInInitialBackfillSupported && LOGGER.isDebugEnabled()) {
+            LOGGER.debug("{} does not support skipping deletes in the initial backfill; they will be streamed",
+                    ctx.channel().remoteAddress());
+        }
+    }
+
+    /**
+     * @return whether the connection was opened skipping deletes in the initial backfill; meaningful once the connect
+     *         has completed
+     */
+    public boolean isSkippingDeletesInInitialBackfill() {
+        return skipDeletesInInitialBackfillSupported;
+    }
+
     private void openConnection(ChannelHandlerContext ctx) {
         ByteBuf request = ctx.alloc().buffer();
-        DcpOpenConnectionRequest.init(request, includeXattrs ? DcpOpenConnectionRequest.FLAG_INCLUDE_XATTRS : 0);
+        DcpOpenConnectionRequest.init(request, openConnectionFlags());
         connectionName.resetReaderIndex();
         DcpOpenConnectionRequest.connectionName(request, connectionName);
         ctx.writeAndFlush(request);
+    }
+
+    static boolean supportsSkipDeletesInInitialBackfill(ShortSet heloFeatures) {
+        // the server relies on seqno-advanced messages, and so on collections, to cover the skipped deletes
+        return heloFeatures.contains(HELO_DCP_SKIP_DELETES_IN_INITIAL_BACKFILL)
+                && heloFeatures.contains(HELO_COLLECTIONS);
+    }
+
+    private int openConnectionFlags() {
+        int flags = 0;
+        if (includeXattrs) {
+            flags |= DcpOpenConnectionRequest.FLAG_INCLUDE_XATTRS;
+        }
+        if (skipDeletesInInitialBackfillSupported) {
+            flags |= DcpOpenConnectionRequest.FLAG_SKIP_DELETES_IN_INITIAL_BACKFILL;
+        }
+        return flags;
     }
 
     private String toString(byte step) {

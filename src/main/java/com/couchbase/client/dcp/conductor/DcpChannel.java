@@ -98,6 +98,16 @@ public class DcpChannel {
     private String connectionName;
     private boolean includePurgeSeqnos;
     private boolean streamIdEnabled;
+    /**
+     * Whether the current connection was opened skipping deletes in the initial backfill of streams from seqno 0.
+     */
+    private volatile boolean skippingDeletes;
+    /**
+     * Set once a vbucket which requires its deletes (see {@link StreamPartitionState#isDeletesRequired()}) is to be
+     * streamed from seqno 0 over this channel. The skip is a property of the whole connection, so from then on every
+     * connection of this channel streams deletes, for as long as the channel lives.
+     */
+    private volatile boolean skipDeletesWithdrawn;
 
     public DcpChannel(InetSocketAddress inetAddress, String hostname, final ClientEnvironment env,
             final SessionState sessionState, int numOfPartitions, boolean collectionCapable) {
@@ -124,6 +134,7 @@ public class DcpChannel {
             throw new IllegalArgumentException("Channel is already connected or is trying to connect: " + this);
         }
         setState(State.CONNECTING);
+        withdrawSkipDeletesIfRequired();
         int attempt = 0;
         Throwable failure = null;
         final long startTime = System.currentTimeMillis();
@@ -156,6 +167,10 @@ public class DcpChannel {
                 // not enable them (or omitted from one which did) is rejected with dcp_streamid_invalid
                 streamIdEnabled = Boolean.parseBoolean(dcpPipeline.getDcpNegotiationHandler().getNegotiatedSettings()
                         .get(DcpControl.Names.ENABLE_STREAM_ID.value()));
+                skippingDeletes = dcpPipeline.getDcpConnectHandler().isSkippingDeletesInInitialBackfill();
+                if (skippingDeletes) {
+                    LOGGER.info("Connection to {} skips deletes in the initial backfill", inetAddress);
+                }
 
                 LOGGER.debug("Connection to {} established", inetAddress);
                 channel = connectFuture.channel();
@@ -237,6 +252,42 @@ public class DcpChannel {
         channel.closeFuture().addListener(closeListener);
     }
 
+    /**
+     * @return whether the current connection was opened skipping deletes in the initial backfill
+     */
+    public boolean isSkippingDeletesInInitialBackfill() {
+        return skippingDeletes;
+    }
+
+    /**
+     * @return whether the next connection of this channel should ask the producer to skip deletes in the initial
+     *         backfill
+     */
+    public boolean offersSkipDeletesInInitialBackfill() {
+        return env.skipDeletesInInitialBackfill() && !skipDeletesWithdrawn;
+    }
+
+    /**
+     * Withdraws the skip ahead of a (re)connect if any stream it may (re)open requires deletes, sparing the connection
+     * {@link #openStream} would otherwise have to drop. The session's stream state is scanned rather than this
+     * channel's open streams: a dropped channel is replaced by a new one, which has none yet, and would otherwise
+     * negotiate the skip, be dropped by {@link #openStream}, and be replaced again, without end. Every stream is
+     * scanned, not only those on vbuckets this node serves, since the session's config may predate a rebalance; a
+     * vbucket stays tainted only until its seqno moves off 0, so the cost is a backfill that keeps its deletes.
+     */
+    void withdrawSkipDeletesIfRequired() {
+        if (skipDeletesWithdrawn || !env.skipDeletesInInitialBackfill()) {
+            return;
+        }
+        sessionState.streamStream().forEach(stream -> stream.partitionStream().forEach(ps -> {
+            if (!skipDeletesWithdrawn && !ps.isSealed() && ps.isDeletesRequired()) {
+                LOGGER.info("Not skipping deletes in the initial backfill on {}: stream {} vbucket {} requires them",
+                        inetAddress, stream.streamId(), ps.vbid());
+                skipDeletesWithdrawn = true;
+            }
+        }));
+    }
+
     public boolean isCollectionCapable() {
         return collectionCapable;
     }
@@ -303,6 +354,20 @@ public class DcpChannel {
                     "Attempt to open stream {} against {} with vbid {} with no requested sequences (start == end) {}",
                     streamId, channel.remoteAddress(), vbid, startSeqno);
             env.eventBus().publish(endEvent);
+            return;
+        }
+        if (startSeqno == 0 && skippingDeletes && partitionState.isDeletesRequired()) {
+            // the producer would skip the deletions this vbucket needs, and only a new connection can stop it: drop
+            // this one, and let the reconnect reopen every stream here- this one included- without the skip
+            LOGGER.info("Reconnecting {} to stop skipping deletes in the initial backfill: stream {} vbucket {} "
+                    + "requires them", inetAddress, streamId, vbid);
+            skipDeletesWithdrawn = true;
+            partitionState.setState(StreamPartitionState.CONNECTING);
+            if (openStreams[vbid] == null) {
+                openStreams[vbid] = new IntOpenHashSet();
+            }
+            openStreams[vbid].add(streamId);
+            channel.close();
             return;
         }
         LOGGER.trace(
