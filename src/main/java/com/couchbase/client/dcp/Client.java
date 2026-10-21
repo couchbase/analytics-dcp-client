@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -29,6 +30,9 @@ import org.apache.logging.log4j.Logger;
 import com.couchbase.client.core.config.BucketCapabilities;
 import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBufAllocator;
+import com.couchbase.client.core.deps.io.netty.buffer.PooledByteBufAllocator;
+import com.couchbase.client.core.deps.io.netty.buffer.UnpooledByteBufAllocator;
 import com.couchbase.client.core.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.core.deps.io.netty.channel.nio.NioEventLoopGroup;
 import com.couchbase.client.core.env.NetworkResolution;
@@ -101,7 +105,7 @@ public class Client {
         env = ClientEnvironment.builder().setConnectionNameGenerator(builder.connectionNameGenerator())
                 .setBucket(builder.bucket()).setCredentialsProvider(builder.credentialsProvider())
                 .setDcpControl(builder.dcpControl()).setEventLoopGroup(eventLoopGroup, builder.eventLoopGroup() == null)
-                .setBufferAckWatermark(builder.bufferAckWatermark()).setBufferPooling(builder.poolBuffers())
+                .setBufferAckWatermark(builder.bufferAckWatermark()).setBufferAllocator(builder.bufferAllocator())
                 .setConfigProviderAttemptTimeout(builder.configProviderAttemptTimeout())
                 .setConfigProviderReconnectDelay(builder.configProviderReconnectDelay())
                 .setConfigProviderTotalTimeout(builder.configProviderTotalTimeout())
@@ -502,7 +506,7 @@ public class Client {
         private DcpControl dcpControl = new DcpControl();
         private ConfigProvider configProvider = null;
         private int bufferAckWatermark;
-        private boolean poolBuffers = true;
+        private ByteBufAllocator bufferAllocator = PooledByteBufAllocator.DEFAULT;
         private EventBus eventBus;
         private boolean sslEnabled = ClientEnvironment.DEFAULT_SSL_ENABLED;
         private boolean sslIncludeKeyMaterial = ClientEnvironment.DEFAULT_SSL_INCLUDE_KEY_MATERIAL;
@@ -691,7 +695,19 @@ public class Client {
          * @return this {@link Builder} for nice chainability.
          */
         public Builder poolBuffers(final boolean pool) {
-            this.poolBuffers = pool;
+            this.bufferAllocator = pool ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
+            return this;
+        }
+
+        /**
+         * The allocator for the buffers of the client's channels ({@link PooledByteBufAllocator#DEFAULT} by default).
+         *
+         * @param allocator
+         *            the allocator to use.
+         * @return this {@link Builder} for nice chainability.
+         */
+        public Builder bufferAllocator(final ByteBufAllocator allocator) {
+            this.bufferAllocator = Objects.requireNonNull(allocator);
             return this;
         }
 
@@ -896,8 +912,8 @@ public class Client {
             return bufferAckWatermark;
         }
 
-        public boolean poolBuffers() {
-            return poolBuffers;
+        public ByteBufAllocator bufferAllocator() {
+            return bufferAllocator;
         }
 
         public long configProviderAttemptTimeout() {

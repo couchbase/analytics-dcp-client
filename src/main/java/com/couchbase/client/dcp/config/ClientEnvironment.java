@@ -16,6 +16,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import com.couchbase.client.core.deps.io.netty.buffer.ByteBufAllocator;
+import com.couchbase.client.core.deps.io.netty.buffer.PooledByteBufAllocator;
 import com.couchbase.client.core.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.time.Delay;
@@ -96,9 +98,9 @@ public class ClientEnvironment implements SecureEnvironment {
     private final boolean eventLoopGroupIsPrivate;
 
     /**
-     * If buffer pooling is enabled throughout the client.
+     * The allocator for the buffers of the client's channels.
      */
-    private final boolean poolBuffers;
+    private final ByteBufAllocator bufferAllocator;
 
     /**
      * What the buffer ack watermark in percent should be.
@@ -184,7 +186,7 @@ public class ClientEnvironment implements SecureEnvironment {
         eventLoopGroup = builder.eventLoopGroup;
         eventLoopGroupIsPrivate = builder.eventLoopGroupIsPrivate;
         bufferAckWatermark = builder.bufferAckWatermark;
-        poolBuffers = builder.poolBuffers;
+        bufferAllocator = builder.bufferAllocator;
 
         if (builder.eventBus != null) {
             eventBus = builder.eventBus;
@@ -343,10 +345,10 @@ public class ClientEnvironment implements SecureEnvironment {
     }
 
     /**
-     * If buffer pooling is enabled.
+     * The allocator for the buffers of the client's channels.
      */
-    public boolean poolBuffers() {
-        return poolBuffers;
+    public ByteBufAllocator bufferAllocator() {
+        return bufferAllocator;
     }
 
     /**
@@ -427,7 +429,7 @@ public class ClientEnvironment implements SecureEnvironment {
         private DcpControl dcpControl;
         private EventLoopGroup eventLoopGroup;
         private boolean eventLoopGroupIsPrivate;
-        private boolean poolBuffers;
+        private ByteBufAllocator bufferAllocator = PooledByteBufAllocator.DEFAULT;
         private int bootstrapHttpDirectPort = BOOTSTRAP_HTTP_DIRECT_PORT;
         private int bootstrapHttpSslPort = BOOTSTRAP_HTTP_SSL_PORT;
         private int bufferAckWatermark;
@@ -529,8 +531,8 @@ public class ClientEnvironment implements SecureEnvironment {
             return this;
         }
 
-        public Builder setBufferPooling(boolean pool) {
-            this.poolBuffers = pool;
+        public Builder setBufferAllocator(ByteBufAllocator allocator) {
+            this.bufferAllocator = allocator;
             return this;
         }
 
@@ -676,13 +678,13 @@ public class ClientEnvironment implements SecureEnvironment {
                 + connectionNameGenerator.getClass().getSimpleName() + ", bucket='" + bucket + '\'' + ", passwordSet="
                 + (credentialsProvider != null) + ", dcpControl=" + dcpControl + ", eventLoopGroup="
                 + eventLoopGroup.getClass().getSimpleName() + ", eventLoopGroupIsPrivate=" + eventLoopGroupIsPrivate
-                + ", poolBuffers=" + poolBuffers + ", bufferAckWatermark=" + bufferAckWatermark
-                + ", dcpChannelAttemptTimeout=" + dcpChannelAttemptTimeout + ", dcpChannelTotalTimeout="
-                + dcpChannelTotalTimeout + ", dcpChannelsReconnectDelay=" + dcpChannelsReconnectDelay
-                + ", configProviderAttemptTimeout=" + configProviderAttemptTimeout + ", configProviderTotalTimeout="
-                + configProviderTotalTimeout + ", configProviderReconnectDelay=" + configProviderReconnectDelay
-                + ", sslEnabled=" + sslEnabled + ", sslIncludeKeyMaterial=" + sslIncludeKeyMaterial
-                + ", sslKeystoreFile='" + sslKeystoreFile + '\'' + ", sslKeystorePassword="
+                + ", bufferAllocator=" + bufferAllocator.getClass().getSimpleName() + ", bufferAckWatermark="
+                + bufferAckWatermark + ", dcpChannelAttemptTimeout=" + dcpChannelAttemptTimeout
+                + ", dcpChannelTotalTimeout=" + dcpChannelTotalTimeout + ", dcpChannelsReconnectDelay="
+                + dcpChannelsReconnectDelay + ", configProviderAttemptTimeout=" + configProviderAttemptTimeout
+                + ", configProviderTotalTimeout=" + configProviderTotalTimeout + ", configProviderReconnectDelay="
+                + configProviderReconnectDelay + ", sslEnabled=" + sslEnabled + ", sslIncludeKeyMaterial="
+                + sslIncludeKeyMaterial + ", sslKeystoreFile='" + sslKeystoreFile + '\'' + ", sslKeystorePassword="
                 + (sslKeystorePassword != null && !sslKeystorePassword.isEmpty()) + ", sslKeystore=" + sslKeystore
                 + ", snappyCompressionEnabled=" + snappyCompressionEnabled + '}';
     }
