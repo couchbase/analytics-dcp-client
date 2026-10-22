@@ -36,9 +36,7 @@ import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.node.Object
 import com.couchbase.client.core.deps.io.netty.bootstrap.Bootstrap;
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBuf;
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBufAllocator;
-import com.couchbase.client.core.deps.io.netty.buffer.PooledByteBufAllocator;
 import com.couchbase.client.core.deps.io.netty.buffer.Unpooled;
-import com.couchbase.client.core.deps.io.netty.buffer.UnpooledByteBufAllocator;
 import com.couchbase.client.core.deps.io.netty.channel.Channel;
 import com.couchbase.client.core.deps.io.netty.channel.ChannelFuture;
 import com.couchbase.client.core.deps.io.netty.channel.ChannelFutureListener;
@@ -147,8 +145,7 @@ public class DcpChannel {
                     LOGGER.info("Connect attempt #{} with socket connect timeout {} to {}", attempt, attemptTimeout,
                             inetAddress);
                 }
-                ByteBufAllocator allocator =
-                        env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
+                ByteBufAllocator allocator = env.bufferAllocator();
                 DcpPipeline dcpPipeline = new DcpPipeline(this, hostname, inetAddress.getPort(), env, controlHandler);
                 final Bootstrap bootstrap = new Bootstrap().option(ChannelOption.ALLOCATOR, allocator)
                         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) attemptTimeout)

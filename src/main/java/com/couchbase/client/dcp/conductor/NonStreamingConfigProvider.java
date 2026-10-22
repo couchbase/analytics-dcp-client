@@ -32,8 +32,6 @@ import com.couchbase.client.core.config.CouchbaseBucketConfig;
 import com.couchbase.client.core.config.NodeInfo;
 import com.couchbase.client.core.deps.io.netty.bootstrap.Bootstrap;
 import com.couchbase.client.core.deps.io.netty.buffer.ByteBufAllocator;
-import com.couchbase.client.core.deps.io.netty.buffer.PooledByteBufAllocator;
-import com.couchbase.client.core.deps.io.netty.buffer.UnpooledByteBufAllocator;
 import com.couchbase.client.core.deps.io.netty.channel.ChannelFuture;
 import com.couchbase.client.core.deps.io.netty.channel.ChannelOption;
 import com.couchbase.client.core.service.ServiceType;
@@ -97,8 +95,7 @@ public class NonStreamingConfigProvider implements ConfigProvider, IConfigurable
     private boolean tryConnectHost(InetSocketAddress address, long attemptTimeout, long totalTimeout, Delay delay)
             throws Exception {
         int attempt = 0;
-        ByteBufAllocator allocator =
-                env.poolBuffers() ? PooledByteBufAllocator.DEFAULT : UnpooledByteBufAllocator.DEFAULT;
+        ByteBufAllocator allocator = env.bufferAllocator();
         final long startTime = System.nanoTime();
         while (true) {
             attempt++;
