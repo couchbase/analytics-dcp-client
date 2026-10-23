@@ -12,8 +12,11 @@ package com.couchbase.client.dcp.conductor;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.stream.IntStream;
 
 import org.apache.hyracks.util.Span;
@@ -61,6 +64,8 @@ public class Fixer implements Runnable, SystemEventHandler {
     // unbounded
     private final LinkedBlockingQueue<DcpEvent> inbox = new LinkedBlockingQueue<>();
     private final Deque<DcpEvent> backlog = new ArrayDeque<>(1024);
+    /** streams reopened on a single vbucket, indexed by the ordinal of the reason the producer ended them */
+    private final AtomicLongArray reopens = new AtomicLongArray(StreamEndReason.values().length);
 
     public Fixer(Conductor conductor) {
         this.conductor = conductor;
@@ -287,7 +292,14 @@ public class Fixer implements Runnable, SystemEventHandler {
                 doReconnect(streamEndEvent);
                 break;
             case STATE_CHANGED:
-                LOGGER.info(this + " vbucket state has changed");
+                if (streamEndEvent.isReopenRequested()) {
+                    LOGGER.info("{} reopening stream {} on vbucket {}, which has moved", this,
+                            streamEndEvent.getStreamState().streamId(), streamEndEvent.partition());
+                    doReconnect(streamEndEvent);
+                } else {
+                    // the consumer reopens it once it has consumed what the previous owner delivered; see reopen
+                    LOGGER.info(this + " vbucket state has changed");
+                }
                 break;
             case BACKFILL_FAIL:
             case CHANNEL_DROPPED:
@@ -302,7 +314,38 @@ public class Fixer implements Runnable, SystemEventHandler {
         }
     }
 
+    /**
+     * Reopens a stream the producer ended with {@link StreamEndReason#STATE_CHANGED} on whichever node now owns the
+     * vbucket, from the stream request prepared on its partition state- see
+     * {@link com.couchbase.client.dcp.Client#reopenStream}.
+     * <p>
+     * The request is a stream end of its own rather than the one the producer's message raised, which this thread may
+     * not yet have handled: marking that one instead could have it reopened twice.
+     */
+    void reopen(StreamPartitionState partitionState, StreamState streamState) {
+        StreamEndEvent request = new StreamEndEvent(partitionState, streamState, StreamEndReason.STATE_CHANGED);
+        request.setReopenRequested();
+        onEvent(request);
+    }
+
+    /**
+     * @return how many streams this fixer has reopened on a single vbucket, by the reason the producer ended them; a
+     *         reason with none is absent
+     */
+    public Map<StreamEndReason, Long> getReopenCounts() {
+        Map<StreamEndReason, Long> counts = new EnumMap<>(StreamEndReason.class);
+        for (StreamEndReason reason : StreamEndReason.values()) {
+            long count = reopens.get(reason.ordinal());
+            if (count > 0) {
+                counts.put(reason, count);
+            }
+        }
+        return counts;
+    }
+
     private void doReconnect(StreamEndEvent streamEndEvent) throws Throwable {
+        // reset() below forgets it, and it is what the reopen is counted against
+        final StreamEndReason reason = streamEndEvent.reason();
         boolean success = false;
         while (!success) {
             Span attempt = Span.start(1, TimeUnit.SECONDS);
@@ -351,6 +394,7 @@ public class Fixer implements Runnable, SystemEventHandler {
             }
             state.prepareNextStreamRequest(sessionState, streamEndEvent.getStreamState());
             conductor.startStreamForPartition(state.getStreamRequest());
+            reopens.incrementAndGet(reason.ordinal());
             success = true;
         }
     }

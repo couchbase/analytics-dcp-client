@@ -23,6 +23,7 @@ public class StreamEndEvent implements PartitionDcpEvent {
     private boolean failoverLogsRequested;
     private int[] seqRequested = new int[0];
     private int attempts = 0;
+    private boolean reopenRequested;
 
     public StreamEndEvent(StreamPartitionState state, StreamState stream, StreamEndReason reason) {
         this.state = state;
@@ -81,6 +82,18 @@ public class StreamEndEvent implements PartitionDcpEvent {
 
     public void setSeqRequested(int... cids) {
         this.seqRequested = cids;
+    }
+
+    /**
+     * @return whether this is the consumer asking for a stream it was told had ended to be reopened, rather than the
+     *         producer telling us that it had
+     */
+    public boolean isReopenRequested() {
+        return reopenRequested;
+    }
+
+    public void setReopenRequested() {
+        reopenRequested = true;
     }
 
     public void incrementAttempts() {

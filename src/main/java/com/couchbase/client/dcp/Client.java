@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -51,6 +52,7 @@ import com.couchbase.client.dcp.message.DcpExpirationMessage;
 import com.couchbase.client.dcp.message.DcpFailoverLogResponse;
 import com.couchbase.client.dcp.message.DcpMutationMessage;
 import com.couchbase.client.dcp.message.DcpSnapshotMarkerRequest;
+import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.state.SessionPartitionState;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
@@ -378,6 +380,46 @@ public class Client {
             ps.releaseSeal();
             conductor.startStreamForPartition(ps.getStreamRequest());
         }
+    }
+
+    /**
+     * Reopens a stream on a single vbucket after the producer ended it with
+     * {@link com.couchbase.client.dcp.message.StreamEndReason#STATE_CHANGED}- which is what a KV rebalance does to
+     * every vbucket it moves- on whichever node owns the vbucket now, leaving the stream untouched on every other
+     * vbucket. The client does not reopen such a stream of its own accord, as only the consumer knows when it has
+     * finished with everything the previous owner delivered.
+     * <p>
+     * Must be called by the thread which consumes this stream's messages, once it has consumed every message delivered
+     * on the vbucket before the stream ended: the stream is reopened from the position recorded in the partition state,
+     * which only that thread advances, so a position read anywhere else may lag messages still waiting to be consumed,
+     * and the producer would deliver them a second time behind ones which supersede them. The open itself- refreshing
+     * the configuration and connecting to the new owner if need be- is left to the fixer.
+     *
+     * @param streamId the stream to reopen
+     * @param vbid     the vbucket to reopen it on
+     * @return whether the reopen was requested; {@code false} if the stream is sealed on the vbucket, in which case a
+     *         merge migration is handing the vbucket off the stream and it is not this stream's to reopen
+     */
+    public boolean reopenStream(int streamId, short vbid) {
+        final StreamState streamState = sessionState().streamState(streamId);
+        StreamPartitionState ps = streamState.get(vbid);
+        if (ps.isSealed()) {
+            // preparing a stream request would release the seal- see sealedForHandoff in the fixer
+            return false;
+        }
+        ps.setState(StreamPartitionState.DISCONNECTED);
+        ps.prepareNextStreamRequest(sessionState(), streamState);
+        conductor.reopenStream(ps, streamState);
+        return true;
+    }
+
+    /**
+     * @return how many streams have been reopened on a single vbucket since this client was created, by the reason the
+     *         producer ended them; a reason with none is absent. This counts {@link #reopenStream} along with the
+     *         reopens the client makes of its own accord, e.g. on a dropped connection
+     */
+    public Map<StreamEndReason, Long> getStreamReopenCounts() {
+        return conductor.getStreamReopenCounts();
     }
 
     /**

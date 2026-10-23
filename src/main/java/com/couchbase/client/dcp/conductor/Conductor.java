@@ -40,9 +40,11 @@ import com.couchbase.client.core.time.Delay;
 import com.couchbase.client.dcp.config.ClientEnvironment;
 import com.couchbase.client.dcp.events.ChannelDroppedEvent;
 import com.couchbase.client.dcp.message.CollectionsManifest;
+import com.couchbase.client.dcp.message.StreamEndReason;
 import com.couchbase.client.dcp.state.SessionState;
 import com.couchbase.client.dcp.state.StreamPartitionState;
 import com.couchbase.client.dcp.state.StreamRequest;
+import com.couchbase.client.dcp.state.StreamState;
 import com.couchbase.client.dcp.util.CollectionsUtil;
 
 public class Conductor {
@@ -309,6 +311,22 @@ public class Conductor {
 
     public void waitForItemCount(Span span) throws InterruptedException, TimeoutException {
         sessionState.waitForBucketItemCount(span);
+    }
+
+    /**
+     * Has the fixer reopen a stream on a vbucket which has moved, from the stream request already prepared on it- see
+     * {@link com.couchbase.client.dcp.Client#reopenStream}.
+     */
+    public void reopenStream(StreamPartitionState partitionState, StreamState streamState) {
+        fixer.reopen(partitionState, streamState);
+    }
+
+    /**
+     * @return how many streams have been reopened on a single vbucket, by the reason the producer ended them- see
+     *         {@link Fixer#getReopenCounts}
+     */
+    public Map<StreamEndReason, Long> getStreamReopenCounts() {
+        return fixer.getReopenCounts();
     }
 
     public void startStreamForPartition(StreamRequest request) {
